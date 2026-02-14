@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
             },
             turn_detection: {
               type: "server_vad",
-              silence_duration_ms: 500,
+              silence_duration_ms: 1500,
               threshold: 0.5,
               prefix_padding_ms: 300,
             },

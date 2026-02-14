@@ -156,7 +156,7 @@ export function useRealtimeTranscription(
 
         // 2. Create WebSocket connection
         const wsUrl =
-          "wss://api.openai.com/v1/realtime?intent=transcription&model=gpt-4o-transcribe";
+          "wss://api.openai.com/v1/realtime?intent=transcription";
         const ws = new WebSocket(wsUrl, [
           "realtime",
           `openai-insecure-api-key.${token}`,
@@ -164,28 +164,42 @@ export function useRealtimeTranscription(
         wsRef.current = ws;
 
         ws.onopen = () => {
+          console.log("[Realtime] WebSocket connected");
           setIsConnecting(false);
           setIsRecording(true);
-          reconnectAttemptsRef.current = 0;
+          // Only reset reconnect counter after connection is stable (5s)
+          const stableTimer = setTimeout(() => {
+            reconnectAttemptsRef.current = 0;
+          }, 5000);
 
-          // 3. Start sending audio
-          startAudioCapture(stream);
+          // 3. Start sending audio (only if not already capturing)
+          if (!audioContextRef.current || audioContextRef.current.state === "closed") {
+            startAudioCapture(stream);
+          }
+
+          // Clean up timer if ws closes before stable
+          ws.addEventListener("close", () => clearTimeout(stableTimer), { once: true });
         };
 
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
+            if (data.type?.includes("transcription")) {
+              console.log("[Realtime] Event:", data.type, data.delta?.slice(0, 50) || data.transcript?.slice(0, 50) || "");
+            }
             handleRealtimeEvent(data);
           } catch {
             // Ignore non-JSON messages
           }
         };
 
-        ws.onerror = () => {
+        ws.onerror = (err) => {
+          console.error("[Realtime] WebSocket error:", err);
           setError("WebSocket connection error");
         };
 
-        ws.onclose = () => {
+        ws.onclose = (event) => {
+          console.log("[Realtime] WebSocket closed:", event.code, event.reason);
           setIsRecording(false);
           setIsConnecting(false);
 
@@ -195,6 +209,7 @@ export function useRealtimeTranscription(
               reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS
             ) {
               reconnectAttemptsRef.current++;
+              console.log(`[Realtime] Reconnecting (attempt ${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})...`);
               setTimeout(() => {
                 if (shouldReconnectRef.current && mediaStreamRef.current) {
                   connectWebSocket(mediaStreamRef.current);
