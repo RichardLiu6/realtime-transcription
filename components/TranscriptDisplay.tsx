@@ -89,29 +89,38 @@ function RowComponent({
           )}
           {formatTime(entry.timestamp)}
         </div>
-        {/* Original text (may be mixed language) */}
-        <p className="text-sm text-gray-900 font-medium leading-relaxed">
-          {entry.text}
-        </p>
-        {/* Three language translations */}
-        <div className="mt-1.5 space-y-0.5">
-          {ALL_LANGS.map((lang) => {
-            const content = entry.translations[lang];
-            if (!content) return null;
-            return (
-              <div key={lang} className="flex items-start gap-1.5">
-                <span
-                  className={`text-[10px] px-1 py-px rounded shrink-0 mt-0.5 ${LANG_BADGES[lang]} opacity-80`}
-                >
-                  {LANG_LABELS[lang]}
-                </span>
-                <p className="flex-1 leading-snug text-xs text-gray-500">
-                  {content}
-                </p>
-              </div>
-            );
-          })}
-        </div>
+        {/* Original text or interim text (may be mixed language) */}
+        {entry.text ? (
+          <p className="text-sm text-gray-900 font-medium leading-relaxed">
+            {entry.text}
+          </p>
+        ) : entry.interimText ? (
+          <p className="text-sm text-gray-500 leading-relaxed">
+            {entry.interimText}
+            <span className="inline-block w-0.5 h-4 bg-gray-400 ml-0.5 align-text-bottom blink-cursor" />
+          </p>
+        ) : null}
+        {/* Three language translations - only show when text is finalized */}
+        {entry.text && (
+          <div className="mt-1.5 space-y-0.5">
+            {ALL_LANGS.map((lang) => {
+              const content = entry.translations[lang];
+              if (!content) return null;
+              return (
+                <div key={lang} className="flex items-start gap-1.5">
+                  <span
+                    className={`text-[10px] px-1 py-px rounded shrink-0 mt-0.5 ${LANG_BADGES[lang]} opacity-80`}
+                  >
+                    {LANG_LABELS[lang]}
+                  </span>
+                  <p className="flex-1 leading-snug text-xs text-gray-500">
+                    {content}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

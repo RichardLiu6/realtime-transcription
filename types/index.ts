@@ -7,6 +7,7 @@ export interface TranslationSet {
 export interface TranscriptEntry {
   id: string;
   text: string;
+  interimText?: string;
   language: string;
   translations: TranslationSet;
   timestamp: Date;

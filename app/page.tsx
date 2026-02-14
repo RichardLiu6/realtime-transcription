@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useCallback, useRef, useState } from "react";
-import { useVADTranscription } from "@/hooks/useVADTranscription";
+import { useRealtimeTranscription } from "@/hooks/useRealtimeTranscription";
 import type { TranscriptEntry } from "@/types";
 import TranscriptDisplay from "@/components/TranscriptDisplay";
 
@@ -111,12 +111,11 @@ export default function Home() {
     transcripts,
     isRecording,
     isProcessing,
-    isLoading,
-    errored,
+    isConnecting,
     error,
     start,
     stop,
-  } = useVADTranscription(speakerRef);
+  } = useRealtimeTranscription({ speakerRef });
 
   // Debounced localStorage backup (500ms)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
@@ -201,16 +200,16 @@ export default function Home() {
         <div className="flex items-center gap-3">
           <button
             onClick={toggleRecording}
-            disabled={isLoading || errored}
+            disabled={isConnecting}
             className="flex items-center gap-2 cursor-pointer"
             title={isRecording ? "点击暂停" : "点击开始"}
             aria-label={isRecording ? "暂停录音" : "开始录音"}
           >
             <span
               className={`w-3 h-3 rounded-full transition-colors ${
-                errored
+                error
                   ? "bg-red-500"
-                  : isLoading
+                  : isConnecting
                   ? "bg-yellow-400 animate-pulse"
                   : isRecording
                   ? "bg-green-500 recording-pulse"
@@ -218,10 +217,10 @@ export default function Home() {
               }`}
             />
             <span className="text-sm text-gray-600">
-              {errored
-                ? "加载失败"
-                : isLoading
-                ? "模型加载中..."
+              {error
+                ? "连接失败"
+                : isConnecting
+                ? "连接中..."
                 : isRecording
                 ? "录音中"
                 : "点击开始"}
