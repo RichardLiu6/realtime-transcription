@@ -37,6 +37,7 @@ export default function Home() {
     isRecording,
     isProcessing,
     isLoading,
+    errored,
     error,
     start,
     stop,
@@ -83,13 +84,15 @@ export default function Home() {
           {/* Status indicator - clickable to toggle */}
           <button
             onClick={toggleRecording}
-            disabled={isLoading}
+            disabled={isLoading || errored}
             className="flex items-center gap-2 cursor-pointer"
-            title={isRecording ? "点击暂停" : "点击继续"}
+            title={isRecording ? "点击暂停" : "点击开始"}
           >
             <span
               className={`w-3 h-3 rounded-full transition-colors ${
-                isLoading
+                errored
+                  ? "bg-red-500"
+                  : isLoading
                   ? "bg-yellow-400 animate-pulse"
                   : isRecording
                   ? "bg-green-500 recording-pulse"
@@ -97,11 +100,13 @@ export default function Home() {
               }`}
             />
             <span className="text-sm text-gray-600">
-              {isLoading
+              {errored
+                ? "加载失败"
+                : isLoading
                 ? "模型加载中..."
                 : isRecording
                 ? "录音中"
-                : "已暂停"}
+                : "点击开始"}
             </span>
           </button>
 
