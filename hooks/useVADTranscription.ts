@@ -53,6 +53,19 @@ function floatArrayToWav(
   return new Blob([view], { type: "audio/wav" });
 }
 
+// Client-side audio validation: check RMS energy level
+function calculateRMS(samples: Float32Array): number {
+  let sum = 0;
+  for (let i = 0; i < samples.length; i++) {
+    sum += samples[i] * samples[i];
+  }
+  return Math.sqrt(sum / samples.length);
+}
+
+const MIN_RMS_THRESHOLD = 0.01;
+const MIN_DURATION_MS = 500;
+const SAMPLE_RATE = 16000;
+
 export function useVADTranscription() {
   const [transcripts, setTranscripts] = useState<TranscriptEntry[]>([]);
   const [isRecording, setIsRecording] = useState(false);
@@ -66,18 +79,31 @@ export function useVADTranscription() {
     startOnLoad: false,
     baseAssetPath: "/",
     onnxWASMBasePath: "/",
-    positiveSpeechThreshold: 0.5,
-    negativeSpeechThreshold: 0.35,
-    redemptionMs: 300,
-    minSpeechMs: 100,
+    // Tuned to reduce false positives during silence
+    positiveSpeechThreshold: 0.7,
+    negativeSpeechThreshold: 0.45,
+    redemptionMs: 500,
+    minSpeechMs: 250,
     onSpeechEnd: (audio: Float32Array) => {
+      // Client-side filter 1: RMS energy check
+      const rms = calculateRMS(audio);
+      if (rms < MIN_RMS_THRESHOLD) {
+        return;
+      }
+
+      // Client-side filter 2: minimum duration
+      const durationMs = (audio.length / SAMPLE_RATE) * 1000;
+      if (durationMs < MIN_DURATION_MS) {
+        return;
+      }
+
       sequenceRef.current++;
 
       requestQueueRef.current = requestQueueRef.current.then(async () => {
         try {
           setIsProcessing(true);
 
-          const wavBlob = floatArrayToWav(audio, 16000);
+          const wavBlob = floatArrayToWav(audio, SAMPLE_RATE);
 
           const formData = new FormData();
           formData.append("audio", wavBlob, "audio.wav");
@@ -119,7 +145,6 @@ export function useVADTranscription() {
     },
   });
 
-  // Surface VAD initialization errors
   useEffect(() => {
     if (vad.errored) {
       setError(

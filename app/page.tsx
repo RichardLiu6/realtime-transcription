@@ -49,7 +49,6 @@ export default function Home() {
   const transcriptsRef = useRef(transcripts);
   transcriptsRef.current = transcripts;
 
-  // Auto-save to localStorage on each new transcript
   useEffect(() => {
     if (transcripts.length > 0) {
       localStorage.setItem(
@@ -59,9 +58,8 @@ export default function Home() {
     }
   }, [transcripts]);
 
-  // Auto-download on page close
   useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+    const handleBeforeUnload = () => {
       if (transcriptsRef.current.length > 0) {
         triggerDownload(transcriptsRef.current);
         localStorage.removeItem("transcripts-backup");
@@ -80,11 +78,10 @@ export default function Home() {
   }, [isRecording, start, stop]);
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="h-screen flex flex-col overflow-hidden">
       {/* Top status bar */}
-      <header className="flex items-center justify-between px-4 py-3 border-b bg-white/80 backdrop-blur-sm sticky top-0 z-10">
+      <header className="shrink-0 flex items-center justify-between px-4 py-3 border-b bg-white/80 backdrop-blur-sm">
         <div className="flex items-center gap-3">
-          {/* Status indicator - clickable to toggle */}
           <button
             onClick={toggleRecording}
             disabled={isLoading || errored}
@@ -137,13 +134,13 @@ export default function Home() {
 
       {/* Error banner */}
       {error && (
-        <div className="text-center text-sm text-red-500 bg-red-50 px-4 py-2">
+        <div className="shrink-0 text-center text-sm text-red-500 bg-red-50 px-4 py-2">
           {error}
         </div>
       )}
 
-      {/* Transcript area - fills remaining space */}
-      <div className="flex-1 flex flex-col px-4 py-2 max-w-4xl w-full mx-auto">
+      {/* Transcript area - fixed height, scrollable */}
+      <div className="flex-1 min-h-0 flex flex-col px-4 py-2 max-w-4xl w-full mx-auto">
         <TranscriptDisplay entries={transcripts} isRecording={isRecording} />
       </div>
     </div>

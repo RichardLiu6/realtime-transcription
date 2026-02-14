@@ -2,11 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { openai } from "@/lib/openai";
 
 const ALL_LANGS = ["zh", "en", "es"] as const;
+const EXPECTED_LANGS = new Set(ALL_LANGS);
 
 const LANG_NAMES: Record<string, string> = {
   zh: "Chinese",
   en: "English",
   es: "Spanish",
+};
+
+const EMPTY_RESPONSE = {
+  text: "",
+  language: "unknown",
+  translations: { zh: "", en: "", es: "" },
 };
 
 function normalizeLang(lang: string): string {
@@ -36,16 +43,21 @@ export async function POST(req: NextRequest) {
     });
 
     const text = transcription.text?.trim();
-    if (!text) {
-      return NextResponse.json({ text: "", language: "unknown", translations: { zh: "", en: "", es: "" } });
+
+    // Server-side filter 1: empty or too short text
+    if (!text || text.length < 2) {
+      return NextResponse.json(EMPTY_RESPONSE);
     }
 
     const detectedLang = normalizeLang(transcription.language || "unknown");
 
-    // Determine which languages need translation
+    // Server-side filter 2: reject unexpected languages (hallucination)
+    if (!EXPECTED_LANGS.has(detectedLang as typeof ALL_LANGS[number])) {
+      return NextResponse.json(EMPTY_RESPONSE);
+    }
+
     const targetLangs = ALL_LANGS.filter((l) => l !== detectedLang);
 
-    // Translate to the other 2 languages in parallel
     const translationPromises = targetLangs.map(async (targetLang) => {
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -67,7 +79,6 @@ export async function POST(req: NextRequest) {
 
     const translationResults = await Promise.all(translationPromises);
 
-    // Build translations object: original lang gets the original text
     const translations: Record<string, string> = {
       zh: "",
       en: "",
