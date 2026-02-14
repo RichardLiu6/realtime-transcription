@@ -76,6 +76,24 @@ function normalizeLang(lang: string): string {
   return l;
 }
 
+// Detect language from text content using character analysis
+function detectLanguageFromText(text: string): string {
+  // Count CJK characters (Chinese/Japanese/Korean)
+  const cjkCount = (text.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length;
+  // Count Spanish-specific characters
+  const spanishChars = (text.match(/[áéíóúñ¿¡üÁÉÍÓÚÑ¿¡Ü]/g) || []).length;
+  const totalChars = text.replace(/\s/g, "").length;
+
+  if (totalChars === 0) return "unknown";
+
+  // If >20% CJK characters, classify as Chinese
+  if (cjkCount / totalChars > 0.2) return "zh";
+  // If Spanish-specific chars present, classify as Spanish
+  if (spanishChars > 0) return "es";
+  // Default to English for Latin scripts
+  return "en";
+}
+
 export async function POST(req: NextRequest) {
   // --- Rate limiting ---
   const clientIP = getClientIP(req);
@@ -119,10 +137,14 @@ export async function POST(req: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
+        // Read optional language hint from FormData
+        const languageHint = formData.get("language") as string | null;
+
         const transcription = await openai.audio.transcriptions.create({
           file: audio,
-          model: "whisper-1",
-          response_format: "verbose_json",
+          model: "gpt-4o-transcribe",
+          response_format: "json",
+          ...(languageHint ? { language: languageHint } : {}),
         });
 
         const text = transcription.text?.trim();
@@ -138,7 +160,9 @@ export async function POST(req: NextRequest) {
           return;
         }
 
-        const detectedLang = normalizeLang(transcription.language || "unknown");
+        // Detect language from text content (CJK character detection)
+        // gpt-4o-transcribe json format may not return a language field
+        const detectedLang = detectLanguageFromText(text);
 
         // Server-side filter 2: reject unexpected languages (hallucination)
         if (!EXPECTED_LANGS.has(detectedLang as (typeof ALL_LANGS)[number])) {

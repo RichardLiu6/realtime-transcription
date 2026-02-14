@@ -116,7 +116,7 @@ function parseSSEChunk(
   return { events, remaining };
 }
 
-export function useVADTranscription(speakerRef?: React.RefObject<string>) {
+export function useVADTranscription(speakerRef?: React.RefObject<string>, languageHint?: string) {
   const [transcripts, setTranscripts] = useState<TranscriptEntry[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [processingCount, setProcessingCount] = useState(0);
@@ -136,6 +136,10 @@ export function useVADTranscription(speakerRef?: React.RefObject<string>) {
         const wavBlob = floatArrayToWav(audio, SAMPLE_RATE);
         const formData = new FormData();
         formData.append("audio", wavBlob, "audio.wav");
+        // Send language hint to improve transcription accuracy
+        if (languageHint) {
+          formData.append("language", languageHint);
+        }
 
         const response = await fetchWithRetry("/api/transcribe", {
           method: "POST",
