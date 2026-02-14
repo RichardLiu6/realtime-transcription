@@ -11,8 +11,11 @@ function formatTime(date: Date) {
 
 function buildExportText(entries: TranscriptEntry[]) {
   return entries
-    .map((e) => `[${formatTime(e.timestamp)}] [${e.language.toUpperCase()}] ${e.text}`)
-    .join("\n");
+    .map((e) => {
+      const t = e.translations;
+      return `[${formatTime(e.timestamp)}]\n  中: ${t.zh}\n  EN: ${t.en}\n  ES: ${t.es}`;
+    })
+    .join("\n\n");
 }
 
 function triggerDownload(entries: TranscriptEntry[]) {

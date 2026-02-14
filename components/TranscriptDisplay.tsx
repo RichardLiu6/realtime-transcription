@@ -8,6 +8,14 @@ interface TranscriptDisplayProps {
   isRecording: boolean;
 }
 
+const LANG_CONFIG: Record<string, { label: string; badge: string; text: string }> = {
+  zh: { label: "中", badge: "bg-blue-100 text-blue-700", text: "text-gray-900" },
+  en: { label: "EN", badge: "bg-green-100 text-green-700", text: "text-gray-700" },
+  es: { label: "ES", badge: "bg-orange-100 text-orange-700", text: "text-gray-700" },
+};
+
+const LANG_ORDER = ["zh", "en", "es"] as const;
+
 export default function TranscriptDisplay({
   entries,
   isRecording,
@@ -27,23 +35,10 @@ export default function TranscriptDisplay({
     return `${hours}:${minutes}:${seconds}`;
   };
 
-  const getLanguageBadgeClass = (language: string) => {
-    const lang = language.toLowerCase();
-    if (lang === "zh" || lang === "chinese") {
-      return "bg-blue-100 text-blue-700";
-    } else if (lang === "en" || lang === "english") {
-      return "bg-green-100 text-green-700";
-    } else if (lang === "es" || lang === "spanish") {
-      return "bg-orange-100 text-orange-700";
-    } else {
-      return "bg-gray-100 text-gray-700";
-    }
-  };
-
   return (
     <div
       ref={containerRef}
-      className="flex-1 overflow-y-auto transcript-scroll p-2 space-y-3"
+      className="flex-1 overflow-y-auto transcript-scroll p-2 space-y-4"
     >
       {entries.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-full text-gray-300 gap-3">
@@ -54,23 +49,41 @@ export default function TranscriptDisplay({
             <line x1="8" y1="23" x2="16" y2="23" />
           </svg>
           <p className="text-lg">等待语音输入...</p>
-          <p className="text-sm">开始说话即可自动转录</p>
+          <p className="text-sm">说话自动转录 + 翻译为中/英/西三语</p>
         </div>
       ) : (
         <>
           {entries.map((entry) => (
-            <div key={entry.id} className="flex items-start gap-3">
-              <span className="text-xs text-gray-400 whitespace-nowrap pt-0.5">
+            <div key={entry.id} className="border-b border-gray-100 pb-3">
+              <div className="text-xs text-gray-400 mb-1.5">
                 {formatTime(entry.timestamp)}
-              </span>
-              <span
-                className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${getLanguageBadgeClass(
-                  entry.language
-                )}`}
-              >
-                {entry.language.toUpperCase()}
-              </span>
-              <p className="text-gray-800 flex-1 leading-relaxed">{entry.text}</p>
+              </div>
+              <div className="space-y-1">
+                {LANG_ORDER.map((lang) => {
+                  const config = LANG_CONFIG[lang];
+                  const content = entry.translations[lang];
+                  if (!content) return null;
+                  const isOriginal = lang === entry.language;
+                  return (
+                    <div key={lang} className="flex items-start gap-2">
+                      <span
+                        className={`text-xs px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${config.badge} ${
+                          isOriginal ? "font-semibold ring-1 ring-current/20" : "opacity-70"
+                        }`}
+                      >
+                        {config.label}
+                      </span>
+                      <p
+                        className={`flex-1 leading-relaxed text-sm ${
+                          isOriginal ? "text-gray-900 font-medium" : "text-gray-500"
+                        }`}
+                      >
+                        {content}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           ))}
           {isRecording && (

@@ -101,6 +101,7 @@ export function useVADTranscription() {
               id: crypto.randomUUID(),
               text: data.text,
               language: data.language || "unknown",
+              translations: data.translations || { zh: "", en: "", es: "" },
               timestamp: new Date(),
             };
             setTranscripts((prev) => [...prev, entry]);
