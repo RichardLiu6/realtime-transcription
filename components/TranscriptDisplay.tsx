@@ -14,7 +14,6 @@ export default function TranscriptDisplay({
 }: TranscriptDisplayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when new entries are added
   useEffect(() => {
     if (containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
@@ -44,32 +43,41 @@ export default function TranscriptDisplay({
   return (
     <div
       ref={containerRef}
-      className="flex-1 overflow-y-auto rounded-lg border bg-white p-4 space-y-3"
+      className="flex-1 overflow-y-auto transcript-scroll p-2 space-y-3"
     >
       {entries.length === 0 ? (
-        <div className="flex items-center justify-center h-full text-gray-400 text-center">
-          点击录音按钮开始语音转文字...
+        <div className="flex flex-col items-center justify-center h-full text-gray-300 gap-3">
+          <svg className="w-16 h-16" fill="none" stroke="currentColor" strokeWidth="1" viewBox="0 0 24 24">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <line x1="12" y1="19" x2="12" y2="23" />
+            <line x1="8" y1="23" x2="16" y2="23" />
+          </svg>
+          <p className="text-lg">等待语音输入...</p>
+          <p className="text-sm">开始说话即可自动转录</p>
         </div>
       ) : (
         <>
           {entries.map((entry) => (
             <div key={entry.id} className="flex items-start gap-3">
-              <span className="text-xs text-gray-400 whitespace-nowrap">
+              <span className="text-xs text-gray-400 whitespace-nowrap pt-0.5">
                 {formatTime(entry.timestamp)}
               </span>
               <span
-                className={`text-xs px-2 py-1 rounded-full whitespace-nowrap ${getLanguageBadgeClass(
+                className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${getLanguageBadgeClass(
                   entry.language
                 )}`}
               >
                 {entry.language.toUpperCase()}
               </span>
-              <p className="text-gray-800 flex-1">{entry.text}</p>
+              <p className="text-gray-800 flex-1 leading-relaxed">{entry.text}</p>
             </div>
           ))}
-          {isRecording && entries.length > 0 && (
-            <div className="text-sm text-gray-400 italic">
-              正在聆听<span className="animate-pulse">...</span>
+          {isRecording && (
+            <div className="text-sm text-gray-300 flex items-center gap-1 pl-1">
+              <span className="w-1.5 h-1.5 bg-gray-300 rounded-full listening-dot" />
+              <span className="w-1.5 h-1.5 bg-gray-300 rounded-full listening-dot" />
+              <span className="w-1.5 h-1.5 bg-gray-300 rounded-full listening-dot" />
             </div>
           )}
         </>

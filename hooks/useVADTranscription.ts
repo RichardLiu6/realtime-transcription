@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useMicVAD } from "@ricky0123/vad-react";
 
 import type { TranscriptEntry } from "@/types";
@@ -71,7 +71,7 @@ export function useVADTranscription() {
   const sequenceRef = useRef(0);
 
   const vad = useMicVAD({
-    startOnLoad: false,
+    startOnLoad: true,
     positiveSpeechThreshold: 0.5,
     negativeSpeechThreshold: 0.35,
     redemptionMs: 300,
@@ -125,6 +125,13 @@ export function useVADTranscription() {
       });
     },
   });
+
+  // Auto-set recording state when VAD finishes loading (startOnLoad: true)
+  useEffect(() => {
+    if (!vad.loading) {
+      setIsRecording(true);
+    }
+  }, [vad.loading]);
 
   const start = useCallback(() => {
     vad.start();
