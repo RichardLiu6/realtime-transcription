@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
               type: "near_field",
             },
             transcription: {
-              model: "gpt-4o-transcribe",
+              model: "whisper-1",
               ...(language ? { language } : {}),
               prompt:
                 "Transcribe the audio accurately. The speaker may use mixed languages including Chinese, English, and Spanish.",

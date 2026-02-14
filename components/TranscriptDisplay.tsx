@@ -17,7 +17,9 @@ interface TranscriptDisplayProps {
   isRecording: boolean;
 }
 
-const ESTIMATED_ROW_HEIGHT = 120;
+const BASE_ROW_HEIGHT = 60; // timestamp + original text
+const TRANSLATION_LINE_HEIGHT = 22; // per translation line (short text)
+const CHARS_PER_LINE = 60; // approximate characters per line
 const LISTENING_DOTS_HEIGHT = 32;
 
 const formatTime = (date: Date) => {
@@ -89,21 +91,32 @@ function RowComponent({
           )}
           {formatTime(entry.timestamp)}
         </div>
-        {/* Original text or interim text (may be mixed language) */}
+        {/* Original text or interim text */}
         {entry.text ? (
-          <p className="text-sm text-gray-900 font-medium leading-relaxed">
-            {entry.text}
-          </p>
+          <div className="flex items-start gap-1.5">
+            {entry.language && entry.language !== "unknown" && (
+              <span
+                className={`text-[10px] px-1 py-px rounded shrink-0 mt-1 ${LANG_BADGES[entry.language as keyof typeof LANG_BADGES] || "bg-gray-100 text-gray-600"} opacity-80`}
+              >
+                {LANG_LABELS[entry.language as keyof typeof LANG_LABELS] || entry.language}
+              </span>
+            )}
+            <p className="flex-1 text-sm text-gray-900 font-medium leading-relaxed">
+              {entry.text}
+            </p>
+          </div>
         ) : entry.interimText ? (
           <p className="text-sm text-gray-500 leading-relaxed">
             {entry.interimText}
             <span className="inline-block w-0.5 h-4 bg-gray-400 ml-0.5 align-text-bottom blink-cursor" />
           </p>
         ) : null}
-        {/* Three language translations - only show when text is finalized */}
+        {/* Translations - skip the detected language (already shown as original) */}
         {entry.text && (
           <div className="mt-1.5 space-y-0.5">
             {ALL_LANGS.map((lang) => {
+              // Skip the language that matches the original text
+              if (lang === entry.language) return null;
               const content = entry.translations[lang];
               if (!content) return null;
               return (
@@ -143,15 +156,34 @@ export default function TranscriptDisplay({
     [entries, isRecording, totalRows]
   );
 
-  // Variable row height: listening dots row is shorter
+  // Dynamic row height based on content length
   const getRowHeight = useCallback(
     (index: number) => {
       if (index === entries.length && isRecording) {
         return LISTENING_DOTS_HEIGHT;
       }
-      return ESTIMATED_ROW_HEIGHT;
+      const entry = entries[index];
+      if (!entry) return BASE_ROW_HEIGHT;
+
+      // Estimate height for original text
+      const originalText = entry.text || entry.interimText || "";
+      const originalLines = Math.max(1, Math.ceil(originalText.length / CHARS_PER_LINE));
+      let height = 28 + originalLines * 22; // timestamp + original text lines
+
+      // Add height for each translation (skip detected language)
+      if (entry.text) {
+        for (const lang of ALL_LANGS) {
+          if (lang === entry.language) continue;
+          const content = entry.translations[lang];
+          if (!content) continue;
+          const lines = Math.max(1, Math.ceil(content.length / CHARS_PER_LINE));
+          height += lines * TRANSLATION_LINE_HEIGHT;
+        }
+      }
+
+      return height + 20; // padding
     },
-    [entries.length, isRecording]
+    [entries, isRecording]
   );
 
   // Track scroll position to detect if user is at bottom
