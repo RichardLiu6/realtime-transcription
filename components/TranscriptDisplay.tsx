@@ -27,6 +27,13 @@ const formatTime = (date: Date) => {
   return `${hours}:${minutes}:${seconds}`;
 };
 
+const SPEAKER_COLORS: Record<string, string> = {
+  "发言人 1": "bg-indigo-100 text-indigo-700",
+  "发言人 2": "bg-pink-100 text-pink-700",
+  "发言人 3": "bg-teal-100 text-teal-700",
+  "发言人 4": "bg-amber-100 text-amber-700",
+};
+
 interface RowData {
   entries: TranscriptEntry[];
   isRecording: boolean;
@@ -70,7 +77,16 @@ function RowComponent({
   return (
     <div style={style}>
       <div className="px-2 pt-1 pb-3 border-b border-gray-100">
-        <div className="text-xs text-gray-400 mb-1.5">
+        <div className="text-xs text-gray-400 mb-1.5 flex items-center gap-1.5">
+          {entry.speaker && (
+            <span
+              className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                SPEAKER_COLORS[entry.speaker] || "bg-gray-100 text-gray-600"
+              }`}
+            >
+              {entry.speaker}
+            </span>
+          )}
           {formatTime(entry.timestamp)}
         </div>
         <div className="space-y-1">

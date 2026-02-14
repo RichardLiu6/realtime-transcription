@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useMicVAD } from "@ricky0123/vad-react";
 
 import type { TranscriptEntry } from "@/types";
@@ -80,7 +80,43 @@ async function fetchWithRetry(
   return response;
 }
 
-export function useVADTranscription() {
+// Parse SSE events from a chunk of text. Returns parsed events and any
+// leftover incomplete data that should be prepended to the next chunk.
+interface SSEEvent {
+  event: string;
+  data: string;
+}
+
+function parseSSEChunk(
+  text: string,
+  buffer: string
+): { events: SSEEvent[]; remaining: string } {
+  const combined = buffer + text;
+  const events: SSEEvent[] = [];
+  // Split on double newline (event boundary)
+  const parts = combined.split("\n\n");
+  // The last part may be incomplete, so keep it as remaining
+  const remaining = parts.pop() || "";
+
+  for (const part of parts) {
+    if (!part.trim()) continue;
+    let eventName = "message";
+    let data = "";
+    for (const line of part.split("\n")) {
+      if (line.startsWith("event: ")) {
+        eventName = line.slice(7).trim();
+      } else if (line.startsWith("data: ")) {
+        data = line.slice(6);
+      }
+    }
+    if (data) {
+      events.push({ event: eventName, data });
+    }
+  }
+  return { events, remaining };
+}
+
+export function useVADTranscription(speakerRef?: React.RefObject<string>) {
   const [transcripts, setTranscripts] = useState<TranscriptEntry[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [processingCount, setProcessingCount] = useState(0);
@@ -133,24 +169,72 @@ export function useVADTranscription() {
           });
 
           if (!response.ok) {
+            // For non-SSE error responses, try to parse JSON error
             const errData = await response.json().catch(() => null);
             throw new Error(
               errData?.error || `Transcription failed: ${response.statusText}`
             );
           }
 
-          const data = await response.json();
-
-          if (data.text?.trim()) {
-            const entry: TranscriptEntry = {
-              id: crypto.randomUUID(),
-              text: data.text,
-              language: data.language || "unknown",
-              translations: data.translations || { zh: "", en: "", es: "" },
-              timestamp: new Date(),
-            };
-            setTranscripts((prev) => [...prev, entry]);
+          // --- Read SSE stream ---
+          const reader = response.body?.getReader();
+          if (!reader) {
+            throw new Error("No response body");
           }
+
+          const decoder = new TextDecoder();
+          let sseBuffer = "";
+          let entryId: string | null = null;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            const { events, remaining } = parseSSEChunk(chunk, sseBuffer);
+            sseBuffer = remaining;
+
+            for (const sseEvent of events) {
+              if (sseEvent.event === "transcription") {
+                const data = JSON.parse(sseEvent.data);
+                if (data.text?.trim()) {
+                  entryId = crypto.randomUUID();
+                  const detectedLang = data.language || "unknown";
+                  // Build initial translations: only the original language is filled
+                  const initialTranslations = { zh: "", en: "", es: "" };
+                  if (detectedLang in initialTranslations) {
+                    (initialTranslations as Record<string, string>)[detectedLang] = data.text;
+                  }
+                  const entry: TranscriptEntry = {
+                    id: entryId,
+                    text: data.text,
+                    language: detectedLang,
+                    translations: initialTranslations,
+                    timestamp: new Date(),
+                    speaker: speakerRef?.current || "",
+                  };
+                  setTranscripts((prev) => [...prev, entry]);
+                }
+              } else if (sseEvent.event === "translation") {
+                if (entryId) {
+                  const data = JSON.parse(sseEvent.data);
+                  const newTranslations = data.translations;
+                  const idToUpdate = entryId;
+                  setTranscripts((prev) =>
+                    prev.map((e) =>
+                      e.id === idToUpdate
+                        ? { ...e, translations: newTranslations }
+                        : e
+                    )
+                  );
+                }
+              } else if (sseEvent.event === "error") {
+                const data = JSON.parse(sseEvent.data);
+                throw new Error(data.error || "Transcription failed");
+              }
+            }
+          }
+
           setError(null);
         } catch (err) {
           // Ignore abort errors (user stopped recording)

@@ -10,4 +10,5 @@ export interface TranscriptEntry {
   language: string;
   translations: TranslationSet;
   timestamp: Date;
+  speaker?: string;
 }
