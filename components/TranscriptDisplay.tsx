@@ -9,15 +9,15 @@ import {
   CSSProperties,
 } from "react";
 import { List, useListRef } from "react-window";
-import { TranscriptEntry } from "@/types";
+import type { Paragraph } from "@/types";
 import { ALL_LANGS, LANG_LABELS, LANG_BADGES } from "@/types/languages";
 
 interface TranscriptDisplayProps {
-  entries: TranscriptEntry[];
+  entries: Paragraph[];
   isRecording: boolean;
 }
 
-const ESTIMATED_ROW_HEIGHT = 120;
+const ESTIMATED_ROW_HEIGHT = 140;
 const LISTENING_DOTS_HEIGHT = 32;
 
 const formatTime = (date: Date) => {
@@ -27,15 +27,19 @@ const formatTime = (date: Date) => {
   return `${hours}:${minutes}:${seconds}`;
 };
 
-const SPEAKER_COLORS: Record<string, string> = {
-  "发言人 1": "bg-indigo-100 text-indigo-700",
-  "发言人 2": "bg-pink-100 text-pink-700",
-  "发言人 3": "bg-teal-100 text-teal-700",
-  "发言人 4": "bg-amber-100 text-amber-700",
+const SPEAKER_COLORS: Record<number, string> = {
+  0: "bg-indigo-100 text-indigo-700",
+  1: "bg-pink-100 text-pink-700",
+  2: "bg-teal-100 text-teal-700",
+  3: "bg-amber-100 text-amber-700",
+  4: "bg-purple-100 text-purple-700",
+  5: "bg-cyan-100 text-cyan-700",
 };
 
+const SPEAKER_LABELS = ["A", "B", "C", "D", "E", "F"];
+
 interface RowData {
-  entries: TranscriptEntry[];
+  entries: Paragraph[];
   isRecording: boolean;
   totalRows: number;
 }
@@ -55,7 +59,7 @@ function RowComponent({
   index: number;
   style: CSSProperties;
 } & RowData) {
-  const isListeningRow = index === totalRows - 1 && isRecording;
+  const isListeningRow = index === totalRows - 1 && isRecording && index >= entries.length;
 
   if (isListeningRow) {
     return (
@@ -74,44 +78,63 @@ function RowComponent({
   const entry = entries[index];
   if (!entry) return null;
 
+  const displayText = entry.text + (entry.interimText ? (entry.text ? " " : "") + entry.interimText : "");
+  const hasTranslations = ALL_LANGS.some((l) => entry.translations[l]);
+  const speakerLabel = SPEAKER_LABELS[entry.speaker] || String(entry.speaker);
+  const speakerColor = SPEAKER_COLORS[entry.speaker] || "bg-gray-100 text-gray-600";
+
   return (
     <div style={style}>
-      <div className="px-2 pt-1 pb-3 border-b border-gray-100">
-        <div className="text-xs text-gray-400 mb-1.5 flex items-center gap-1.5">
-          {entry.speaker && (
-            <span
-              className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                SPEAKER_COLORS[entry.speaker] || "bg-gray-100 text-gray-600"
-              }`}
-            >
-              {entry.speaker}
-            </span>
+      <div className="px-2 pt-1.5 pb-3 border-b border-gray-100">
+        {/* Header: speaker + time */}
+        <div className="text-xs text-gray-400 mb-1 flex items-center gap-1.5">
+          <span
+            className={`px-1.5 py-0.5 rounded text-xs font-medium ${speakerColor}`}
+          >
+            Speaker {speakerLabel}
+          </span>
+          {formatTime(entry.startTime)}
+        </div>
+
+        {/* Original text — prominent */}
+        <p className="text-sm text-gray-900 leading-relaxed">
+          {displayText || (
+            <span className="text-gray-300 italic">...</span>
           )}
-          {formatTime(entry.timestamp)}
-        </div>
-        {/* Original text (may be mixed language) */}
-        <p className="text-sm text-gray-900 font-medium leading-relaxed">
-          {entry.text}
+          {entry.interimText && (
+            <span className="inline-block w-0.5 h-4 bg-gray-400 animate-pulse ml-0.5 align-text-bottom" />
+          )}
         </p>
-        {/* Three language translations */}
-        <div className="mt-1.5 space-y-0.5">
-          {ALL_LANGS.map((lang) => {
-            const content = entry.translations[lang];
-            if (!content) return null;
-            return (
-              <div key={lang} className="flex items-start gap-1.5">
-                <span
-                  className={`text-[10px] px-1 py-px rounded shrink-0 mt-0.5 ${LANG_BADGES[lang]} opacity-80`}
-                >
-                  {LANG_LABELS[lang]}
-                </span>
-                <p className="flex-1 leading-snug text-xs text-gray-500">
-                  {content}
-                </p>
-              </div>
-            );
-          })}
-        </div>
+
+        {/* Translations — compact */}
+        {hasTranslations && (
+          <div className="mt-1.5 space-y-0.5">
+            {ALL_LANGS.map((lang) => {
+              const content = entry.translations[lang];
+              if (!content) return null;
+              return (
+                <div key={lang} className="flex items-start gap-1.5">
+                  <span
+                    className={`text-[10px] px-1 py-px rounded shrink-0 mt-0.5 ${LANG_BADGES[lang]} opacity-80`}
+                  >
+                    {LANG_LABELS[lang]}
+                  </span>
+                  <p className="flex-1 leading-snug text-xs text-gray-500">
+                    {content}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Translating indicator */}
+        {entry.isTranslating && (
+          <div className="mt-1 text-xs text-gray-300 flex items-center gap-1">
+            <span className="w-1 h-1 bg-blue-300 rounded-full animate-pulse" />
+            翻译中...
+          </div>
+        )}
       </div>
     </div>
   );
@@ -126,18 +149,16 @@ export default function TranscriptDisplay({
   const isAtBottomRef = useRef(true);
   const prevEntryCountRef = useRef(0);
 
-  // Total rows: entries + optional listening dots row
-  const totalRows = entries.length + (isRecording ? 1 : 0);
+  const totalRows = entries.length + (isRecording && entries.length === 0 ? 1 : 0);
 
   const rowProps: RowData = useMemo(
     () => ({ entries, isRecording, totalRows }),
     [entries, isRecording, totalRows]
   );
 
-  // Variable row height: listening dots row is shorter
   const getRowHeight = useCallback(
     (index: number) => {
-      if (index === entries.length && isRecording) {
+      if (index >= entries.length && isRecording) {
         return LISTENING_DOTS_HEIGHT;
       }
       return ESTIMATED_ROW_HEIGHT;
@@ -145,7 +166,6 @@ export default function TranscriptDisplay({
     [entries.length, isRecording]
   );
 
-  // Track scroll position to detect if user is at bottom
   const handleScroll = useCallback(() => {
     const el = listRef.current?.element;
     if (!el) return;
@@ -156,7 +176,6 @@ export default function TranscriptDisplay({
     setIsAtBottom(atBottom);
   }, [listRef]);
 
-  // Attach native scroll listener to the list's outer element
   useEffect(() => {
     const el = listRef.current?.element;
     if (!el) return;
@@ -164,7 +183,7 @@ export default function TranscriptDisplay({
     return () => el.removeEventListener("scroll", handleScroll);
   }, [listRef, handleScroll, totalRows]);
 
-  // Auto-scroll to bottom when new entries arrive (only if user is at bottom)
+  // Auto-scroll to bottom
   useEffect(() => {
     if (totalRows === 0) return;
     const entryCountChanged = entries.length !== prevEntryCountRef.current;
@@ -182,7 +201,7 @@ export default function TranscriptDisplay({
             align: "end",
           });
         } catch {
-          // index may be out of range briefly during render
+          // index may be out of range briefly
         }
       });
     }
@@ -197,7 +216,7 @@ export default function TranscriptDisplay({
           behavior: "smooth",
         });
       } catch {
-        // ignore range errors
+        // ignore
       }
       isAtBottomRef.current = true;
       setIsAtBottom(true);
@@ -227,7 +246,9 @@ export default function TranscriptDisplay({
               <line x1="8" y1="23" x2="16" y2="23" />
             </svg>
             <p className="text-lg">等待语音输入...</p>
-            <p className="text-sm">说话自动转录 + 翻译为中/英/西三语</p>
+            <p className="text-sm">
+              Deepgram 实时转录 + 自动识别说话人 + 三语翻译
+            </p>
           </div>
         </div>
       ) : (
@@ -250,7 +271,7 @@ export default function TranscriptDisplay({
         </div>
       )}
 
-      {/* Jump to latest button - appears when user scrolls up */}
+      {/* Jump to latest */}
       {!isAtBottom && entries.length > 0 && (
         <button
           onClick={scrollToBottom}

@@ -4,15 +4,14 @@ import { openai } from "@/lib/openai";
 interface TranscriptEntry {
   text: string;
   language: string;
-  speaker?: string;
+  speaker?: string | number;
   timestamp?: string;
 }
 
-const SYSTEM_PROMPT = `你是会议记录助手。根据以下会议转录内容，生成一份简洁的会议摘要。包含：
-1. 主要讨论要点
-2. 做出的决定
-3. 行动项目（如有）
+const SYSTEM_PROMPT = `你是会议记录助手。根据以下会议转录内容，生成一份简明的会议摘要。
 
+根据会议内容自然组织，可以包含讨论要点、达成共识、行动项等，不要拘泥于固定格式。
+如果内容简短或非正式，直接总结核心内容即可。
 请用会议中使用最多的语言撰写摘要。`;
 
 export async function POST(req: NextRequest) {
