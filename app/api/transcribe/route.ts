@@ -1,6 +1,70 @@
 import { NextRequest, NextResponse } from "next/server";
 import { openai } from "@/lib/openai";
 
+// --------------- Rate Limiter (in-memory, sliding window) ---------------
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 30; // max requests per IP per window
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+const requestLog = new Map<string, number[]>();
+
+function getClientIP(req: NextRequest): string {
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) {
+    // x-forwarded-for may contain a comma-separated list; take the first IP
+    return forwarded.split(",")[0].trim();
+  }
+  const realIP = req.headers.get("x-real-ip");
+  if (realIP) {
+    return realIP.trim();
+  }
+  return "unknown";
+}
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const windowStart = now - RATE_LIMIT_WINDOW_MS;
+
+  // Get existing timestamps for this IP, or initialize empty array
+  let timestamps = requestLog.get(ip);
+
+  if (!timestamps) {
+    timestamps = [];
+    requestLog.set(ip, timestamps);
+  }
+
+  // Remove expired entries (outside the sliding window)
+  const validIndex = timestamps.findIndex((t) => t > windowStart);
+  if (validIndex === -1) {
+    // All entries expired – clear them
+    timestamps.length = 0;
+  } else if (validIndex > 0) {
+    timestamps.splice(0, validIndex);
+  }
+
+  // Check if limit exceeded
+  if (timestamps.length >= RATE_LIMIT_MAX_REQUESTS) {
+    return true;
+  }
+
+  // Record this request
+  timestamps.push(now);
+  return false;
+}
+
+// Periodically clean up stale IPs to prevent memory leaks (every 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  const windowStart = now - RATE_LIMIT_WINDOW_MS;
+  for (const [ip, timestamps] of requestLog) {
+    // Remove IPs whose last request is older than the window
+    if (timestamps.length === 0 || timestamps[timestamps.length - 1] <= windowStart) {
+      requestLog.delete(ip);
+    }
+  }
+}, 5 * 60_000);
+
+// --------------- Constants ---------------
 const ALL_LANGS = ["zh", "en", "es"] as const;
 const EXPECTED_LANGS = new Set(ALL_LANGS);
 
@@ -26,12 +90,29 @@ function normalizeLang(lang: string): string {
 
 export async function POST(req: NextRequest) {
   try {
+    // --- Rate limiting ---
+    const clientIP = getClientIP(req);
+    if (isRateLimited(clientIP)) {
+      return NextResponse.json(
+        { error: "Too many requests. Please wait." },
+        { status: 429 }
+      );
+    }
+
     const formData = await req.formData();
     const audio = formData.get("audio") as File;
 
     if (!audio) {
       return NextResponse.json(
         { error: "No audio file provided" },
+        { status: 400 }
+      );
+    }
+
+    // --- File size validation ---
+    if (audio.size > MAX_FILE_SIZE_BYTES) {
+      return NextResponse.json(
+        { error: "Audio file too large. Maximum size is 10MB." },
         { status: 400 }
       );
     }
