@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { openai } from "@/lib/openai";
+import { ALL_LANGS, LANG_NAMES } from "@/types/languages";
 
 // --------------- Rate Limiter (in-memory, sliding window) ---------------
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
@@ -65,14 +66,7 @@ setInterval(() => {
 }, 5 * 60_000);
 
 // --------------- Constants ---------------
-const ALL_LANGS = ["zh", "en", "es"] as const;
 const EXPECTED_LANGS = new Set(ALL_LANGS);
-
-const LANG_NAMES: Record<string, string> = {
-  zh: "Chinese",
-  en: "English",
-  es: "Spanish",
-};
 
 const EMPTY_RESPONSE = {
   text: "",

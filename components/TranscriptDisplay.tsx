@@ -2,19 +2,12 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { TranscriptEntry } from "@/types";
+import { ALL_LANGS, LANG_LABELS, LANG_BADGES } from "@/types/languages";
 
 interface TranscriptDisplayProps {
   entries: TranscriptEntry[];
   isRecording: boolean;
 }
-
-const LANG_CONFIG: Record<string, { label: string; badge: string }> = {
-  zh: { label: "中", badge: "bg-blue-100 text-blue-700" },
-  en: { label: "EN", badge: "bg-green-100 text-green-700" },
-  es: { label: "ES", badge: "bg-orange-100 text-orange-700" },
-};
-
-const LANG_ORDER = ["zh", "en", "es"] as const;
 
 export default function TranscriptDisplay({
   entries,
@@ -83,19 +76,18 @@ export default function TranscriptDisplay({
                   {formatTime(entry.timestamp)}
                 </div>
                 <div className="space-y-1">
-                  {LANG_ORDER.map((lang) => {
-                    const config = LANG_CONFIG[lang];
+                  {ALL_LANGS.map((lang) => {
                     const content = entry.translations[lang];
                     if (!content) return null;
                     const isOriginal = lang === entry.language;
                     return (
                       <div key={lang} className="flex items-start gap-2">
                         <span
-                          className={`text-xs px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${config.badge} ${
+                          className={`text-xs px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${LANG_BADGES[lang]} ${
                             isOriginal ? "font-semibold ring-1 ring-current/20" : "opacity-70"
                           }`}
                         >
-                          {config.label}
+                          {LANG_LABELS[lang]}
                         </span>
                         <p
                           className={`flex-1 leading-relaxed text-sm ${

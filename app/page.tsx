@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { useVADTranscription } from "@/hooks/useVADTranscription";
 import type { TranscriptEntry } from "@/types";
 import TranscriptDisplay from "@/components/TranscriptDisplay";
@@ -46,13 +46,20 @@ export default function Home() {
     stop,
   } = useVADTranscription();
 
+  // Debounced localStorage backup (500ms)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
   useEffect(() => {
-    if (transcripts.length > 0) {
+    if (transcripts.length === 0) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
       localStorage.setItem(
         "transcripts-backup",
         JSON.stringify(transcripts.map((t) => ({ ...t, timestamp: t.timestamp.toISOString() })))
       );
-    }
+    }, 500);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
   }, [transcripts]);
 
   const handleExport = useCallback(() => {

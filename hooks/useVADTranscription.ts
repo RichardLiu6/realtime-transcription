@@ -73,7 +73,7 @@ export function useVADTranscription() {
   const [error, setError] = useState<string | null>(null);
 
   const requestQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const sequenceRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const vad = useMicVAD({
     startOnLoad: false,
@@ -97,9 +97,10 @@ export function useVADTranscription() {
         return;
       }
 
-      sequenceRef.current++;
-
       requestQueueRef.current = requestQueueRef.current.then(async () => {
+        // Skip if recording was stopped (abort signal fired)
+        if (abortControllerRef.current?.signal.aborted) return;
+
         try {
           setIsProcessing(true);
 
@@ -111,6 +112,7 @@ export function useVADTranscription() {
           const response = await fetch("/api/transcribe", {
             method: "POST",
             body: formData,
+            signal: abortControllerRef.current?.signal,
           });
 
           if (!response.ok) {
@@ -134,6 +136,8 @@ export function useVADTranscription() {
           }
           setError(null);
         } catch (err) {
+          // Ignore abort errors (user stopped recording)
+          if (err instanceof DOMException && err.name === "AbortError") return;
           console.error("Transcription error:", err);
           setError(
             err instanceof Error ? err.message : "Transcription failed"
@@ -157,13 +161,17 @@ export function useVADTranscription() {
 
   const start = useCallback(async () => {
     setError(null);
+    abortControllerRef.current = new AbortController();
     await vad.start();
     setIsRecording(true);
   }, [vad]);
 
   const stop = useCallback(async () => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     await vad.pause();
     setIsRecording(false);
+    setIsProcessing(false);
   }, [vad]);
 
   const clearTranscripts = useCallback(() => {
