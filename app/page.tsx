@@ -84,6 +84,7 @@ export default function Home() {
             disabled={isLoading || errored}
             className="flex items-center gap-2 cursor-pointer"
             title={isRecording ? "点击暂停" : "点击开始"}
+            aria-label={isRecording ? "暂停录音" : "开始录音"}
           >
             <span
               className={`w-3 h-3 rounded-full transition-colors ${
@@ -128,6 +129,7 @@ export default function Home() {
             disabled={transcripts.length === 0}
             className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 disabled:opacity-30 cursor-pointer"
             title="导出转录记录"
+            aria-label="导出转录记录"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
               <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />

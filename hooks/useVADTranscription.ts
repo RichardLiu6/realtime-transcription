@@ -65,11 +65,25 @@ function calculateRMS(samples: Float32Array): number {
 const MIN_RMS_THRESHOLD = 0.01;
 const MIN_DURATION_MS = 500;
 const SAMPLE_RATE = 16000;
+const RETRY_DELAY_MS = 1000;
+
+// Retry fetch once on 5xx or network error
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit
+): Promise<Response> {
+  const response = await fetch(url, options);
+  if (response.status >= 500) {
+    await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+    return fetch(url, options);
+  }
+  return response;
+}
 
 export function useVADTranscription() {
   const [transcripts, setTranscripts] = useState<TranscriptEntry[]>([]);
   const [isRecording, setIsRecording] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingCount, setProcessingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const requestQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -97,19 +111,22 @@ export function useVADTranscription() {
         return;
       }
 
+      setProcessingCount((c) => c + 1);
+
       requestQueueRef.current = requestQueueRef.current.then(async () => {
         // Skip if recording was stopped (abort signal fired)
-        if (abortControllerRef.current?.signal.aborted) return;
+        if (abortControllerRef.current?.signal.aborted) {
+          setProcessingCount((c) => Math.max(0, c - 1));
+          return;
+        }
 
         try {
-          setIsProcessing(true);
-
           const wavBlob = floatArrayToWav(audio, SAMPLE_RATE);
 
           const formData = new FormData();
           formData.append("audio", wavBlob, "audio.wav");
 
-          const response = await fetch("/api/transcribe", {
+          const response = await fetchWithRetry("/api/transcribe", {
             method: "POST",
             body: formData,
             signal: abortControllerRef.current?.signal,
@@ -143,7 +160,7 @@ export function useVADTranscription() {
             err instanceof Error ? err.message : "Transcription failed"
           );
         } finally {
-          setIsProcessing(false);
+          setProcessingCount((c) => Math.max(0, c - 1));
         }
       });
     },
@@ -171,7 +188,7 @@ export function useVADTranscription() {
     abortControllerRef.current = null;
     await vad.pause();
     setIsRecording(false);
-    setIsProcessing(false);
+    setProcessingCount(0);
   }, [vad]);
 
   const clearTranscripts = useCallback(() => {
@@ -181,7 +198,7 @@ export function useVADTranscription() {
   return {
     transcripts,
     isRecording,
-    isProcessing,
+    isProcessing: processingCount > 0,
     isLoading: vad.loading,
     errored: !!vad.errored,
     error,
