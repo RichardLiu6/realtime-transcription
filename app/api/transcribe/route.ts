@@ -158,9 +158,8 @@ export async function POST(req: NextRequest) {
           )
         );
 
-        // --- Now run translation ---
+        // --- Run 2 translations in parallel (plain text, faster than JSON mode) ---
         const targetLangs = ALL_LANGS.filter((l) => l !== detectedLang);
-        const targetLangNames = targetLangs.map((l) => LANG_NAMES[l]);
 
         const translations: Record<string, string> = {
           zh: "",
@@ -169,36 +168,32 @@ export async function POST(req: NextRequest) {
         };
         translations[detectedLang] = text;
 
-        try {
-          const completion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-              {
-                role: "system",
-                content: `You are a translator. Translate the following text to ${targetLangNames[0]} and ${targetLangNames[1]}. Return ONLY a JSON object with keys "${targetLangNames[0]}" and "${targetLangNames[1]}" containing the translations.`,
-              },
-              { role: "user", content: text },
-            ],
-            temperature: 0.3,
-            max_tokens: 1000,
-            response_format: { type: "json_object" },
-          });
-
-          const rawJson =
-            completion.choices[0]?.message?.content?.trim() || "{}";
-
+        const translationPromises = targetLangs.map(async (targetLang) => {
           try {
-            const parsed = JSON.parse(rawJson);
-            for (let i = 0; i < targetLangs.length; i++) {
-              translations[targetLangs[i]] =
-                parsed[targetLangNames[i]] || "";
-            }
+            const completion = await openai.chat.completions.create({
+              model: "gpt-4o-mini",
+              messages: [
+                {
+                  role: "system",
+                  content: `You are a translator. Translate the following text to ${LANG_NAMES[targetLang]}. Output ONLY the translation, nothing else.`,
+                },
+                { role: "user", content: text },
+              ],
+              temperature: 0.3,
+              max_tokens: 1000,
+            });
+            return {
+              lang: targetLang,
+              text: completion.choices[0]?.message?.content?.trim() || "",
+            };
           } catch {
-            // JSON parsing failed – translations stay as empty strings
+            return { lang: targetLang, text: "" };
           }
-        } catch (translationError) {
-          console.error("Translation error:", translationError);
-          // translations stay with only the original language filled in
+        });
+
+        const results = await Promise.all(translationPromises);
+        for (const r of results) {
+          translations[r.lang] = r.text;
         }
 
         // --- Send translation event ---

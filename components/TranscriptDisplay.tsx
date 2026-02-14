@@ -17,7 +17,7 @@ interface TranscriptDisplayProps {
   isRecording: boolean;
 }
 
-const ESTIMATED_ROW_HEIGHT = 100;
+const ESTIMATED_ROW_HEIGHT = 120;
 const LISTENING_DOTS_HEIGHT = 32;
 
 const formatTime = (date: Date) => {
@@ -89,29 +89,23 @@ function RowComponent({
           )}
           {formatTime(entry.timestamp)}
         </div>
-        <div className="space-y-1">
+        {/* Original text (may be mixed language) */}
+        <p className="text-sm text-gray-900 font-medium leading-relaxed">
+          {entry.text}
+        </p>
+        {/* Three language translations */}
+        <div className="mt-1.5 space-y-0.5">
           {ALL_LANGS.map((lang) => {
             const content = entry.translations[lang];
             if (!content) return null;
-            const isOriginal = lang === entry.language;
             return (
-              <div key={lang} className="flex items-start gap-2">
+              <div key={lang} className="flex items-start gap-1.5">
                 <span
-                  className={`text-xs px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${LANG_BADGES[lang]} ${
-                    isOriginal
-                      ? "font-semibold ring-1 ring-current/20"
-                      : "opacity-70"
-                  }`}
+                  className={`text-[10px] px-1 py-px rounded shrink-0 mt-0.5 ${LANG_BADGES[lang]} opacity-80`}
                 >
                   {LANG_LABELS[lang]}
                 </span>
-                <p
-                  className={`flex-1 leading-relaxed text-sm ${
-                    isOriginal
-                      ? "text-gray-900 font-medium"
-                      : "text-gray-500"
-                  }`}
-                >
+                <p className="flex-1 leading-snug text-xs text-gray-500">
                   {content}
                 </p>
               </div>

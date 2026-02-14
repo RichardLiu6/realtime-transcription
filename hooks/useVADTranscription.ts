@@ -122,131 +122,113 @@ export function useVADTranscription(speakerRef?: React.RefObject<string>) {
   const [processingCount, setProcessingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const requestQueueRef = useRef<Promise<void>>(Promise.resolve());
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Fire-and-forget: process one audio segment (no queue blocking)
+  const processAudio = useCallback(
+    async (audio: Float32Array, speaker: string) => {
+      if (abortControllerRef.current?.signal.aborted) {
+        setProcessingCount((c) => Math.max(0, c - 1));
+        return;
+      }
+
+      try {
+        const wavBlob = floatArrayToWav(audio, SAMPLE_RATE);
+        const formData = new FormData();
+        formData.append("audio", wavBlob, "audio.wav");
+
+        const response = await fetchWithRetry("/api/transcribe", {
+          method: "POST",
+          body: formData,
+          signal: abortControllerRef.current?.signal,
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => null);
+          throw new Error(
+            errData?.error || `Transcription failed: ${response.statusText}`
+          );
+        }
+
+        // --- Read SSE stream ---
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("No response body");
+
+        const decoder = new TextDecoder();
+        let sseBuffer = "";
+        let entryId: string | null = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const { events, remaining } = parseSSEChunk(chunk, sseBuffer);
+          sseBuffer = remaining;
+
+          for (const sseEvent of events) {
+            if (sseEvent.event === "transcription") {
+              const data = JSON.parse(sseEvent.data);
+              if (data.text?.trim()) {
+                entryId = crypto.randomUUID();
+                const entry: TranscriptEntry = {
+                  id: entryId,
+                  text: data.text,
+                  language: data.language || "unknown",
+                  translations: { zh: "", en: "", es: "" },
+                  timestamp: new Date(),
+                  speaker,
+                };
+                setTranscripts((prev) => [...prev, entry]);
+              }
+            } else if (sseEvent.event === "translation" && entryId) {
+              const data = JSON.parse(sseEvent.data);
+              const idToUpdate = entryId;
+              setTranscripts((prev) =>
+                prev.map((e) =>
+                  e.id === idToUpdate
+                    ? { ...e, translations: data.translations }
+                    : e
+                )
+              );
+            } else if (sseEvent.event === "error") {
+              const data = JSON.parse(sseEvent.data);
+              throw new Error(data.error || "Transcription failed");
+            }
+          }
+        }
+
+        setError(null);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        console.error("Transcription error:", err);
+        setError(err instanceof Error ? err.message : "Transcription failed");
+      } finally {
+        setProcessingCount((c) => Math.max(0, c - 1));
+      }
+    },
+    []
+  );
 
   const vad = useMicVAD({
     startOnLoad: false,
     baseAssetPath: "/",
     onnxWASMBasePath: "/",
-    // Tuned to reduce false positives during silence
     positiveSpeechThreshold: 0.7,
     negativeSpeechThreshold: 0.45,
     redemptionMs: 500,
     minSpeechMs: 250,
     onSpeechEnd: (audio: Float32Array) => {
-      // Client-side filter 1: RMS energy check
       const rms = calculateRMS(audio);
-      if (rms < MIN_RMS_THRESHOLD) {
-        return;
-      }
+      if (rms < MIN_RMS_THRESHOLD) return;
 
-      // Client-side filter 2: minimum duration
       const durationMs = (audio.length / SAMPLE_RATE) * 1000;
-      if (durationMs < MIN_DURATION_MS) {
-        return;
-      }
+      if (durationMs < MIN_DURATION_MS) return;
 
+      // Fire immediately — no queue, parallel processing
       setProcessingCount((c) => c + 1);
-
-      requestQueueRef.current = requestQueueRef.current.then(async () => {
-        // Skip if recording was stopped (abort signal fired)
-        if (abortControllerRef.current?.signal.aborted) {
-          setProcessingCount((c) => Math.max(0, c - 1));
-          return;
-        }
-
-        try {
-          const wavBlob = floatArrayToWav(audio, SAMPLE_RATE);
-
-          const formData = new FormData();
-          formData.append("audio", wavBlob, "audio.wav");
-
-          const response = await fetchWithRetry("/api/transcribe", {
-            method: "POST",
-            body: formData,
-            signal: abortControllerRef.current?.signal,
-          });
-
-          if (!response.ok) {
-            // For non-SSE error responses, try to parse JSON error
-            const errData = await response.json().catch(() => null);
-            throw new Error(
-              errData?.error || `Transcription failed: ${response.statusText}`
-            );
-          }
-
-          // --- Read SSE stream ---
-          const reader = response.body?.getReader();
-          if (!reader) {
-            throw new Error("No response body");
-          }
-
-          const decoder = new TextDecoder();
-          let sseBuffer = "";
-          let entryId: string | null = null;
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value, { stream: true });
-            const { events, remaining } = parseSSEChunk(chunk, sseBuffer);
-            sseBuffer = remaining;
-
-            for (const sseEvent of events) {
-              if (sseEvent.event === "transcription") {
-                const data = JSON.parse(sseEvent.data);
-                if (data.text?.trim()) {
-                  entryId = crypto.randomUUID();
-                  const detectedLang = data.language || "unknown";
-                  // Build initial translations: only the original language is filled
-                  const initialTranslations = { zh: "", en: "", es: "" };
-                  if (detectedLang in initialTranslations) {
-                    (initialTranslations as Record<string, string>)[detectedLang] = data.text;
-                  }
-                  const entry: TranscriptEntry = {
-                    id: entryId,
-                    text: data.text,
-                    language: detectedLang,
-                    translations: initialTranslations,
-                    timestamp: new Date(),
-                    speaker: speakerRef?.current || "",
-                  };
-                  setTranscripts((prev) => [...prev, entry]);
-                }
-              } else if (sseEvent.event === "translation") {
-                if (entryId) {
-                  const data = JSON.parse(sseEvent.data);
-                  const newTranslations = data.translations;
-                  const idToUpdate = entryId;
-                  setTranscripts((prev) =>
-                    prev.map((e) =>
-                      e.id === idToUpdate
-                        ? { ...e, translations: newTranslations }
-                        : e
-                    )
-                  );
-                }
-              } else if (sseEvent.event === "error") {
-                const data = JSON.parse(sseEvent.data);
-                throw new Error(data.error || "Transcription failed");
-              }
-            }
-          }
-
-          setError(null);
-        } catch (err) {
-          // Ignore abort errors (user stopped recording)
-          if (err instanceof DOMException && err.name === "AbortError") return;
-          console.error("Transcription error:", err);
-          setError(
-            err instanceof Error ? err.message : "Transcription failed"
-          );
-        } finally {
-          setProcessingCount((c) => Math.max(0, c - 1));
-        }
-      });
+      const speaker = speakerRef?.current || "";
+      processAudio(audio, speaker);
     },
   });
 
