@@ -99,12 +99,14 @@ onnxWASMBasePath: "/"          // 同上
 - **API Key**: 启动时校验 OPENAI_API_KEY 存在
 - **AbortController**: 停止录音时取消所有待处理请求
 
-### 请求队列 + 流式处理
+### 并行处理 + 流式显示
 
-- Promise chain 队列保证顺序: `requestQueueRef.current = requestQueueRef.current.then(...)`
+- **并行火即忘**: 每段语音独立 `processAudio()`, 无串行队列, 大幅降低延迟
+- **2路并行翻译**: 服务端对非源语言各起一个 GPT-4o-mini plain text 翻译 (比 JSON 模式更快)
 - SSE 流读取: `response.body.getReader()` 逐块解析 `event:` 和 `data:` 字段
 - 处理计数器 (非布尔值) 避免 isProcessing 闪烁
 - 5xx 自动重试 1 次 (1秒延迟)
+- **显示策略**: 原文优先展示 (可能混合语言), 三语翻译以小号文字附在下方
 
 ---
 
