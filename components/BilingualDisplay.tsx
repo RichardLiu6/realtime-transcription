@@ -161,6 +161,10 @@ export default function BilingualDisplay({
 
               {/* Column B */}
               <div className="px-4">
+                <div className="mb-0.5 flex items-center gap-1.5">
+                  <span className={`speaker-dot ${dotColor}`} />
+                  <span className="text-xs text-gray-400">{speakerName}</span>
+                </div>
                 {textB && (
                   <p className={textBIsOriginal ? "text-sm text-gray-900" : "text-sm text-gray-400"}>
                     {textB}

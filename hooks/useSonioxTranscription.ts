@@ -52,6 +52,37 @@ function isControlToken(text: string): boolean {
   return /^<[^>]+>$/.test(text.trim());
 }
 
+// CJK character detection for language fallback
+// Used when Soniox doesn't provide the language field on tokens
+function detectLanguageFromText(
+  text: string,
+  languageA: string,
+  languageB: string
+): string {
+  if (!text.trim()) return "";
+  // Count CJK characters (Chinese/Japanese/Korean)
+  const cjkPattern = /[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g;
+  const cjkMatches = text.match(cjkPattern);
+  const cjkRatio = (cjkMatches?.length || 0) / text.replace(/\s/g, "").length;
+
+  // Determine which configured language is CJK-based
+  const cjkLangs = ["zh", "ja", "ko"];
+  const langAIsCJK = cjkLangs.includes(languageA);
+  const langBIsCJK = cjkLangs.includes(languageB);
+
+  if (cjkRatio > 0.2) {
+    // Text is predominantly CJK
+    if (langAIsCJK) return languageA;
+    if (langBIsCJK) return languageB;
+    return languageA; // fallback
+  } else {
+    // Text is predominantly non-CJK (Latin, etc.)
+    if (!langAIsCJK) return languageA;
+    if (!langBIsCJK) return languageB;
+    return languageB; // fallback
+  }
+}
+
 type RecordingState = "idle" | "connecting" | "recording";
 
 export function useSonioxTranscription() {
@@ -119,6 +150,15 @@ export function useSonioxTranscription() {
     if (!originalText) {
       currentSegmentRef.current = null;
       return;
+    }
+
+    // Detect language via CJK fallback if not set by Soniox
+    if (!seg.language && configRef.current) {
+      seg.language = detectLanguageFromText(
+        originalText,
+        configRef.current.languageA,
+        configRef.current.languageB
+      );
     }
 
     // Get any accumulated translation
@@ -265,9 +305,21 @@ export function useSonioxTranscription() {
 
         const seg = currentSegmentRef.current;
 
-        // Update language if detected
+        // Update language if detected from Soniox or via CJK fallback
         if (batchLanguage && !seg.language) {
           seg.language = batchLanguage;
+        }
+        if (!seg.language && configRef.current) {
+          const accumulatedText = [...seg.tokens, ...finalOrigTokens]
+            .map((t) => t.text)
+            .join("");
+          if (accumulatedText.length >= 3) {
+            seg.language = detectLanguageFromText(
+              accumulatedText,
+              configRef.current.languageA,
+              configRef.current.languageB
+            );
+          }
         }
 
         // Append final original tokens
