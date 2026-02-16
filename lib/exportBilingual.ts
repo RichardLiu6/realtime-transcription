@@ -16,16 +16,10 @@ export function buildBilingualText(entries: BilingualEntry[]): string {
       const time = `(${formatTime(e.startMs)})`;
       const header = [speaker, time].filter(Boolean).join(" ");
 
-      const zhLine =
-        e.language === "zh"
-          ? `中: ${e.originalText}`
-          : `中: ${e.translatedText}`;
-      const enLine =
-        e.language === "en"
-          ? `EN: ${e.originalText}`
-          : `EN: ${e.translatedText}`;
+      const originalLine = `[${e.language}] ${e.originalText}`;
+      const translatedLine = e.translatedText ? `[translated] ${e.translatedText}` : "";
 
-      return `${header}\n${zhLine}\n${enLine}\n---`;
+      return [header, originalLine, translatedLine, "---"].filter(Boolean).join("\n");
     })
     .join("\n\n");
 }

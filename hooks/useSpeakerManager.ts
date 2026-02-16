@@ -15,11 +15,11 @@ const SPEAKER_COLORS = [
 ];
 
 export function useSpeakerManager() {
-  const [speakers, setSpeakers] = useState<Map<number, SpeakerInfo>>(
+  const [speakers, setSpeakers] = useState<Map<string, SpeakerInfo>>(
     new Map()
   );
 
-  const registerSpeaker = useCallback((speakerId: number) => {
+  const registerSpeaker = useCallback((speakerId: string) => {
     setSpeakers((prev) => {
       if (prev.has(speakerId)) return prev;
       const next = new Map(prev);
@@ -34,7 +34,7 @@ export function useSpeakerManager() {
     });
   }, []);
 
-  const renameSpeaker = useCallback((speakerId: number, newLabel: string) => {
+  const renameSpeaker = useCallback((speakerId: string, newLabel: string) => {
     setSpeakers((prev) => {
       const info = prev.get(speakerId);
       if (!info) return prev;
@@ -45,33 +45,21 @@ export function useSpeakerManager() {
   }, []);
 
   const getSpeakerLabel = useCallback(
-    (speakerId: number): string => {
+    (speakerId: string): string => {
       return speakers.get(speakerId)?.label ?? `Speaker ${speakerId}`;
     },
     [speakers]
   );
 
   const getSpeakerColor = useCallback(
-    (speakerId: number): string => {
+    (speakerId: string): string => {
+      const index = Array.from(speakers.keys()).indexOf(speakerId);
       return (
         speakers.get(speakerId)?.color ??
-        SPEAKER_COLORS[speakerId % SPEAKER_COLORS.length]
+        SPEAKER_COLORS[Math.max(0, index) % SPEAKER_COLORS.length]
       );
     },
     [speakers]
-  );
-
-  const updateWordCount = useCallback(
-    (speakerId: number, count: number) => {
-      setSpeakers((prev) => {
-        const info = prev.get(speakerId);
-        if (!info) return prev;
-        const next = new Map(prev);
-        next.set(speakerId, { ...info, wordCount: info.wordCount + count });
-        return next;
-      });
-    },
-    []
   );
 
   const clearSpeakers = useCallback(() => {
@@ -84,7 +72,6 @@ export function useSpeakerManager() {
     renameSpeaker,
     getSpeakerLabel,
     getSpeakerColor,
-    updateWordCount,
     clearSpeakers,
   };
 }

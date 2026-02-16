@@ -16,6 +16,7 @@ export default function Home() {
     recordingState,
     error,
     elapsedSeconds,
+    config,
     start,
     stop,
     clearEntries,
@@ -57,7 +58,7 @@ export default function Home() {
   }, [entries]);
 
   const handleRenameSpeaker = useCallback(
-    (speakerId: number, newLabel: string) => {
+    (speakerId: string, newLabel: string) => {
       renameSpeaker(speakerId, newLabel);
     },
     [renameSpeaker]
@@ -137,6 +138,7 @@ export default function Home() {
               entries={entries}
               speakers={speakers}
               isRecording={isRecording}
+              config={config}
             />
           </div>
 

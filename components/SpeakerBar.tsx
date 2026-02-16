@@ -4,15 +4,15 @@ import { useState, useRef, useEffect } from "react";
 import type { SpeakerInfo } from "@/types/bilingual";
 
 interface SpeakerBarProps {
-  speakers: Map<number, SpeakerInfo>;
-  onRenameSpeaker: (speakerId: number, newLabel: string) => void;
+  speakers: Map<string, SpeakerInfo>;
+  onRenameSpeaker: (speakerId: string, newLabel: string) => void;
 }
 
 export default function SpeakerBar({
   speakers,
   onRenameSpeaker,
 }: SpeakerBarProps) {
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -46,7 +46,6 @@ export default function SpeakerBar({
 
   return (
     <div className="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-2">
-      {/* Speaker chips */}
       <div className="flex flex-wrap gap-3">
         {speakerList.map((speaker) => (
           <div key={speaker.id} className="flex items-center gap-1.5">
@@ -78,9 +77,8 @@ export default function SpeakerBar({
         ))}
       </div>
 
-      {/* Summary */}
       <div className="flex-shrink-0 text-xs text-gray-400">
-        {speakerList.length} speakers &middot; {totalWords} words
+        {speakerList.length} speakers{totalWords > 0 && <> &middot; {totalWords} words</>}
       </div>
     </div>
   );

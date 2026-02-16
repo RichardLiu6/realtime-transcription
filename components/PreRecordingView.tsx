@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { SonioxConfig } from "@/types/bilingual";
+import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import { INDUSTRY_PRESETS } from "@/lib/contextTerms";
 
 interface PreRecordingViewProps {
@@ -13,7 +14,8 @@ export default function PreRecordingView({
   onStart,
   isConnecting,
 }: PreRecordingViewProps) {
-  const [language, setLanguage] = useState<"zh" | "en">("zh");
+  const [languageA, setLanguageA] = useState("zh");
+  const [languageB, setLanguageB] = useState("en");
   const [termsText, setTermsText] = useState("");
 
   const handleStart = () => {
@@ -21,7 +23,7 @@ export default function PreRecordingView({
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
-    onStart({ language, contextTerms: terms });
+    onStart({ languageA, languageB, contextTerms: terms });
   };
 
   const appendPresetTerms = (key: string) => {
@@ -31,6 +33,9 @@ export default function PreRecordingView({
     const joined = preset.terms.join(", ");
     setTermsText(current ? `${current}, ${joined}` : joined);
   };
+
+  const getLangName = (code: string) =>
+    SONIOX_LANGUAGES.find((l) => l.code === code)?.name || code;
 
   return (
     <div className="flex flex-1 items-center justify-center p-6">
@@ -60,37 +65,47 @@ export default function PreRecordingView({
           </p>
         </div>
 
-        {/* Language selector */}
-        <div className="flex justify-center gap-3">
-          <button
-            type="button"
-            onClick={() => setLanguage("zh")}
-            className={`rounded-lg px-5 py-2 text-sm font-medium transition ${
-              language === "zh"
-                ? "bg-blue-600 text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            }`}
-          >
-            中文
-          </button>
-          <button
-            type="button"
-            onClick={() => setLanguage("en")}
-            className={`rounded-lg px-5 py-2 text-sm font-medium transition ${
-              language === "en"
-                ? "bg-blue-600 text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            }`}
-          >
-            English
-          </button>
+        {/* Language pair selectors */}
+        <div className="space-y-3">
+          <p className="text-sm font-medium text-gray-700">语言对 Language Pair</p>
+          <div className="flex items-center justify-center gap-3">
+            <select
+              value={languageA}
+              onChange={(e) => setLanguageA(e.target.value)}
+              className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+            >
+              {SONIOX_LANGUAGES.map((lang) => (
+                <option key={lang.code} value={lang.code} disabled={lang.code === languageB}>
+                  {lang.name}
+                </option>
+              ))}
+            </select>
+
+            <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+            </svg>
+
+            <select
+              value={languageB}
+              onChange={(e) => setLanguageB(e.target.value)}
+              className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+            >
+              {SONIOX_LANGUAGES.map((lang) => (
+                <option key={lang.code} value={lang.code} disabled={lang.code === languageA}>
+                  {lang.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="text-xs text-gray-400">
+            {getLangName(languageA)} ↔ {getLangName(languageB)} 双向翻译
+          </p>
         </div>
 
         {/* Context Terms */}
         <div className="space-y-3 text-left">
           <p className="text-sm font-medium text-gray-700">专业术语 Context Terms</p>
 
-          {/* Industry presets */}
           <div className="flex flex-wrap gap-2">
             {Object.entries(INDUSTRY_PRESETS).map(([key, preset]) => (
               <button
@@ -104,7 +119,6 @@ export default function PreRecordingView({
             ))}
           </div>
 
-          {/* Textarea */}
           <textarea
             value={termsText}
             onChange={(e) => setTermsText(e.target.value)}
@@ -126,41 +140,16 @@ export default function PreRecordingView({
         >
           {isConnecting ? (
             <>
-              <svg
-                className="h-5 w-5 animate-spin"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                />
+              <svg className="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
               连接中...
             </>
           ) : (
             <>
-              <svg
-                className="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"
-                />
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
               </svg>
               Start Recording
             </>

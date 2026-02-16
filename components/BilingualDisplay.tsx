@@ -1,21 +1,33 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import type { BilingualEntry, SpeakerInfo } from "@/types/bilingual";
+import type { BilingualEntry, SpeakerInfo, SonioxConfig } from "@/types/bilingual";
+import { SONIOX_LANGUAGES } from "@/types/bilingual";
 
 interface BilingualDisplayProps {
   entries: BilingualEntry[];
-  speakers: Map<number, SpeakerInfo>;
+  speakers: Map<string, SpeakerInfo>;
   isRecording: boolean;
+  config: SonioxConfig | null;
+}
+
+function getLangLabel(code: string): string {
+  return SONIOX_LANGUAGES.find((l) => l.code === code)?.name || code.toUpperCase();
 }
 
 export default function BilingualDisplay({
   entries,
   speakers,
   isRecording,
+  config,
 }: BilingualDisplayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
+
+  const langA = config?.languageA || "zh";
+  const langB = config?.languageB || "en";
+  const labelA = getLangLabel(langA);
+  const labelB = getLangLabel(langB);
 
   const scrollToBottom = useCallback(() => {
     const el = containerRef.current;
@@ -24,7 +36,6 @@ export default function BilingualDisplay({
     }
   }, []);
 
-  // Track scroll position
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -40,7 +51,6 @@ export default function BilingualDisplay({
     return () => el.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Auto-scroll when new entries arrive and user is at bottom
   useEffect(() => {
     if (isAtBottom) {
       scrollToBottom();
@@ -63,7 +73,7 @@ export default function BilingualDisplay({
     );
   }
 
-  // Empty state: not recording, no entries
+  // Empty state: not recording
   if (entries.length === 0 && !isRecording) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -89,109 +99,83 @@ export default function BilingualDisplay({
 
   return (
     <div className="relative flex flex-1 flex-col overflow-hidden">
-      {/* Landscape hint for portrait */}
-      <p className="block bg-blue-50 px-3 py-1 text-center text-xs text-blue-500 landscape:hidden">
+      {/* Portrait hint */}
+      <div className="portrait-hint">
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5h3m-6.75 2.25h10.5a2.25 2.25 0 002.25-2.25v-15a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 4.5v15a2.25 2.25 0 002.25 2.25z" />
+        </svg>
         推荐横屏使用
-      </p>
+      </div>
 
       <div
         ref={containerRef}
-        className="transcript-scroll flex-1 overflow-y-auto px-4 py-3"
+        className="transcript-scroll flex-1 overflow-y-auto"
       >
-        <div className="grid grid-cols-1 gap-3 landscape:grid-cols-2 md:grid-cols-2">
-          {/* Column headers */}
-          <div className="hidden text-xs font-medium uppercase tracking-wide text-gray-400 landscape:block md:block">
-            中文
+        {/* Column headers */}
+        <div className="bilingual-grid sticky top-0 z-10 bg-gray-50 border-b-2 border-gray-200">
+          <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            {labelA}
           </div>
-          <div className="hidden text-xs font-medium uppercase tracking-wide text-gray-400 landscape:block md:block">
-            English
+          <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            {labelB}
           </div>
-
-          {entries.map((entry) => {
-            const speaker = speakers.get(entry.speaker);
-            const dotColor = speaker?.color || "bg-gray-400";
-
-            // Determine Chinese and English texts
-            const isZh = entry.language === "zh";
-            const zhText = isZh ? entry.originalText : entry.translatedText;
-            const enText = isZh ? entry.translatedText : entry.originalText;
-            const zhIsOriginal = isZh;
-            const enIsOriginal = !isZh;
-
-            // Interim text
-            const interimZh = isZh
-              ? entry.interimOriginal
-              : entry.interimTranslated;
-            const interimEn = isZh
-              ? entry.interimTranslated
-              : entry.interimOriginal;
-
-            return (
-              <div
-                key={entry.id}
-                className="col-span-1 grid grid-cols-1 gap-x-4 gap-y-1 border-b border-gray-100 py-2 landscape:col-span-2 landscape:grid-cols-2 md:col-span-2 md:grid-cols-2"
-              >
-                {/* Chinese column */}
-                <div>
-                  <div className="mb-0.5 flex items-center gap-1.5">
-                    <span
-                      className={`inline-block h-2 w-2 rounded-full ${dotColor}`}
-                    />
-                    <span className="text-xs text-gray-400">
-                      {speaker?.label || `Speaker ${entry.speaker}`}
-                    </span>
-                  </div>
-                  {zhText && (
-                    <p
-                      className={
-                        zhIsOriginal
-                          ? "text-sm text-gray-900"
-                          : "text-sm text-gray-400"
-                      }
-                    >
-                      {zhText}
-                    </p>
-                  )}
-                  {!entry.isFinal && interimZh && (
-                    <p className="text-sm text-gray-400">
-                      {interimZh}
-                      <span className="blink-cursor ml-0.5 inline-block h-4 w-0.5 bg-gray-400 align-text-bottom" />
-                    </p>
-                  )}
-                </div>
-
-                {/* English column */}
-                <div>
-                  <div className="mb-0.5 flex items-center gap-1.5 landscape:hidden md:hidden">
-                    <span
-                      className={`inline-block h-2 w-2 rounded-full ${dotColor}`}
-                    />
-                    <span className="text-xs text-gray-400">
-                      {speaker?.label || `Speaker ${entry.speaker}`}
-                    </span>
-                  </div>
-                  {enText && (
-                    <p
-                      className={
-                        enIsOriginal
-                          ? "text-sm text-gray-900"
-                          : "text-sm text-gray-400"
-                      }
-                    >
-                      {enText}
-                    </p>
-                  )}
-                  {!entry.isFinal && interimEn && (
-                    <p className="text-sm text-gray-400">
-                      {interimEn}
-                      <span className="blink-cursor ml-0.5 inline-block h-4 w-0.5 bg-gray-400 align-text-bottom" />
-                    </p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
         </div>
+
+        {/* Entries */}
+        {entries.map((entry) => {
+          const speaker = speakers.get(entry.speaker);
+          const dotColor = speaker?.color || "bg-gray-400";
+          const speakerName = speaker?.label || `Speaker ${entry.speaker}`;
+
+          // Determine which text goes in which column
+          // Column A shows languageA text, Column B shows languageB text
+          const isLangA = entry.language === langA;
+          const textA = isLangA ? entry.originalText : entry.translatedText;
+          const textB = isLangA ? entry.translatedText : entry.originalText;
+          const textAIsOriginal = isLangA;
+          const textBIsOriginal = !isLangA;
+
+          const interimA = isLangA ? entry.interimOriginal : entry.interimTranslated;
+          const interimB = isLangA ? entry.interimTranslated : entry.interimOriginal;
+
+          return (
+            <div key={entry.id} className="bilingual-grid bilingual-entry">
+              {/* Column A */}
+              <div className="px-4">
+                <div className="mb-0.5 flex items-center gap-1.5">
+                  <span className={`speaker-dot ${dotColor}`} />
+                  <span className="text-xs text-gray-400">{speakerName}</span>
+                </div>
+                {textA && (
+                  <p className={textAIsOriginal ? "text-sm text-gray-900" : "text-sm text-gray-400"}>
+                    {textA}
+                  </p>
+                )}
+                {!entry.isFinal && interimA && (
+                  <p className="text-sm text-gray-400">
+                    {interimA}
+                    <span className="blink-cursor ml-0.5 inline-block h-4 w-0.5 bg-gray-400 align-text-bottom" />
+                  </p>
+                )}
+              </div>
+
+              {/* Column B */}
+              <div className="px-4">
+                {textB && (
+                  <p className={textBIsOriginal ? "text-sm text-gray-900" : "text-sm text-gray-400"}>
+                    {textB}
+                  </p>
+                )}
+                {!entry.isFinal && interimB && (
+                  <p className="text-sm text-gray-400">
+                    {interimB}
+                    <span className="blink-cursor ml-0.5 inline-block h-4 w-0.5 bg-gray-400 align-text-bottom" />
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Scroll-to-bottom button */}
