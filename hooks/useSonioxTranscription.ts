@@ -47,6 +47,11 @@ function float32ToInt16Buffer(samples: Float32Array): ArrayBuffer {
   return buffer;
 }
 
+// Filter out Soniox control tokens like <end>, <endpoint>, etc.
+function isControlToken(text: string): boolean {
+  return /^<[^>]+>$/.test(text.trim());
+}
+
 type RecordingState = "idle" | "connecting" | "recording";
 
 export function useSonioxTranscription() {
@@ -64,81 +69,28 @@ export function useSonioxTranscription() {
   const entryCounterRef = useRef(0);
   const configRef = useRef<SonioxConfig | null>(null);
 
-  // Token assembly: accumulate tokens per speaker segment
-  // Each segment groups tokens by speaker, separating original vs translation
+  // Current segment: accumulates original tokens until finalized
   const currentSegmentRef = useRef<{
     speaker: string;
-    originalTokens: SonioxToken[]; // translation_status === "original" or "none"
-    translationTokens: SonioxToken[]; // translation_status === "translation"
-    interimOriginalTokens: SonioxToken[];
-    interimTranslationTokens: SonioxToken[];
-    entryId: string | null;
-    language: string; // detected language of original
-  }>({
-    speaker: "",
-    originalTokens: [],
-    translationTokens: [],
-    interimOriginalTokens: [],
-    interimTranslationTokens: [],
-    entryId: null,
-    language: "",
-  });
+    tokens: SonioxToken[];      // Final original tokens
+    interimTokens: SonioxToken[]; // Non-final original tokens
+    language: string;
+    entryId: string;
+    startMs: number;
+    endMs: number;
+  } | null>(null);
 
-  const resetSegment = () => {
-    currentSegmentRef.current = {
-      speaker: "",
-      originalTokens: [],
-      translationTokens: [],
-      interimOriginalTokens: [],
-      interimTranslationTokens: [],
-      entryId: null,
-      language: "",
-    };
-  };
+  // ID of the last finalized entry (to attach translations to)
+  const lastFinalizedEntryIdRef = useRef<string | null>(null);
 
-  // Build a BilingualEntry from current segment state
-  const buildEntry = useCallback(
-    (isFinal: boolean): BilingualEntry | null => {
-      const seg = currentSegmentRef.current;
-      if (!seg.speaker && seg.originalTokens.length === 0 && seg.interimOriginalTokens.length === 0) {
-        return null;
-      }
+  // Accumulated translation text for the current/last entry
+  const translationBufferRef = useRef<{
+    entryId: string;
+    finalText: string;
+    interimText: string;
+  } | null>(null);
 
-      const originalText = seg.originalTokens.map((t) => t.text).join("").trim();
-      const translatedText = seg.translationTokens.map((t) => t.text).join("").trim();
-      const interimOriginal = seg.interimOriginalTokens.map((t) => t.text).join("");
-      const interimTranslated = seg.interimTranslationTokens.map((t) => t.text).join("");
-
-      // Detect language from original tokens
-      const lang = seg.language || seg.originalTokens[0]?.language || seg.interimOriginalTokens[0]?.language || "";
-
-      const allTokens = [...seg.originalTokens, ...seg.interimOriginalTokens];
-      const startMs = allTokens[0]?.start_ms ?? 0;
-      const endMs = allTokens[allTokens.length - 1]?.end_ms ?? 0;
-
-      const id = seg.entryId ?? `entry-${entryCounterRef.current++}`;
-
-      if (!originalText && !interimOriginal) return null;
-
-      return {
-        id,
-        speaker: seg.speaker || "0",
-        speakerLabel: `Speaker ${seg.speaker || "1"}`,
-        language: lang,
-        originalText,
-        translatedText,
-        interimOriginal: isFinal ? undefined : interimOriginal || undefined,
-        interimTranslated: isFinal ? undefined : interimTranslated || undefined,
-        isFinal,
-        startMs,
-        endMs,
-        timestamp: new Date(),
-      };
-    },
-    []
-  );
-
-  // Upsert entry into the entries list
+  // Upsert entry
   const upsertEntry = useCallback((entry: BilingualEntry) => {
     setEntries((prev) => {
       const idx = prev.findIndex((e) => e.id === entry.id);
@@ -151,14 +103,47 @@ export function useSonioxTranscription() {
     });
   }, []);
 
-  // Finalize current segment
-  const finalizeCurrentSegment = useCallback(() => {
-    const entry = buildEntry(true);
-    if (entry) {
-      upsertEntry(entry);
+  // Finalize current segment into an entry
+  const finalizeSegment = useCallback(() => {
+    const seg = currentSegmentRef.current;
+    if (!seg || seg.tokens.length === 0) {
+      currentSegmentRef.current = null;
+      return;
     }
-    resetSegment();
-  }, [buildEntry, upsertEntry]);
+
+    const originalText = seg.tokens
+      .map((t) => t.text)
+      .join("")
+      .trim();
+
+    if (!originalText) {
+      currentSegmentRef.current = null;
+      return;
+    }
+
+    // Get any accumulated translation
+    const transText =
+      translationBufferRef.current?.entryId === seg.entryId
+        ? translationBufferRef.current.finalText
+        : "";
+
+    const entry: BilingualEntry = {
+      id: seg.entryId,
+      speaker: seg.speaker,
+      speakerLabel: `Speaker ${seg.speaker || "1"}`,
+      language: seg.language,
+      originalText,
+      translatedText: transText,
+      isFinal: true,
+      startMs: seg.startMs,
+      endMs: seg.endMs,
+      timestamp: new Date(),
+    };
+
+    upsertEntry(entry);
+    lastFinalizedEntryIdRef.current = seg.entryId;
+    currentSegmentRef.current = null;
+  }, [upsertEntry]);
 
   // Handle Soniox WebSocket messages
   const handleSonioxMessage = useCallback(
@@ -170,91 +155,177 @@ export function useSonioxTranscription() {
       }
 
       if (data.finished) {
-        console.log("[Soniox] Session finished");
-        finalizeCurrentSegment();
+        finalizeSegment();
         return;
       }
 
       if (!data.tokens || !Array.isArray(data.tokens)) return;
 
-      const tokens: SonioxToken[] = data.tokens;
+      // Filter out control tokens
+      const tokens: SonioxToken[] = data.tokens.filter(
+        (t: SonioxToken) => t.text && !isControlToken(t.text)
+      );
       if (tokens.length === 0) return;
 
-      const seg = currentSegmentRef.current;
-
-      // Get speaker from first token with a speaker field
-      const batchSpeaker = tokens.find((t) => t.speaker)?.speaker || seg.speaker || "0";
-
-      // Speaker change → finalize previous segment
-      if (seg.speaker && seg.speaker !== batchSpeaker && (seg.originalTokens.length > 0 || seg.interimOriginalTokens.length > 0)) {
-        finalizeCurrentSegment();
-      }
-
-      // Initialize segment if needed
-      if (!currentSegmentRef.current.speaker || currentSegmentRef.current.speaker !== batchSpeaker) {
-        currentSegmentRef.current.speaker = batchSpeaker;
-        currentSegmentRef.current.entryId = `entry-${entryCounterRef.current++}`;
-      }
-
-      // Categorize tokens by is_final and translation_status
-      const finalOriginal: SonioxToken[] = [];
-      const finalTranslation: SonioxToken[] = [];
-      const interimOriginal: SonioxToken[] = [];
-      const interimTranslation: SonioxToken[] = [];
+      // Split into original and translation tokens
+      const originalTokens: SonioxToken[] = [];
+      const translationTokens: SonioxToken[] = [];
 
       for (const token of tokens) {
         const status = token.translation_status || "none";
-        const isOriginalOrNone = status === "original" || status === "none";
-
-        if (token.is_final) {
-          if (isOriginalOrNone) {
-            finalOriginal.push(token);
-            // Track language from original tokens
-            if (token.language && !currentSegmentRef.current.language) {
-              currentSegmentRef.current.language = token.language;
-            }
-          } else {
-            finalTranslation.push(token);
-          }
+        if (status === "translation") {
+          translationTokens.push(token);
         } else {
-          if (isOriginalOrNone) {
-            interimOriginal.push(token);
-            if (token.language && !currentSegmentRef.current.language) {
-              currentSegmentRef.current.language = token.language;
-            }
-          } else {
-            interimTranslation.push(token);
-          }
+          originalTokens.push(token);
         }
       }
 
-      // Append final tokens (accumulate)
-      if (finalOriginal.length > 0) {
-        currentSegmentRef.current.originalTokens.push(...finalOriginal);
+      // --- Handle translation tokens: attach to current or last entry ---
+      if (translationTokens.length > 0) {
+        const targetEntryId =
+          currentSegmentRef.current?.entryId ||
+          lastFinalizedEntryIdRef.current;
+
+        if (targetEntryId) {
+          const finalTransTokens = translationTokens.filter((t) => t.is_final);
+          const interimTransTokens = translationTokens.filter((t) => !t.is_final);
+
+          if (!translationBufferRef.current || translationBufferRef.current.entryId !== targetEntryId) {
+            translationBufferRef.current = {
+              entryId: targetEntryId,
+              finalText: "",
+              interimText: "",
+            };
+          }
+
+          if (finalTransTokens.length > 0) {
+            translationBufferRef.current.finalText +=
+              finalTransTokens.map((t) => t.text).join("");
+          }
+          translationBufferRef.current.interimText =
+            interimTransTokens.map((t) => t.text).join("");
+
+          // Update existing entry with translation
+          setEntries((prev) => {
+            const idx = prev.findIndex((e) => e.id === targetEntryId);
+            if (idx < 0) return prev;
+            const existing = prev[idx];
+            const updated = [...prev];
+            updated[idx] = {
+              ...existing,
+              translatedText: translationBufferRef.current!.finalText.trim(),
+              interimTranslated:
+                translationBufferRef.current!.interimText || undefined,
+            };
+            return updated;
+          });
+        }
       }
-      if (finalTranslation.length > 0) {
-        currentSegmentRef.current.translationTokens.push(...finalTranslation);
-      }
 
-      // Replace interim tokens (they reset each message)
-      currentSegmentRef.current.interimOriginalTokens = interimOriginal;
-      currentSegmentRef.current.interimTranslationTokens = interimTranslation;
+      // --- Handle original tokens ---
+      if (originalTokens.length > 0) {
+        const finalOrigTokens = originalTokens.filter((t) => t.is_final);
+        const interimOrigTokens = originalTokens.filter((t) => !t.is_final);
 
-      // If all tokens are final and there are originals → endpoint, finalize
-      const hasOriginals = finalOriginal.length > 0;
-      const noInterim = interimOriginal.length === 0 && interimTranslation.length === 0;
+        const batchSpeaker =
+          originalTokens.find((t) => t.speaker)?.speaker ||
+          currentSegmentRef.current?.speaker ||
+          "0";
 
-      if (hasOriginals && noInterim) {
-        finalizeCurrentSegment();
-      } else {
-        // Update interim display
-        const entry = buildEntry(false);
-        if (entry) {
+        const batchLanguage =
+          originalTokens.find((t) => t.language)?.language || "";
+
+        // Speaker change → finalize previous segment
+        if (
+          currentSegmentRef.current &&
+          currentSegmentRef.current.speaker !== batchSpeaker
+        ) {
+          finalizeSegment();
+        }
+
+        // Initialize segment if needed
+        if (!currentSegmentRef.current) {
+          const newId = `entry-${entryCounterRef.current++}`;
+          currentSegmentRef.current = {
+            speaker: batchSpeaker,
+            tokens: [],
+            interimTokens: [],
+            language: batchLanguage,
+            entryId: newId,
+            startMs: originalTokens[0]?.start_ms ?? 0,
+            endMs: 0,
+          };
+          // Reset translation buffer for new entry
+          translationBufferRef.current = {
+            entryId: newId,
+            finalText: "",
+            interimText: "",
+          };
+        }
+
+        const seg = currentSegmentRef.current;
+
+        // Update language if detected
+        if (batchLanguage && !seg.language) {
+          seg.language = batchLanguage;
+        }
+
+        // Append final original tokens
+        if (finalOrigTokens.length > 0) {
+          seg.tokens.push(...finalOrigTokens);
+          seg.endMs =
+            finalOrigTokens[finalOrigTokens.length - 1]?.end_ms ?? seg.endMs;
+        }
+
+        // Replace interim original tokens
+        seg.interimTokens = interimOrigTokens;
+
+        // Check if this is an endpoint (all final, no interim)
+        const isEndpoint =
+          finalOrigTokens.length > 0 && interimOrigTokens.length === 0;
+
+        if (isEndpoint) {
+          // Finalize: create the entry
+          finalizeSegment();
+        } else {
+          // Update interim display
+          const originalText = seg.tokens
+            .map((t) => t.text)
+            .join("")
+            .trim();
+          const interimOriginal = seg.interimTokens
+            .map((t) => t.text)
+            .join("");
+
+          const transText =
+            translationBufferRef.current?.entryId === seg.entryId
+              ? translationBufferRef.current.finalText
+              : "";
+          const interimTrans =
+            translationBufferRef.current?.entryId === seg.entryId
+              ? translationBufferRef.current.interimText
+              : "";
+
+          const entry: BilingualEntry = {
+            id: seg.entryId,
+            speaker: seg.speaker,
+            speakerLabel: `Speaker ${seg.speaker || "1"}`,
+            language: seg.language,
+            originalText,
+            translatedText: transText.trim(),
+            interimOriginal: interimOriginal || undefined,
+            interimTranslated: interimTrans || undefined,
+            isFinal: false,
+            startMs: seg.startMs,
+            endMs: seg.endMs,
+            timestamp: new Date(),
+          };
+
           upsertEntry(entry);
         }
       }
     },
-    [buildEntry, finalizeCurrentSegment, upsertEntry]
+    [finalizeSegment, upsertEntry]
   );
 
   // Start recording
@@ -267,10 +338,11 @@ export function useSonioxTranscription() {
       stoppingRef.current = false;
       entryCounterRef.current = 0;
       configRef.current = config;
-      resetSegment();
+      currentSegmentRef.current = null;
+      lastFinalizedEntryIdRef.current = null;
+      translationBufferRef.current = null;
 
       try {
-        // 1. Get Soniox temp API key
         const tokenRes = await fetch("/api/soniox-token", { method: "POST" });
         if (!tokenRes.ok) {
           const err = await tokenRes.json().catch(() => ({}));
@@ -278,7 +350,6 @@ export function useSonioxTranscription() {
         }
         const { api_key: token } = await tokenRes.json();
 
-        // 2. Get microphone
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
@@ -288,7 +359,6 @@ export function useSonioxTranscription() {
         });
         mediaStreamRef.current = stream;
 
-        // 3. Connect WebSocket
         const ws = new WebSocket("wss://stt-rt.soniox.com/transcribe-websocket");
         wsRef.current = ws;
 
@@ -301,13 +371,11 @@ export function useSonioxTranscription() {
           ws.onopen = () => {
             clearTimeout(timeout);
 
-            // Build context object
             const context: Record<string, unknown> = {};
             if (config.contextTerms.length > 0) {
               context.terms = config.contextTerms;
             }
 
-            // Send correct Soniox config
             ws.send(
               JSON.stringify({
                 api_key: token,
@@ -342,7 +410,7 @@ export function useSonioxTranscription() {
             const data = JSON.parse(event.data);
             handleSonioxMessage(data);
           } catch {
-            // ignore non-JSON
+            // ignore
           }
         };
 
@@ -361,13 +429,11 @@ export function useSonioxTranscription() {
           }
         };
 
-        // 4. Set up AudioWorklet
         const audioContext = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
         audioContextRef.current = audioContext;
 
         const workletBlob = new Blob([WORKLET_CODE], { type: "application/javascript" });
         const workletUrl = URL.createObjectURL(workletBlob);
-
         await audioContext.audioWorklet.addModule(workletUrl);
         URL.revokeObjectURL(workletUrl);
 
@@ -377,20 +443,16 @@ export function useSonioxTranscription() {
 
         workletNode.port.onmessage = (event: MessageEvent<Float32Array>) => {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-
           let samples = event.data;
           if (audioContext.sampleRate !== TARGET_SAMPLE_RATE) {
             samples = resampleAudio(samples, audioContext.sampleRate, TARGET_SAMPLE_RATE);
           }
-
-          const pcmBuffer = float32ToInt16Buffer(samples);
-          wsRef.current.send(pcmBuffer);
+          wsRef.current.send(float32ToInt16Buffer(samples));
         };
 
         source.connect(workletNode);
         workletNode.connect(audioContext.destination);
 
-        // 5. Start elapsed timer
         setElapsedSeconds(0);
         timerRef.current = setInterval(() => {
           setElapsedSeconds((prev) => prev + 1);
@@ -412,10 +474,9 @@ export function useSonioxTranscription() {
     [recordingState, handleSonioxMessage]
   );
 
-  // Stop recording
   const stop = useCallback(() => {
     stoppingRef.current = true;
-    finalizeCurrentSegment();
+    finalizeSegment();
 
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -430,38 +491,29 @@ export function useSonioxTranscription() {
       wsRef.current = null;
     }
 
-    if (workletNodeRef.current) {
-      workletNodeRef.current.disconnect();
-      workletNodeRef.current = null;
-    }
-
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
-      mediaStreamRef.current = null;
-    }
+    workletNodeRef.current?.disconnect();
+    workletNodeRef.current = null;
+    audioContextRef.current?.close();
+    audioContextRef.current = null;
+    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    mediaStreamRef.current = null;
 
     setRecordingState("idle");
-  }, [finalizeCurrentSegment]);
+  }, [finalizeSegment]);
 
   const clearEntries = useCallback(() => {
     setEntries([]);
     setElapsedSeconds(0);
     setError(null);
     entryCounterRef.current = 0;
-    resetSegment();
+    currentSegmentRef.current = null;
+    lastFinalizedEntryIdRef.current = null;
+    translationBufferRef.current = null;
   }, []);
 
   useEffect(() => {
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      if (timerRef.current) clearInterval(timerRef.current);
       wsRef.current?.close();
       workletNodeRef.current?.disconnect();
       audioContextRef.current?.close();
