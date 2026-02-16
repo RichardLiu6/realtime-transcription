@@ -431,7 +431,7 @@ export function useSonioxTranscription() {
             ws.send(
               JSON.stringify({
                 api_key: token,
-                model: "stt-rt-preview",
+                model: "stt-rt-v4",
                 audio_format: "pcm_s16le",
                 sample_rate: 24000,
                 num_channels: 1,
