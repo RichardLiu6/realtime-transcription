@@ -41,16 +41,16 @@ export async function POST(req: NextRequest) {
       }
 
       const data = await res.json();
-      return NextResponse.json({ token: data.key });
+      return NextResponse.json({ token: data.api_key });
     }
 
     if (provider === "openai") {
-      // Map arena model id to OpenAI transcription model
       const transcriptionModel =
         model === "gpt-4o-mini-transcribe"
           ? "gpt-4o-mini-transcribe"
           : "gpt-4o-transcribe";
 
+      // GA endpoint — compatible with wss://api.openai.com/v1/realtime WebSocket
       const secret = await openai.realtime.clientSecrets.create({
         expires_after: {
           anchor: "created_at",

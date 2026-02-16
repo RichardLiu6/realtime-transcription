@@ -24,6 +24,18 @@ const COLOR_MAP: Record<string, { bg: string; border: string; dot: string; text:
     dot: "bg-blue-500",
     text: "text-blue-700",
   },
+  orange: {
+    bg: "bg-orange-50",
+    border: "border-orange-200",
+    dot: "bg-orange-500",
+    text: "text-orange-700",
+  },
+  red: {
+    bg: "bg-red-50",
+    border: "border-red-200",
+    dot: "bg-red-500",
+    text: "text-red-700",
+  },
 };
 
 function StatusDot({
@@ -55,14 +67,17 @@ function StatusLabel({
   isConnected,
   isRecording,
   error,
+  hasTranscript,
 }: {
   isConnected: boolean;
   isRecording: boolean;
   error: string | null;
+  hasTranscript: boolean;
 }) {
   if (error) return <span className="text-red-500">Error</span>;
   if (isConnected && isRecording) return <span className="text-green-600">Recording</span>;
   if (isConnected) return <span className="text-yellow-600">Connected</span>;
+  if (hasTranscript) return <span className="text-gray-500">Done</span>;
   return <span className="text-gray-400">Idle</span>;
 }
 
@@ -117,6 +132,7 @@ function ModelColumn({
               isConnected={isConnected}
               isRecording={isRecording}
               error={error}
+              hasTranscript={!!transcript}
             />
           </span>
         </div>

@@ -1,9 +1,14 @@
-export type ModelId = "soniox" | "gpt-4o-transcribe" | "gpt-4o-mini-transcribe";
+export type ModelId =
+  | "soniox"
+  | "gpt-4o-transcribe"
+  | "gpt-4o-mini-transcribe"
+  | "groq-whisper-large-v3"
+  | "groq-whisper-large-v3-turbo";
 
 export interface ModelConfig {
   id: ModelId;
   name: string;
-  provider: "soniox" | "openai";
+  provider: "soniox" | "openai" | "groq";
   color: string;
 }
 
@@ -40,5 +45,17 @@ export const MODEL_CONFIGS: ModelConfig[] = [
     name: "GPT-4o Mini",
     provider: "openai",
     color: "blue",
+  },
+  {
+    id: "groq-whisper-large-v3",
+    name: "Whisper V3 (Groq)",
+    provider: "groq",
+    color: "orange",
+  },
+  {
+    id: "groq-whisper-large-v3-turbo",
+    name: "Whisper V3 Turbo (Groq)",
+    provider: "groq",
+    color: "red",
   },
 ];

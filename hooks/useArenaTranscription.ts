@@ -93,6 +93,8 @@ export function useArenaTranscription() {
     soniox: createEmptyResult(),
     "gpt-4o-transcribe": createEmptyResult(),
     "gpt-4o-mini-transcribe": createEmptyResult(),
+    "groq-whisper-large-v3": createEmptyResult(),
+    "groq-whisper-large-v3-turbo": createEmptyResult(),
   });
   const [isRecording, setIsRecording] = useState(false);
 
@@ -102,6 +104,12 @@ export function useArenaTranscription() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const recordingStartTimeRef = useRef<number>(0);
+  const stoppingRef = useRef(false); // Track intentional stop
+
+  // Groq audio buffer: accumulate Float32 samples, send periodically
+  const groqAudioBufferRef = useRef<Float32Array[]>([]);
+  const groqTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const groqActiveModelsRef = useRef<Set<ModelId>>(new Set());
 
   // Update a single model's result
   const updateModel = useCallback(
@@ -177,7 +185,7 @@ export function useArenaTranscription() {
             JSON.stringify({
               api_key: token,
               model: "stt-rt-preview",
-              audio_format: "pcm",
+              audio_format: "pcm_s16le",
               sample_rate: 24000,
               num_channels: 1,
               enable_endpoint_detection: true,
@@ -196,7 +204,8 @@ export function useArenaTranscription() {
 
         ws.onclose = (event) => {
           clearTimeout(timeout);
-          if (event.code !== 1000) {
+          // Don't show error for intentional stop or normal close codes
+          if (!stoppingRef.current && event.code !== 1000 && event.code !== 1005) {
             updateModel("soniox", {
               isConnected: false,
               error: `Disconnected: ${event.code}`,
@@ -221,19 +230,25 @@ export function useArenaTranscription() {
     []
   );
 
+  // Accumulated final tokens for Soniox (final tokens are sent once, non-final reset each message)
+  const sonioxFinalTokensRef = useRef<string[]>([]);
+
   // Handle Soniox transcription messages
   const handleSonioxMessage = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (data: any, _connectStart: number) => {
-      // Soniox sends words array with is_final flag
-      if (data.words && Array.isArray(data.words)) {
+      // Soniox returns tokens array (not words)
+      // Each token has { text, is_final, start_ms, end_ms, confidence, ... }
+      // Final tokens (is_final=true) are returned once → accumulate them
+      // Non-final tokens (is_final=false) update each message → reset each time
+      if (data.tokens && Array.isArray(data.tokens)) {
         const conn = connectionsRef.current.get("soniox");
 
         // Track first word
         if (
           conn &&
           !conn.firstWordReceived &&
-          data.words.length > 0
+          data.tokens.some((t: { text?: string }) => t.text)
         ) {
           conn.firstWordReceived = true;
           const firstWordMs = Math.round(
@@ -242,49 +257,60 @@ export function useArenaTranscription() {
           updateMetrics("soniox", { firstWordMs });
         }
 
-        // Build text from words
-        const text = data.words
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .map((w: any) => w.text)
-          .join("");
+        // Separate final and non-final tokens
+        const newFinalTexts: string[] = [];
+        const nonFinalTexts: string[] = [];
 
-        if (data.is_final) {
-          // Final segment
-          if (text.trim()) {
-            setModels((prev) => {
-              const current = prev.soniox;
-              const newTranscript = current.transcript
-                ? current.transcript + " " + text.trim()
-                : text.trim();
-              const newSegments = [
-                ...current.metrics.finalSegments,
-                text.trim(),
-              ];
-              return {
-                ...prev,
-                soniox: {
-                  ...current,
-                  transcript: newTranscript,
-                  interimText: "",
-                  metrics: {
-                    ...current.metrics,
-                    totalWords: newTranscript.split(/\s+/).filter(Boolean)
-                      .length,
-                    finalSegments: newSegments,
-                  },
-                },
-              };
-            });
+        for (const token of data.tokens) {
+          if (!token.text) continue;
+          if (token.is_final) {
+            newFinalTexts.push(token.text);
+          } else {
+            nonFinalTexts.push(token.text);
           }
-        } else {
-          // Partial/interim
-          updateModel("soniox", { interimText: text });
         }
+
+        // Append new final tokens to accumulated list
+        if (newFinalTexts.length > 0) {
+          sonioxFinalTokensRef.current.push(...newFinalTexts);
+        }
+
+        // Build full transcript from all accumulated final tokens
+        const finalText = sonioxFinalTokensRef.current.join("");
+        // Non-final tokens are the current interim
+        const interimText = nonFinalTexts.join("");
+
+        setModels((prev) => {
+          const current = prev.soniox;
+          const trimmedFinal = finalText.trim();
+          return {
+            ...prev,
+            soniox: {
+              ...current,
+              transcript: trimmedFinal,
+              interimText: interimText,
+              metrics: {
+                ...current.metrics,
+                totalWords: trimmedFinal
+                  ? trimmedFinal.split(/\s+/).filter(Boolean).length
+                  : 0,
+                finalSegments: trimmedFinal ? [trimmedFinal] : [],
+              },
+            },
+          };
+        });
       }
 
       // Handle errors from Soniox
-      if (data.error) {
-        updateModel("soniox", { error: data.error });
+      if (data.error_code || data.error_message) {
+        updateModel("soniox", {
+          error: data.error_message || `Error code: ${data.error_code}`,
+        });
+      }
+
+      // Session finished
+      if (data.finished) {
+        console.log("[Soniox] Session finished");
       }
     },
     [updateModel, updateMetrics]
@@ -313,23 +339,27 @@ export function useArenaTranscription() {
 
         ws.onopen = () => {
           clearTimeout(timeout);
+          console.log(`[Arena ${modelId}] WebSocket connected`);
           const connectionMs = Math.round(performance.now() - connectStart);
           updateMetrics(modelId, { connectionMs });
           updateModel(modelId, { isConnected: true, error: null });
           resolve(ws);
         };
 
-        ws.onerror = () => {
+        ws.onerror = (err) => {
           clearTimeout(timeout);
+          console.error(`[Arena ${modelId}] WebSocket error:`, err);
           reject(new Error(`${modelId} WebSocket error`));
         };
 
         ws.onclose = (event) => {
           clearTimeout(timeout);
-          if (event.code !== 1000) {
+          console.log(`[Arena ${modelId}] WebSocket closed: ${event.code} ${event.reason}`);
+          // Don't show error for intentional stop or normal close codes
+          if (!stoppingRef.current && event.code !== 1000 && event.code !== 1005) {
             updateModel(modelId, {
               isConnected: false,
-              error: `Disconnected: ${event.code}`,
+              error: `Disconnected: ${event.code} ${event.reason}`,
             });
           } else {
             updateModel(modelId, { isConnected: false });
@@ -340,6 +370,8 @@ export function useArenaTranscription() {
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
+            // Debug: log all event types
+            console.log(`[Arena ${modelId}] Event:`, data.type, data.delta?.slice?.(0, 30) || "");
             handleOpenAIMessage(modelId, data);
           } catch {
             // ignore non-JSON
@@ -431,6 +463,144 @@ export function useArenaTranscription() {
     [updateModel, updateMetrics]
   );
 
+  // Send pre-encoded base64 audio to Groq REST API for a specific model
+  const sendGroqChunk = useCallback(
+    async (modelId: ModelId, base64Audio: string) => {
+      const groqModel =
+        modelId === "groq-whisper-large-v3"
+          ? "whisper-large-v3"
+          : "whisper-large-v3-turbo";
+
+      try {
+        const res = await fetch("/api/arena/groq-transcribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ audio: base64Audio, model: groqModel }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          console.error(`[Groq ${modelId}] Error:`, err);
+          return;
+        }
+
+        const data = await res.json();
+        const text = data.text?.trim();
+        if (!text) return;
+
+        // Track first word
+        const conn = connectionsRef.current.get(modelId);
+        if (conn && !conn.firstWordReceived) {
+          conn.firstWordReceived = true;
+          const firstWordMs = Math.round(
+            performance.now() - recordingStartTimeRef.current
+          );
+          updateMetrics(modelId, { firstWordMs });
+        }
+
+        // Append to transcript
+        setModels((prev) => {
+          const current = prev[modelId];
+          const newTranscript = current.transcript
+            ? current.transcript + " " + text
+            : text;
+          return {
+            ...prev,
+            [modelId]: {
+              ...current,
+              transcript: newTranscript,
+              interimText: "",
+              metrics: {
+                ...current.metrics,
+                totalWords: newTranscript.split(/\s+/).filter(Boolean).length,
+                finalSegments: [...current.metrics.finalSegments, text],
+              },
+            },
+          };
+        });
+      } catch (err) {
+        console.error(`[Groq ${modelId}] Fetch error:`, err);
+      }
+    },
+    [updateMetrics]
+  );
+
+  // Drain buffer and send to a specific Groq model
+  const flushGroqBuffer = useCallback(
+    (modelId: ModelId) => {
+      const chunks = groqAudioBufferRef.current;
+      if (chunks.length === 0) return;
+
+      const allChunks = [...chunks];
+      const totalLen = allChunks.reduce((sum, c) => sum + c.length, 0);
+      if (totalLen === 0) return;
+
+      const merged = new Float32Array(totalLen);
+      let offset = 0;
+      for (const chunk of allChunks) {
+        merged.set(chunk, offset);
+        offset += chunk.length;
+      }
+
+      const base64Audio = float32ToBase64PCM16(merged);
+      sendGroqChunk(modelId, base64Audio);
+    },
+    [sendGroqChunk]
+  );
+
+  // Start Groq periodic send timer
+  const startGroqTimer = useCallback(
+    (groqModelIds: ModelId[]) => {
+      groqActiveModelsRef.current = new Set(groqModelIds);
+      // Show "recording" indicator
+      for (const id of groqModelIds) {
+        updateModel(id, { isConnected: true, error: null });
+      }
+
+      // Send every 3 seconds — drain buffer once and send to all Groq models
+      groqTimerRef.current = setInterval(() => {
+        const chunks = groqAudioBufferRef.current;
+        if (chunks.length === 0) return;
+
+        // Drain the buffer once
+        const allChunks = chunks.splice(0, chunks.length);
+        const totalLen = allChunks.reduce((sum, c) => sum + c.length, 0);
+        if (totalLen === 0) return;
+
+        // Merge into single Float32Array
+        const merged = new Float32Array(totalLen);
+        let offset = 0;
+        for (const chunk of allChunks) {
+          merged.set(chunk, offset);
+          offset += chunk.length;
+        }
+
+        // Convert to base64 PCM16 once, send to all Groq models
+        const base64Audio = float32ToBase64PCM16(merged);
+        for (const id of groqActiveModelsRef.current) {
+          sendGroqChunk(id, base64Audio);
+        }
+      }, 3000);
+    },
+    [sendGroqChunk, updateModel]
+  );
+
+  // Stop Groq timer and send remaining audio
+  const stopGroqTimer = useCallback(() => {
+    if (groqTimerRef.current) {
+      clearInterval(groqTimerRef.current);
+      groqTimerRef.current = null;
+    }
+
+    // Send remaining buffered audio to all active Groq models
+    for (const id of groqActiveModelsRef.current) {
+      flushGroqBuffer(id);
+      updateModel(id, { isConnected: false });
+    }
+    groqActiveModelsRef.current.clear();
+    groqAudioBufferRef.current = [];
+  }, [flushGroqBuffer, updateModel]);
+
   // Start audio capture and distribute to all models
   const startAudioCapture = useCallback(
     (stream: MediaStream) => {
@@ -470,7 +640,12 @@ export function useArenaTranscription() {
               );
             }
 
-            // Distribute to all connected models
+            // Buffer audio for Groq models
+            if (groqActiveModelsRef.current.size > 0) {
+              groqAudioBufferRef.current.push(new Float32Array(samples));
+            }
+
+            // Distribute to all connected WebSocket models
             connectionsRef.current.forEach((conn) => {
               if (conn.ws.readyState !== WebSocket.OPEN) return;
 
@@ -478,7 +653,10 @@ export function useArenaTranscription() {
                 // Soniox: binary PCM16 frames
                 const pcmBuffer = float32ToInt16Buffer(samples);
                 conn.ws.send(pcmBuffer);
-              } else {
+              } else if (
+                conn.modelId === "gpt-4o-transcribe" ||
+                conn.modelId === "gpt-4o-mini-transcribe"
+              ) {
                 // OpenAI: base64 JSON
                 const base64Audio = float32ToBase64PCM16(samples);
                 conn.ws.send(
@@ -508,6 +686,8 @@ export function useArenaTranscription() {
       if (selectedModels.length === 0) return;
 
       // Reset all selected models
+      stoppingRef.current = false;
+      sonioxFinalTokensRef.current = [];
       for (const modelId of selectedModels) {
         updateModel(modelId, createEmptyResult());
       }
@@ -525,8 +705,21 @@ export function useArenaTranscription() {
 
         recordingStartTimeRef.current = performance.now();
 
-        // Connect all selected models in parallel
-        const connectionPromises = selectedModels.map(
+        // Separate WebSocket models from Groq REST models
+        const wsModels = selectedModels.filter(
+          (id) =>
+            id === "soniox" ||
+            id === "gpt-4o-transcribe" ||
+            id === "gpt-4o-mini-transcribe"
+        );
+        const groqModels = selectedModels.filter(
+          (id) =>
+            id === "groq-whisper-large-v3" ||
+            id === "groq-whisper-large-v3-turbo"
+        );
+
+        // Connect WebSocket models in parallel
+        const connectionPromises = wsModels.map(
           async (modelId) => {
             try {
               const provider =
@@ -565,6 +758,25 @@ export function useArenaTranscription() {
 
         await Promise.allSettled(connectionPromises);
 
+        // Start Groq models (REST-based, use timer)
+        if (groqModels.length > 0) {
+          // Create dummy connections for first-word tracking
+          for (const id of groqModels) {
+            connectionsRef.current.set(id, {
+              ws: null as unknown as WebSocket,
+              modelId: id,
+              connectTime: performance.now(),
+              firstWordReceived: false,
+            });
+            updateMetrics(id, {
+              connectionMs: Math.round(
+                performance.now() - recordingStartTimeRef.current
+              ),
+            });
+          }
+          startGroqTimer(groqModels);
+        }
+
         // Start audio capture (sends to all connected models)
         startAudioCapture(stream);
         setIsRecording(true);
@@ -580,14 +792,28 @@ export function useArenaTranscription() {
       connectSoniox,
       connectOpenAI,
       startAudioCapture,
+      startGroqTimer,
       updateModel,
+      updateMetrics,
     ]
   );
 
   // Stop recording
   const stop = useCallback(() => {
+    stoppingRef.current = true;
+
+    // Stop Groq timer first (sends remaining audio)
+    stopGroqTimer();
+
     // Close all WebSocket connections
     connectionsRef.current.forEach((conn) => {
+      // Skip Groq dummy connections (no real WebSocket)
+      if (
+        conn.modelId === "groq-whisper-large-v3" ||
+        conn.modelId === "groq-whisper-large-v3-turbo"
+      ) {
+        return;
+      }
       if (conn.modelId === "soniox" && conn.ws.readyState === WebSocket.OPEN) {
         // Soniox: send empty binary frame to signal end
         conn.ws.send(new ArrayBuffer(0));
@@ -624,21 +850,37 @@ export function useArenaTranscription() {
       }
       return updated;
     });
-  }, []);
+  }, [stopGroqTimer]);
 
   // Clear all results
   const clear = useCallback(() => {
+    sonioxFinalTokensRef.current = [];
+    groqAudioBufferRef.current = [];
     setModels({
       soniox: createEmptyResult(),
       "gpt-4o-transcribe": createEmptyResult(),
       "gpt-4o-mini-transcribe": createEmptyResult(),
+      "groq-whisper-large-v3": createEmptyResult(),
+      "groq-whisper-large-v3-turbo": createEmptyResult(),
     });
   }, []);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      connectionsRef.current.forEach((conn) => conn.ws.close());
+      if (groqTimerRef.current) {
+        clearInterval(groqTimerRef.current);
+        groqTimerRef.current = null;
+      }
+      connectionsRef.current.forEach((conn) => {
+        // Skip Groq dummy connections
+        if (
+          conn.modelId === "groq-whisper-large-v3" ||
+          conn.modelId === "groq-whisper-large-v3-turbo"
+        )
+          return;
+        conn.ws.close();
+      });
       connectionsRef.current.clear();
       workletNodeRef.current?.disconnect();
       audioContextRef.current?.close();
