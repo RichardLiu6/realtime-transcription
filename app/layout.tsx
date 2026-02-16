@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "实时语音转文字",
-  description: "Real-time speech to text with multi-language support",
+  title: "Soniox 双语实时转录",
+  description: "Soniox-powered bilingual real-time transcription with speaker diarization",
 };
 
 export default function RootLayout({
