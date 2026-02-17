@@ -1,36 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSonioxTranscription } from "@/hooks/useSonioxTranscription";
 import { useSpeakerManager } from "@/hooks/useSpeakerManager";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
-import type { SonioxConfig } from "@/types/bilingual";
-import PreRecordingView from "@/components/PreRecordingView";
-import RecordingTopBar from "@/components/RecordingTopBar";
+import TopBar from "@/components/TopBar";
 import BilingualDisplay from "@/components/BilingualDisplay";
 import SpeakerBar from "@/components/SpeakerBar";
 
 export default function Home() {
+  const [languageA, setLanguageA] = useState("zh");
+  const [languageB, setLanguageB] = useState("en");
+  const [termsText, setTermsText] = useState("");
+
   const {
     entries,
     recordingState,
     error,
     elapsedSeconds,
-    config,
     start,
     stop,
     clearEntries,
   } = useSonioxTranscription();
 
-  const {
-    speakers,
-    registerSpeaker,
-    renameSpeaker,
-    clearSpeakers,
-  } = useSpeakerManager();
-
-  // Track active context terms count
-  const termsCountRef = useRef(0);
+  const { speakers, registerSpeaker, renameSpeaker, clearSpeakers } =
+    useSpeakerManager();
 
   // Auto-register speakers from entries
   useEffect(() => {
@@ -39,15 +33,15 @@ export default function Home() {
     }
   }, [entries, registerSpeaker]);
 
-  const handleStart = useCallback(
-    (config: SonioxConfig) => {
-      termsCountRef.current = config.contextTerms.length;
-      clearEntries();
-      clearSpeakers();
-      start(config);
-    },
-    [start, clearEntries, clearSpeakers]
-  );
+  const handleStart = useCallback(() => {
+    const terms = termsText
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    clearEntries();
+    clearSpeakers();
+    start({ languageA, languageB, contextTerms: terms });
+  }, [languageA, languageB, termsText, start, clearEntries, clearSpeakers]);
 
   const handleStop = useCallback(() => {
     stop();
@@ -57,15 +51,32 @@ export default function Home() {
     triggerBilingualDownload(entries);
   }, [entries]);
 
+  const handleNewMeeting = useCallback(() => {
+    clearEntries();
+    clearSpeakers();
+  }, [clearEntries, clearSpeakers]);
+
+  const handleLanguageChange = useCallback(
+    (which: "A" | "B", code: string) => {
+      if (recordingState === "recording") {
+        const confirmed = window.confirm(
+          "切换语言将停止当前录音，是否继续？"
+        );
+        if (!confirmed) return;
+        stop();
+      }
+      if (which === "A") setLanguageA(code);
+      else setLanguageB(code);
+    },
+    [recordingState, stop]
+  );
+
   const handleRenameSpeaker = useCallback(
     (speakerId: string, newLabel: string) => {
       renameSpeaker(speakerId, newLabel);
     },
     [renameSpeaker]
   );
-
-  const isRecording = recordingState === "recording";
-  const isConnecting = recordingState === "connecting";
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -76,79 +87,34 @@ export default function Home() {
         </div>
       )}
 
-      {recordingState === "idle" && entries.length === 0 ? (
-        /* Pre-recording view */
-        <PreRecordingView onStart={handleStart} isConnecting={isConnecting} />
-      ) : (
-        <>
-          {/* Recording top bar (visible when recording or has entries) */}
-          {(isRecording || isConnecting) && (
-            <RecordingTopBar
-              onStop={handleStop}
-              elapsedSeconds={elapsedSeconds}
-              termsCount={termsCountRef.current}
-              onExport={handleExport}
-            />
-          )}
+      {/* Top bar: always visible */}
+      <TopBar
+        recordingState={recordingState}
+        elapsedSeconds={elapsedSeconds}
+        termsText={termsText}
+        onTermsTextChange={setTermsText}
+        onStart={handleStart}
+        onStop={handleStop}
+        onExport={handleExport}
+        onNewMeeting={handleNewMeeting}
+        hasEntries={entries.length > 0}
+      />
 
-          {/* Stopped but has entries - show a minimal bar */}
-          {recordingState === "idle" && entries.length > 0 && (
-            <div className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4 py-2">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    clearEntries();
-                    clearSpeakers();
-                  }}
-                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 transition hover:bg-gray-50"
-                >
-                  新会议
-                </button>
-                <span className="text-xs text-gray-400">
-                  {entries.filter((e) => e.isFinal).length} 条记录
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={handleExport}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 transition hover:bg-gray-50"
-              >
-                <svg
-                  className="h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                  />
-                </svg>
-                导出
-              </button>
-            </div>
-          )}
+      {/* Main transcript display */}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <BilingualDisplay
+          entries={entries}
+          speakers={speakers}
+          isRecording={recordingState === "recording"}
+          languageA={languageA}
+          languageB={languageB}
+          onLanguageAChange={(code) => handleLanguageChange("A", code)}
+          onLanguageBChange={(code) => handleLanguageChange("B", code)}
+        />
+      </div>
 
-          {/* Main transcript display */}
-          <div className="flex min-h-0 flex-1 flex-col">
-            <BilingualDisplay
-              entries={entries}
-              speakers={speakers}
-              isRecording={isRecording}
-              config={config}
-            />
-          </div>
-
-          {/* Speaker bar */}
-          <SpeakerBar
-            speakers={speakers}
-            onRenameSpeaker={handleRenameSpeaker}
-          />
-        </>
-      )}
+      {/* Speaker bar */}
+      <SpeakerBar speakers={speakers} onRenameSpeaker={handleRenameSpeaker} />
     </div>
   );
 }

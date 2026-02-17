@@ -1,33 +1,30 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import type { BilingualEntry, SpeakerInfo, SonioxConfig } from "@/types/bilingual";
+import type { BilingualEntry, SpeakerInfo } from "@/types/bilingual";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
 
 interface BilingualDisplayProps {
   entries: BilingualEntry[];
   speakers: Map<string, SpeakerInfo>;
   isRecording: boolean;
-  config: SonioxConfig | null;
-}
-
-function getLangLabel(code: string): string {
-  return SONIOX_LANGUAGES.find((l) => l.code === code)?.name || code.toUpperCase();
+  languageA: string;
+  languageB: string;
+  onLanguageAChange: (code: string) => void;
+  onLanguageBChange: (code: string) => void;
 }
 
 export default function BilingualDisplay({
   entries,
   speakers,
   isRecording,
-  config,
+  languageA,
+  languageB,
+  onLanguageAChange,
+  onLanguageBChange,
 }: BilingualDisplayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
-
-  const langA = config?.languageA || "zh";
-  const langB = config?.languageB || "en";
-  const labelA = getLangLabel(langA);
-  const labelB = getLangLabel(langB);
 
   const scrollToBottom = useCallback(() => {
     const el = containerRef.current;
@@ -57,10 +54,10 @@ export default function BilingualDisplay({
     }
   }, [entries, isAtBottom, scrollToBottom]);
 
-  // Empty state: recording but no entries
-  if (entries.length === 0 && isRecording) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
+  // Empty state content (shown inside the scroll area below headers)
+  const emptyContent = entries.length === 0 && (
+    <div className="flex flex-1 items-center justify-center py-20">
+      {isRecording ? (
         <div className="text-center">
           <div className="mb-3 flex justify-center gap-2">
             <span className="listening-dot inline-block h-3 w-3 rounded-full bg-blue-500" />
@@ -69,14 +66,7 @@ export default function BilingualDisplay({
           </div>
           <p className="text-sm text-gray-400">正在聆听...</p>
         </div>
-      </div>
-    );
-  }
-
-  // Empty state: not recording
-  if (entries.length === 0 && !isRecording) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
+      ) : (
         <div className="text-center text-gray-300">
           <svg
             className="mx-auto h-16 w-16"
@@ -91,18 +81,28 @@ export default function BilingualDisplay({
               d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"
             />
           </svg>
-          <p className="mt-2 text-sm">点击上方开始录音</p>
+          <p className="mt-2 text-sm">点击左上角开始录音</p>
         </div>
-      </div>
-    );
-  }
+      )}
+    </div>
+  );
 
   return (
     <div className="relative flex flex-1 flex-col overflow-hidden">
       {/* Portrait hint */}
       <div className="portrait-hint">
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5h3m-6.75 2.25h10.5a2.25 2.25 0 002.25-2.25v-15a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 4.5v15a2.25 2.25 0 002.25 2.25z" />
+        <svg
+          className="h-4 w-4"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M10.5 19.5h3m-6.75 2.25h10.5a2.25 2.25 0 002.25-2.25v-15a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 4.5v15a2.25 2.25 0 002.25 2.25z"
+          />
         </svg>
         推荐横屏使用
       </div>
@@ -111,15 +111,46 @@ export default function BilingualDisplay({
         ref={containerRef}
         className="transcript-scroll flex-1 overflow-y-auto"
       >
-        {/* Column headers */}
-        <div className="bilingual-grid sticky top-0 z-10 bg-gray-50 border-b-2 border-gray-200">
-          <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            {labelA}
+        {/* Column headers with language selectors */}
+        <div className="bilingual-grid sticky top-0 z-10 border-b-2 border-gray-200 bg-gray-50">
+          <div className="px-4 py-1.5">
+            <select
+              value={languageA}
+              onChange={(e) => onLanguageAChange(e.target.value)}
+              className="cursor-pointer rounded border-none bg-transparent text-xs font-semibold uppercase tracking-wide text-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-400"
+            >
+              {SONIOX_LANGUAGES.map((lang) => (
+                <option
+                  key={lang.code}
+                  value={lang.code}
+                  disabled={lang.code === languageB}
+                >
+                  {lang.name}
+                </option>
+              ))}
+            </select>
           </div>
-          <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            {labelB}
+          <div className="px-4 py-1.5">
+            <select
+              value={languageB}
+              onChange={(e) => onLanguageBChange(e.target.value)}
+              className="cursor-pointer rounded border-none bg-transparent text-xs font-semibold uppercase tracking-wide text-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-400"
+            >
+              {SONIOX_LANGUAGES.map((lang) => (
+                <option
+                  key={lang.code}
+                  value={lang.code}
+                  disabled={lang.code === languageA}
+                >
+                  {lang.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
+
+        {/* Empty state */}
+        {emptyContent}
 
         {/* Entries */}
         {entries.map((entry) => {
@@ -128,15 +159,18 @@ export default function BilingualDisplay({
           const speakerName = speaker?.label || `Speaker ${entry.speaker}`;
 
           // Determine which text goes in which column
-          // Column A shows languageA text, Column B shows languageB text
-          const isLangA = entry.language === langA;
+          const isLangA = entry.language === languageA;
           const textA = isLangA ? entry.originalText : entry.translatedText;
           const textB = isLangA ? entry.translatedText : entry.originalText;
           const textAIsOriginal = isLangA;
           const textBIsOriginal = !isLangA;
 
-          const interimA = isLangA ? entry.interimOriginal : entry.interimTranslated;
-          const interimB = isLangA ? entry.interimTranslated : entry.interimOriginal;
+          const interimA = isLangA
+            ? entry.interimOriginal
+            : entry.interimTranslated;
+          const interimB = isLangA
+            ? entry.interimTranslated
+            : entry.interimOriginal;
 
           return (
             <div key={entry.id} className="bilingual-grid bilingual-entry">
@@ -147,7 +181,13 @@ export default function BilingualDisplay({
                   <span className="text-xs text-gray-400">{speakerName}</span>
                 </div>
                 {textA && (
-                  <p className={textAIsOriginal ? "text-sm text-gray-900" : "text-sm text-gray-400"}>
+                  <p
+                    className={
+                      textAIsOriginal
+                        ? "text-sm text-gray-900"
+                        : "text-sm text-gray-400"
+                    }
+                  >
                     {textA}
                   </p>
                 )}
@@ -166,7 +206,13 @@ export default function BilingualDisplay({
                   <span className="text-xs text-gray-400">{speakerName}</span>
                 </div>
                 {textB && (
-                  <p className={textBIsOriginal ? "text-sm text-gray-900" : "text-sm text-gray-400"}>
+                  <p
+                    className={
+                      textBIsOriginal
+                        ? "text-sm text-gray-900"
+                        : "text-sm text-gray-400"
+                    }
+                  >
                     {textB}
                   </p>
                 )}
