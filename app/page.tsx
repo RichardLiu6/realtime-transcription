@@ -21,6 +21,7 @@ export default function Home() {
     start,
     stop,
     clearEntries,
+    reassignSpeaker,
   } = useSonioxTranscription();
 
   const { speakers, registerSpeaker, renameSpeaker, clearSpeakers } =
@@ -110,6 +111,7 @@ export default function Home() {
           languageB={languageB}
           onLanguageAChange={(code) => handleLanguageChange("A", code)}
           onLanguageBChange={(code) => handleLanguageChange("B", code)}
+          onReassignSpeaker={reassignSpeaker}
         />
       </div>
 

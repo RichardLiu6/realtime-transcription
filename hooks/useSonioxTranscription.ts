@@ -114,6 +114,13 @@ export function useSonioxTranscription() {
   // ID of the last finalized entry (to attach translations to)
   const lastFinalizedEntryIdRef = useRef<string | null>(null);
 
+  // Last finalized entry data for auto-merge heuristic
+  const lastFinalizedDataRef = useRef<{
+    speaker: string;
+    language: string;
+    endMs: number;
+  } | null>(null);
+
   // Accumulated translation text for the current/last entry
   const translationBufferRef = useRef<{
     entryId: string;
@@ -167,10 +174,24 @@ export function useSonioxTranscription() {
         ? translationBufferRef.current.finalText
         : "";
 
+    // Auto-merge: if this is a short segment close to the previous one
+    // with a different speaker but same language, adopt the previous speaker
+    let effectiveSpeaker = seg.speaker;
+    const prev = lastFinalizedDataRef.current;
+    if (prev) {
+      const gap = seg.startMs - prev.endMs;
+      const isShort = originalText.length < 15;
+      const sameLang = seg.language === prev.language;
+      const diffSpeaker = seg.speaker !== prev.speaker;
+      if (gap < 2000 && isShort && sameLang && diffSpeaker) {
+        effectiveSpeaker = prev.speaker;
+      }
+    }
+
     const entry: BilingualEntry = {
       id: seg.entryId,
-      speaker: seg.speaker,
-      speakerLabel: `Speaker ${seg.speaker || "1"}`,
+      speaker: effectiveSpeaker,
+      speakerLabel: `Speaker ${effectiveSpeaker || "1"}`,
       language: seg.language,
       originalText,
       translatedText: transText,
@@ -182,6 +203,11 @@ export function useSonioxTranscription() {
 
     upsertEntry(entry);
     lastFinalizedEntryIdRef.current = seg.entryId;
+    lastFinalizedDataRef.current = {
+      speaker: effectiveSpeaker,
+      language: seg.language,
+      endMs: seg.endMs,
+    };
     currentSegmentRef.current = null;
   }, [upsertEntry]);
 
@@ -392,6 +418,7 @@ export function useSonioxTranscription() {
       configRef.current = config;
       currentSegmentRef.current = null;
       lastFinalizedEntryIdRef.current = null;
+      lastFinalizedDataRef.current = null;
       translationBufferRef.current = null;
 
       try {
@@ -553,6 +580,18 @@ export function useSonioxTranscription() {
     setRecordingState("idle");
   }, [finalizeSegment]);
 
+  // Reassign a single entry's speaker (manual correction)
+  const reassignSpeaker = useCallback(
+    (entryId: string, newSpeaker: string) => {
+      setEntries((prev) =>
+        prev.map((e) =>
+          e.id === entryId ? { ...e, speaker: newSpeaker } : e
+        )
+      );
+    },
+    []
+  );
+
   const clearEntries = useCallback(() => {
     setEntries([]);
     setElapsedSeconds(0);
@@ -560,6 +599,7 @@ export function useSonioxTranscription() {
     entryCounterRef.current = 0;
     currentSegmentRef.current = null;
     lastFinalizedEntryIdRef.current = null;
+    lastFinalizedDataRef.current = null;
     translationBufferRef.current = null;
   }, []);
 
@@ -582,5 +622,6 @@ export function useSonioxTranscription() {
     start,
     stop,
     clearEntries,
+    reassignSpeaker,
   };
 }

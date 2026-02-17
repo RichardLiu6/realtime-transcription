@@ -12,6 +12,7 @@ interface BilingualDisplayProps {
   languageB: string;
   onLanguageAChange: (code: string) => void;
   onLanguageBChange: (code: string) => void;
+  onReassignSpeaker: (entryId: string, newSpeaker: string) => void;
 }
 
 export default function BilingualDisplay({
@@ -22,9 +23,13 @@ export default function BilingualDisplay({
   languageB,
   onLanguageAChange,
   onLanguageBChange,
+  onReassignSpeaker,
 }: BilingualDisplayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [editingSpeakerEntryId, setEditingSpeakerEntryId] = useState<
+    string | null
+  >(null);
 
   const scrollToBottom = useCallback(() => {
     const el = containerRef.current;
@@ -157,6 +162,7 @@ export default function BilingualDisplay({
           const speaker = speakers.get(entry.speaker);
           const dotColor = speaker?.color || "bg-gray-400";
           const speakerName = speaker?.label || `Speaker ${entry.speaker}`;
+          const isEditing = editingSpeakerEntryId === entry.id;
 
           // Determine which text goes in which column
           const isLangA = entry.language === languageA;
@@ -172,14 +178,39 @@ export default function BilingualDisplay({
             ? entry.interimTranslated
             : entry.interimOriginal;
 
+          const speakerLabel = isEditing ? (
+            <select
+              autoFocus
+              value={entry.speaker}
+              onChange={(e) => {
+                onReassignSpeaker(entry.id, e.target.value);
+                setEditingSpeakerEntryId(null);
+              }}
+              onBlur={() => setEditingSpeakerEntryId(null)}
+              className="rounded border border-blue-300 bg-white px-1 py-0 text-xs text-gray-600 focus:outline-none"
+            >
+              {Array.from(speakers.values()).map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setEditingSpeakerEntryId(entry.id)}
+              className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-blue-600"
+            >
+              <span className={`speaker-dot ${dotColor}`} />
+              {speakerName}
+            </button>
+          );
+
           return (
             <div key={entry.id} className="bilingual-grid bilingual-entry">
               {/* Column A */}
               <div className="px-4">
-                <div className="mb-0.5 flex items-center gap-1.5">
-                  <span className={`speaker-dot ${dotColor}`} />
-                  <span className="text-xs text-gray-400">{speakerName}</span>
-                </div>
+                <div className="mb-0.5">{speakerLabel}</div>
                 {textA && (
                   <p
                     className={
