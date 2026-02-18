@@ -3,13 +3,28 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, UserPlus, Trash2, ArrowLeft } from "lucide-react";
+import {
+  Loader2,
+  UserPlus,
+  Trash2,
+  ArrowLeft,
+  Plus,
+  Copy,
+  XCircle,
+} from "lucide-react";
 import Link from "next/link";
 
 interface User {
   email: string;
   name: string;
   addedAt: string;
+}
+
+interface Meeting {
+  code: string;
+  createdAt: string;
+  expiresAt: string;
+  active: boolean;
 }
 
 export default function AdminPage() {
@@ -21,6 +36,12 @@ export default function AdminPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  // Meeting code state
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [meetingHours, setMeetingHours] = useState("4");
+  const [creatingMeeting, setCreatingMeeting] = useState(false);
+  const [deactivating, setDeactivating] = useState<string | null>(null);
+
   const fetchUsers = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/users");
@@ -31,9 +52,73 @@ export default function AdminPage() {
     }
   }, []);
 
+  const fetchMeetings = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/meetings");
+      const data = await res.json();
+      if (res.ok) setMeetings(data.meetings);
+    } catch {
+      setError("获取会议码失败");
+    }
+  }, []);
+
   useEffect(() => {
     fetchUsers();
-  }, [fetchUsers]);
+    fetchMeetings();
+  }, [fetchUsers, fetchMeetings]);
+
+  const handleCreateMeeting = async () => {
+    setError("");
+    setSuccess("");
+    setCreatingMeeting(true);
+    try {
+      const res = await fetch("/api/admin/meetings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hours: Number(meetingHours) }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "创建失败");
+        return;
+      }
+      setSuccess(`会议码已创建: ${data.code}`);
+      fetchMeetings();
+    } catch {
+      setError("网络错误");
+    } finally {
+      setCreatingMeeting(false);
+    }
+  };
+
+  const handleDeactivateMeeting = async (code: string) => {
+    setError("");
+    setSuccess("");
+    setDeactivating(code);
+    try {
+      const res = await fetch("/api/admin/meetings", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "操作失败");
+        return;
+      }
+      setSuccess(`已失效: ${code}`);
+      fetchMeetings();
+    } catch {
+      setError("网络错误");
+    } finally {
+      setDeactivating(null);
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setSuccess(`已复制: ${text}`);
+  };
 
   const handleAdd = async () => {
     setError("");
@@ -132,6 +217,99 @@ export default function AdminPage() {
               )}
             </Button>
           </div>
+        </div>
+
+        {/* Meeting codes */}
+        <div className="space-y-3 rounded-lg border border-border p-4">
+          <h2 className="text-sm font-medium text-muted-foreground">
+            临时会议码
+          </h2>
+          <div className="flex gap-2 items-center">
+            <select
+              value={meetingHours}
+              onChange={(e) => setMeetingHours(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+              disabled={creatingMeeting}
+            >
+              <option value="1">1 小时</option>
+              <option value="2">2 小时</option>
+              <option value="4">4 小时</option>
+              <option value="8">8 小时</option>
+              <option value="12">12 小时</option>
+              <option value="24">24 小时</option>
+            </select>
+            <Button
+              onClick={handleCreateMeeting}
+              disabled={creatingMeeting}
+              className="flex-1"
+            >
+              {creatingMeeting ? (
+                <Loader2 className="size-4 animate-spin mr-2" />
+              ) : (
+                <Plus className="size-4 mr-2" />
+              )}
+              生成会议码
+            </Button>
+          </div>
+          {meetings.length > 0 && (
+            <div className="divide-y divide-border rounded-lg border border-border mt-2">
+              {meetings.map((m) => (
+                <div
+                  key={m.code}
+                  className="flex items-center justify-between px-4 py-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm font-bold tracking-widest">
+                        {m.code}
+                      </span>
+                      <span
+                        className={`text-xs px-1.5 py-0.5 rounded-full ${
+                          m.active
+                            ? "bg-green-100 text-green-700"
+                            : "bg-gray-100 text-gray-500"
+                        }`}
+                      >
+                        {m.active ? "有效" : "已过期"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      到期: {new Date(m.expiresAt).toLocaleString("zh-CN")}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 ml-4">
+                    {m.active && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => copyToClipboard(m.code)}
+                          className="text-muted-foreground hover:text-foreground"
+                          aria-label="Copy code"
+                        >
+                          <Copy className="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => handleDeactivateMeeting(m.code)}
+                          disabled={deactivating === m.code}
+                          className="text-muted-foreground hover:text-destructive"
+                          aria-label="Deactivate"
+                        >
+                          {deactivating === m.code ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <XCircle className="size-4" />
+                          )}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Messages */}
