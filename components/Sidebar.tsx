@@ -1,7 +1,7 @@
 "use client";
 
 import { Download, FilePlus } from "lucide-react";
-import type { TranslationMode, SpeakerInfo } from "@/types/bilingual";
+import type { TranslationMode, SpeakerInfo, BilingualEntry } from "@/types/bilingual";
 import { Button } from "@/components/ui/button";
 import TranslationModeToggle from "@/components/sidebar/TranslationModeToggle";
 import BetweenLanguages from "@/components/sidebar/BetweenLanguages";
@@ -26,6 +26,7 @@ interface SidebarProps {
   onStart: () => void;
   onStop: () => void;
   audioAnalyser: AnalyserNode | null;
+  entries: BilingualEntry[];
   onExport: () => void;
   onNewMeeting: () => void;
   hasEntries: boolean;
@@ -47,6 +48,7 @@ export default function Sidebar({
   onStart,
   onStop,
   audioAnalyser,
+  entries,
   onExport,
   onNewMeeting,
   hasEntries,
@@ -110,6 +112,7 @@ export default function Sidebar({
 
         <SpeakerPanel
           speakers={speakers}
+          entries={entries}
           onRenameSpeaker={onRenameSpeaker}
         />
       </div>
