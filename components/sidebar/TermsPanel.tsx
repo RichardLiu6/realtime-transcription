@@ -67,48 +67,45 @@ function PresetChip({
 
   return (
     <Popover open={infoOpen} onOpenChange={setInfoOpen}>
-      <div className="inline-flex items-center">
-        {/* Toggle chip */}
+      <PopoverTrigger asChild>
         <button
           type="button"
-          onClick={onToggle}
+          onClick={(e) => {
+            // Click the (i) area → open info; click elsewhere → toggle
+            const rect = e.currentTarget.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            if (clickX > rect.width - 24) {
+              setInfoOpen(true);
+            } else {
+              onToggle();
+            }
+          }}
           {...longPress}
           onContextMenu={(e) => {
             e.preventDefault();
             setInfoOpen(true);
           }}
-          className={`rounded-l-full px-2.5 py-1 text-[11px] leading-tight transition-colors ${
+          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] leading-tight transition-colors ${
             isSelected
               ? "bg-primary text-primary-foreground font-medium"
               : "bg-muted/60 text-muted-foreground hover:bg-muted"
           }`}
         >
-          {label.split(" ")[0]}
+          <span>{label.split(" ")[0]}</span>
           {isSelected && (
-            <span className="ml-1 opacity-70 text-[10px]">{terms.length}</span>
+            <span className="opacity-70 text-[10px]">{terms.length}</span>
           )}
-        </button>
-
-        {/* Info icon */}
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className={`rounded-r-full px-1.5 py-1 transition-colors ${
+          <Info
+            className={`size-3 shrink-0 ${
               isSelected
-                ? "bg-primary text-primary-foreground/60 hover:text-primary-foreground"
-                : "bg-muted/60 text-muted-foreground/40 hover:text-muted-foreground"
+                ? "text-primary-foreground/50"
+                : "text-muted-foreground/40"
             }`}
-          >
-            <Info className="size-3" />
-          </button>
-        </PopoverTrigger>
-      </div>
+          />
+        </button>
+      </PopoverTrigger>
 
-      <PopoverContent
-        side="top"
-        align="start"
-        className="w-56 p-2"
-      >
+      <PopoverContent side="top" align="start" className="w-56 p-2">
         <p className="text-xs font-medium mb-1.5">{label}</p>
         <div className="flex flex-wrap gap-1">
           {terms.map((term) => (
