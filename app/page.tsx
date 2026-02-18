@@ -9,15 +9,32 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Sidebar from "@/components/Sidebar";
 import StatusBar from "@/components/StatusBar";
 import TranscriptPanel from "@/components/TranscriptPanel";
-import MobileSidebarDrawer from "@/components/MobileSidebarDrawer";
+import MobileBottomV1 from "@/components/mobile/MobileBottomV1";
+import MobileBottomV2 from "@/components/mobile/MobileBottomV2";
+import MobileBottomV3 from "@/components/mobile/MobileBottomV3";
 
 export default function Home() {
   const [languageA, setLanguageA] = useState<string[]>(["*"]);
   const [languageB, setLanguageB] = useState("en");
   const [termsText, setTermsText] = useState("");
+  const [selectedPresets, setSelectedPresets] = useState<Set<string>>(new Set());
+  const [customTerms, setCustomTerms] = useState<string[]>([]);
   const [translationMode, setTranslationMode] =
     useState<TranslationMode>("two_way");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mobileVariant, setMobileVariant] = useState<1 | 2 | 3>(1);
+
+  // Load saved variant from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem("mobileVariant");
+    if (saved === "1" || saved === "2" || saved === "3") {
+      setMobileVariant(Number(saved) as 1 | 2 | 3);
+    }
+  }, []);
+
+  const handleVariantChange = useCallback((v: 1 | 2 | 3) => {
+    setMobileVariant(v);
+    localStorage.setItem("mobileVariant", String(v));
+  }, []);
 
   const {
     entries,
@@ -41,13 +58,6 @@ export default function Home() {
       registerSpeaker(entry.speaker);
     }
   }, [entries, registerSpeaker]);
-
-  // Close mobile drawer when recording starts
-  useEffect(() => {
-    if (recordingState === "recording") {
-      setSidebarOpen(false);
-    }
-  }, [recordingState]);
 
   const handleStart = useCallback(() => {
     const terms = termsText
@@ -129,7 +139,7 @@ export default function Home() {
     [renameSpeaker]
   );
 
-  const sidebarProps = {
+  const sharedProps = {
     translationMode,
     onTranslationModeChange: handleTranslationModeChange,
     languageA,
@@ -138,6 +148,10 @@ export default function Home() {
     onLanguageBChange: handleLanguageBChange,
     termsText,
     onTermsTextChange: setTermsText,
+    selectedPresets,
+    onSelectedPresetsChange: setSelectedPresets,
+    customTerms,
+    onCustomTermsChange: setCustomTerms,
     speakers,
     onRenameSpeaker: handleRenameSpeaker,
     recordingState,
@@ -151,21 +165,20 @@ export default function Home() {
     hasEntries: entries.length > 0,
   };
 
+  const MobileBottom =
+    mobileVariant === 1
+      ? MobileBottomV1
+      : mobileVariant === 2
+        ? MobileBottomV2
+        : MobileBottomV3;
+
   return (
     <TooltipProvider delayDuration={300}>
     <div className="flex h-screen overflow-hidden">
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
-        <Sidebar {...sidebarProps} />
+        <Sidebar {...sharedProps} />
       </div>
-
-      {/* Mobile sidebar drawer */}
-      <MobileSidebarDrawer
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      >
-        <Sidebar {...sidebarProps} />
-      </MobileSidebarDrawer>
 
       {/* Main content */}
       <main className="flex flex-1 flex-col min-w-0">
@@ -173,7 +186,8 @@ export default function Home() {
           recordingState={recordingState}
           elapsedSeconds={elapsedSeconds}
           error={error}
-          onToggleSidebar={() => setSidebarOpen(true)}
+          mobileVariant={mobileVariant}
+          onMobileVariantChange={handleVariantChange}
         />
 
         <TranscriptPanel
@@ -185,6 +199,11 @@ export default function Home() {
           languageB={languageB}
           onReassignSpeaker={reassignSpeaker}
         />
+
+        {/* Mobile bottom bar (hidden on desktop) */}
+        <div className="lg:hidden">
+          <MobileBottom {...sharedProps} />
+        </div>
       </main>
     </div>
     </TooltipProvider>

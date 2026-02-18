@@ -101,6 +101,11 @@ body {
   animation: recording-pulse 1.5s ease-in-out infinite;
 }
 
+/* Safe area padding for iPhone notch/home indicator */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 /* Listening dots animation */
 @keyframes listening-dot {
   0%, 80%, 100% {

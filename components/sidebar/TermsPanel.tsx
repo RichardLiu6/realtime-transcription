@@ -13,18 +13,22 @@ import {
 interface TermsPanelProps {
   termsText: string;
   onTermsTextChange: (text: string) => void;
+  selectedPresets: Set<string>;
+  onSelectedPresetsChange: (presets: Set<string>) => void;
+  customTerms: string[];
+  onCustomTermsChange: (terms: string[]) => void;
   isRecording: boolean;
 }
 
 export default function TermsPanel({
   termsText,
   onTermsTextChange,
+  selectedPresets,
+  onSelectedPresetsChange,
+  customTerms,
+  onCustomTermsChange,
   isRecording,
 }: TermsPanelProps) {
-  const [selectedPresets, setSelectedPresets] = useState<Set<string>>(
-    new Set()
-  );
-  const [customTerms, setCustomTerms] = useState<string[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [expandedPreset, setExpandedPreset] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -46,13 +50,11 @@ export default function TermsPanel({
   }, [selectedPresets, customTerms]);
 
   const togglePreset = useCallback((key: string) => {
-    setSelectedPresets((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }, []);
+    const next = new Set(selectedPresets);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    onSelectedPresetsChange(next);
+  }, [selectedPresets, onSelectedPresetsChange]);
 
   const toggleExpand = useCallback((key: string) => {
     setExpandedPreset((prev) => (prev === key ? null : key));
@@ -64,14 +66,14 @@ export default function TermsPanel({
       if (!trimmed) return;
       if (customTerms.some((t) => t.toLowerCase() === trimmed.toLowerCase()))
         return;
-      setCustomTerms((prev) => [...prev, trimmed]);
+      onCustomTermsChange([...customTerms, trimmed]);
     },
-    [customTerms]
+    [customTerms, onCustomTermsChange]
   );
 
   const removeCustomTag = useCallback((index: number) => {
-    setCustomTerms((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+    onCustomTermsChange(customTerms.filter((_, i) => i !== index));
+  }, [customTerms, onCustomTermsChange]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" || e.key === ",") {

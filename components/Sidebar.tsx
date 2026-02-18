@@ -19,6 +19,10 @@ interface SidebarProps {
   onLanguageBChange: (code: string) => void;
   termsText: string;
   onTermsTextChange: (text: string) => void;
+  selectedPresets: Set<string>;
+  onSelectedPresetsChange: (presets: Set<string>) => void;
+  customTerms: string[];
+  onCustomTermsChange: (terms: string[]) => void;
   speakers: Map<string, SpeakerInfo>;
   onRenameSpeaker: (speakerId: string, newLabel: string) => void;
   recordingState: "idle" | "connecting" | "recording";
@@ -41,6 +45,10 @@ export default function Sidebar({
   onLanguageBChange,
   termsText,
   onTermsTextChange,
+  selectedPresets,
+  onSelectedPresetsChange,
+  customTerms,
+  onCustomTermsChange,
   speakers,
   onRenameSpeaker,
   recordingState,
@@ -107,6 +115,10 @@ export default function Sidebar({
         <TermsPanel
           termsText={termsText}
           onTermsTextChange={onTermsTextChange}
+          selectedPresets={selectedPresets}
+          onSelectedPresetsChange={onSelectedPresetsChange}
+          customTerms={customTerms}
+          onCustomTermsChange={onCustomTermsChange}
           isRecording={isRecording}
         />
 
