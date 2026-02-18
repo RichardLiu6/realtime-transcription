@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Mail, KeyRound } from "lucide-react";
+import { Loader2, Mail, KeyRound, Shield } from "lucide-react";
 
 type Stage = "email" | "code";
 
@@ -154,6 +154,17 @@ export default function LoginPage() {
         {error && (
           <p className="text-center text-sm text-destructive">{error}</p>
         )}
+
+        <div className="pt-2 border-t border-border">
+          <Button
+            variant="outline"
+            onClick={() => (window.location.href = "/admin/login")}
+            className="w-full"
+          >
+            <Shield className="size-4 mr-2" />
+            Admin Login
+          </Button>
+        </div>
       </div>
     </div>
   );

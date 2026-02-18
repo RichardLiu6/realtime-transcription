@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Menu, Loader2, LogOut, User } from "lucide-react";
+import { Menu, Loader2, LogOut, User, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface StatusBarProps {
@@ -25,12 +25,16 @@ export default function StatusBar({
   const seconds = String(elapsedSeconds % 60).padStart(2, "0");
 
   const [userName, setUserName] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
       .then((d) => {
-        if (d.user) setUserName(d.user.name);
+        if (d.user) {
+          setUserName(d.user.name);
+          if (d.user.role === "admin") setIsAdmin(true);
+        }
       })
       .catch(() => {});
   }, []);
@@ -87,6 +91,17 @@ export default function StatusBar({
           <div className="flex items-center gap-2">
             <User className="size-3.5 text-muted-foreground" />
             <span className="text-xs text-muted-foreground">{userName}</span>
+            {isAdmin && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => router.push("/admin")}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Admin panel"
+              >
+                <Shield className="size-3.5" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon-sm"

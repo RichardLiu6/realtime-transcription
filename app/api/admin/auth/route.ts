@@ -21,9 +21,20 @@ export async function POST(request: NextRequest) {
     }
 
     const adminToken = await signToken({ isAdmin: true }, "24h");
+    const authToken = await signToken(
+      { email: "admin", name: "admin", role: "admin" },
+      "24h"
+    );
 
     const response = NextResponse.json({ success: true });
     response.cookies.set("admin_token", adminToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24, // 24 hours
+      path: "/",
+    });
+    response.cookies.set("auth_token", authToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
