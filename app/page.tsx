@@ -9,9 +9,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Sidebar from "@/components/Sidebar";
 import StatusBar from "@/components/StatusBar";
 import TranscriptPanel from "@/components/TranscriptPanel";
-import MobileBottomV1 from "@/components/mobile/MobileBottomV1";
-import MobileBottomV2 from "@/components/mobile/MobileBottomV2";
-import MobileBottomV3 from "@/components/mobile/MobileBottomV3";
+import MobileBottom from "@/components/mobile/MobileBottom";
 
 export default function Home() {
   const [languageA, setLanguageA] = useState<string[]>(["*"]);
@@ -21,21 +19,6 @@ export default function Home() {
   const [customTerms, setCustomTerms] = useState<string[]>([]);
   const [translationMode, setTranslationMode] =
     useState<TranslationMode>("two_way");
-  const [mobileVariant, setMobileVariant] = useState<1 | 2 | 3>(1);
-
-  // Load saved variant from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem("mobileVariant");
-    if (saved === "1" || saved === "2" || saved === "3") {
-      setMobileVariant(Number(saved) as 1 | 2 | 3);
-    }
-  }, []);
-
-  const handleVariantChange = useCallback((v: 1 | 2 | 3) => {
-    setMobileVariant(v);
-    localStorage.setItem("mobileVariant", String(v));
-  }, []);
-
   const {
     entries,
     currentInterim,
@@ -165,13 +148,6 @@ export default function Home() {
     hasEntries: entries.length > 0,
   };
 
-  const MobileBottom =
-    mobileVariant === 1
-      ? MobileBottomV1
-      : mobileVariant === 2
-        ? MobileBottomV2
-        : MobileBottomV3;
-
   return (
     <TooltipProvider delayDuration={300}>
     <div className="flex h-dvh overflow-hidden">
@@ -186,8 +162,6 @@ export default function Home() {
           recordingState={recordingState}
           elapsedSeconds={elapsedSeconds}
           error={error}
-          mobileVariant={mobileVariant}
-          onMobileVariantChange={handleVariantChange}
         />
 
         <TranscriptPanel

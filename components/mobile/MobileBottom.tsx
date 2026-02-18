@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * V1: Fixed bottom bar + slide-up settings panel
+ * Mobile: Fixed bottom bar + slide-up settings panel
  * - Always-visible thin bar: record/stop button + timer
  * - Settings icon opens bottom Sheet
  */
@@ -19,7 +19,7 @@ import AudioWaveButton from "@/components/sidebar/AudioWaveButton";
 import MobileSettingsContent from "./MobileSettingsContent";
 import type { MobileBottomProps } from "./types";
 
-export default function MobileBottomV1(props: MobileBottomProps) {
+export default function MobileBottom(props: MobileBottomProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const isRecording = props.recordingState === "recording";
   const isConnecting = props.recordingState === "connecting";

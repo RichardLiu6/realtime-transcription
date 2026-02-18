@@ -9,16 +9,12 @@ interface StatusBarProps {
   recordingState: "idle" | "connecting" | "recording";
   elapsedSeconds: number;
   error: string | null;
-  mobileVariant?: 1 | 2 | 3;
-  onMobileVariantChange?: (v: 1 | 2 | 3) => void;
 }
 
 export default function StatusBar({
   recordingState,
   elapsedSeconds,
   error,
-  mobileVariant,
-  onMobileVariantChange,
 }: StatusBarProps) {
   const router = useRouter();
   const isRecording = recordingState === "recording";
@@ -78,25 +74,6 @@ export default function StatusBar({
             </div>
           )}
 
-          {/* Mobile: variant picker (for testing) */}
-          {mobileVariant && onMobileVariantChange && (
-            <div className="flex lg:hidden items-center gap-1">
-              {([1, 2, 3] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => onMobileVariantChange(v)}
-                  className={`h-6 w-6 rounded text-xs font-medium transition-colors ${
-                    mobileVariant === v
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground hover:bg-muted/80"
-                  }`}
-                >
-                  {v}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* Right: user info + logout */}

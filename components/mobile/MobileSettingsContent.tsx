@@ -31,7 +31,7 @@ export default function MobileSettingsContent(props: Props) {
   const isRecording = props.recordingState === "recording";
 
   return (
-    <div className="overflow-y-auto max-h-[60vh] pb-8">
+    <div className="overflow-y-auto pb-8">
       <TranslationModeToggle
         mode={props.translationMode}
         onChange={props.onTranslationModeChange}
