@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "ABL-translate",
-  description: "Soniox-powered bilingual real-time transcription with speaker diarization",
+  description: "ABL real-time bilingual transcription and translation",
 };
 
 export default function RootLayout({
