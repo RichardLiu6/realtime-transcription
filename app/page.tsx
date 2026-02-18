@@ -5,6 +5,7 @@ import { useSonioxTranscription } from "@/hooks/useSonioxTranscription";
 import { useSpeakerManager } from "@/hooks/useSpeakerManager";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
 import type { TranslationMode } from "@/types/bilingual";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import Sidebar from "@/components/Sidebar";
 import StatusBar from "@/components/StatusBar";
 import TranscriptPanel from "@/components/TranscriptPanel";
@@ -137,6 +138,7 @@ export default function Home() {
   };
 
   return (
+    <TooltipProvider delayDuration={300}>
     <div className="flex h-screen overflow-hidden">
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
@@ -171,5 +173,6 @@ export default function Home() {
         />
       </main>
     </div>
+    </TooltipProvider>
   );
 }

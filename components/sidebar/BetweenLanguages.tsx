@@ -1,6 +1,14 @@
 "use client";
 
+import { ArrowUpDown } from "lucide-react";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface BetweenLanguagesProps {
   languageA: string;
@@ -18,54 +26,66 @@ export default function BetweenLanguages({
   disabled,
 }: BetweenLanguagesProps) {
   return (
-    <div className="px-4 py-3 border-b border-gray-100">
-      <p className="mb-2 text-xs font-medium text-gray-500 uppercase tracking-wide">
+    <div className="px-4 py-3 border-b border-border">
+      <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
         Languages
       </p>
 
       <div className="space-y-2">
         <div>
-          <label className="mb-1 block text-xs text-gray-400">Language A</label>
-          <select
+          <label className="mb-1 block text-xs text-muted-foreground">
+            Language A
+          </label>
+          <Select
             value={languageA}
-            onChange={(e) => onLanguageAChange(e.target.value)}
+            onValueChange={onLanguageAChange}
             disabled={disabled}
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
           >
-            {SONIOX_LANGUAGES.map((lang) => (
-              <option
-                key={lang.code}
-                value={lang.code}
-                disabled={lang.code === languageB}
-              >
-                {lang.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SONIOX_LANGUAGES.map((lang) => (
+                <SelectItem
+                  key={lang.code}
+                  value={lang.code}
+                  disabled={lang.code === languageB}
+                >
+                  {lang.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="flex justify-center">
-          <span className="text-gray-300 text-lg">⇅</span>
+          <ArrowUpDown className="size-4 text-muted-foreground" />
         </div>
 
         <div>
-          <label className="mb-1 block text-xs text-gray-400">Language B</label>
-          <select
+          <label className="mb-1 block text-xs text-muted-foreground">
+            Language B
+          </label>
+          <Select
             value={languageB}
-            onChange={(e) => onLanguageBChange(e.target.value)}
+            onValueChange={onLanguageBChange}
             disabled={disabled}
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
           >
-            {SONIOX_LANGUAGES.map((lang) => (
-              <option
-                key={lang.code}
-                value={lang.code}
-                disabled={lang.code === languageA}
-              >
-                {lang.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SONIOX_LANGUAGES.map((lang) => (
+                <SelectItem
+                  key={lang.code}
+                  value={lang.code}
+                  disabled={lang.code === languageA}
+                >
+                  {lang.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
     </div>

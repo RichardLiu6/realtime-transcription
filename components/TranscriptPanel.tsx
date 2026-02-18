@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import { ChevronDown, Mic } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
 import type { BilingualEntry, SpeakerInfo } from "@/types/bilingual";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
 
@@ -108,20 +111,8 @@ export default function TranscriptPanel({
                 <p className="text-sm text-gray-400">Listening...</p>
               </div>
             ) : (
-              <div className="text-center text-gray-300">
-                <svg
-                  className="mx-auto h-16 w-16"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={1}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"
-                  />
-                </svg>
+              <div className="text-center text-muted-foreground/40">
+                <Mic className="mx-auto size-16" strokeWidth={1} />
                 <p className="mt-2 text-sm">
                   Click Start Recording in the sidebar
                 </p>
@@ -203,14 +194,19 @@ export default function TranscriptPanel({
 
           // Original text
           if (entry.isFinal) {
-            // Final: normal styling
+            // Final: normal styling with tooltip showing timing
             elements.push(
-              <span
-                key={`${entry.id}-original`}
-                className="text-gray-800 leading-relaxed"
-              >
-                {entry.originalText}
-              </span>
+              <Tooltip key={`${entry.id}-original`}>
+                <TooltipTrigger asChild>
+                  <span className="text-foreground leading-relaxed hover:text-primary rounded cursor-default transition-colors">
+                    {entry.originalText}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  <p>Start: {formatTime(entry.startMs)}</p>
+                  {entry.endMs > 0 && <p>End: {formatTime(entry.endMs)}</p>}
+                </TooltipContent>
+              </Tooltip>
             );
           } else {
             // Non-final (streaming): show final tokens + interim tokens with cursor
@@ -290,15 +286,14 @@ export default function TranscriptPanel({
 
       {/* Scroll-to-bottom button */}
       {!isAtBottom && (
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-sm"
           onClick={scrollToBottom}
-          className="absolute bottom-4 right-4 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-zinc-500/30 text-white shadow-lg backdrop-blur-sm transition hover:bg-zinc-600/80"
+          className="absolute bottom-4 right-4 z-20 rounded-full bg-zinc-500/30 text-white shadow-lg backdrop-blur-sm hover:bg-zinc-600/80 hover:text-white"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-          </svg>
-        </button>
+          <ChevronDown className="size-4" />
+        </Button>
       )}
     </div>
   );

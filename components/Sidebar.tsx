@@ -1,6 +1,8 @@
 "use client";
 
+import { Download, FilePlus } from "lucide-react";
 import type { TranslationMode, SpeakerInfo } from "@/types/bilingual";
+import { Button } from "@/components/ui/button";
 import TranslationModeToggle from "@/components/sidebar/TranslationModeToggle";
 import BetweenLanguages from "@/components/sidebar/BetweenLanguages";
 import FromToLanguages from "@/components/sidebar/FromToLanguages";
@@ -55,9 +57,9 @@ export default function Sidebar({
   const seconds = String(elapsedSeconds % 60).padStart(2, "0");
 
   return (
-    <aside className="flex w-72 flex-col border-r border-gray-200 bg-white h-full overflow-hidden">
+    <aside className="flex w-72 flex-col border-r border-border bg-background h-full overflow-hidden">
       {/* Header: Record button + timer */}
-      <div className="shrink-0 px-4 py-3 border-b border-gray-200 space-y-2">
+      <div className="shrink-0 px-4 py-3 border-b border-border space-y-2">
         <AudioWaveButton
           recordingState={recordingState}
           onStart={onStart}
@@ -67,7 +69,7 @@ export default function Sidebar({
         {isRecording && (
           <div className="flex items-center justify-center gap-2">
             <span className="h-2 w-2 rounded-full bg-red-500 recording-pulse" />
-            <span className="font-mono text-sm font-semibold text-gray-800">
+            <span className="font-mono text-sm font-semibold text-foreground">
               {minutes}:{seconds}
             </span>
           </div>
@@ -114,36 +116,27 @@ export default function Sidebar({
 
       {/* Bottom controls (sticky) */}
       {hasEntries && (
-        <div className="shrink-0 border-t border-gray-200 bg-white p-4">
+        <div className="shrink-0 border-t border-border bg-background p-4">
           <div className="flex gap-2">
-            <button
-              type="button"
+            <Button
+              variant="outline"
+              size="sm"
               onClick={onExport}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600 transition hover:bg-gray-50"
+              className="flex-1"
             >
-              <svg
-                className="h-3.5 w-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                />
-              </svg>
+              <Download className="size-3.5" />
               Export
-            </button>
+            </Button>
             {isIdle && (
-              <button
-                type="button"
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={onNewMeeting}
-                className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-600 transition hover:bg-gray-50"
+                className="flex-1"
               >
+                <FilePlus className="size-3.5" />
                 New Meeting
-              </button>
+              </Button>
             )}
           </div>
         </div>

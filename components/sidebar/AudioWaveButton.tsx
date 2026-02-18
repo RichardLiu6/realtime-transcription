@@ -1,6 +1,8 @@
 "use client";
 
 import { useRef, useEffect, useCallback } from "react";
+import { Mic, Square, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface AudioWaveButtonProps {
   recordingState: "idle" | "connecting" | "recording";
@@ -88,11 +90,11 @@ export default function AudioWaveButton({
             waveAmp;
         ctx.lineTo(x, y);
       }
-      // Fill down to bottom for layered water-level effect (matches Soniox Compare)
+      // Fill down to bottom for layered water-level effect
       ctx.lineTo(width, height);
       ctx.lineTo(0, height);
       ctx.closePath();
-      ctx.fillStyle = `rgba(0, 0, 0, ${wave.opacity})`;
+      ctx.fillStyle = `rgba(255, 255, 255, ${wave.opacity})`;
       ctx.fill();
     }
 
@@ -149,73 +151,37 @@ export default function AudioWaveButton({
   };
 
   return (
-    <button
-      type="button"
+    <Button
       onClick={handleClick}
       disabled={isConnecting}
-      className={`relative w-full h-14 rounded-xl overflow-hidden transition font-medium text-sm ${
-        isRecording
-          ? "bg-red-50 text-red-600 hover:bg-red-100"
-          : "bg-gray-800 text-white hover:bg-gray-700"
-      } disabled:opacity-60`}
+      variant={isRecording ? "destructive" : "default"}
+      className="relative w-full h-12 overflow-hidden group"
     >
       <canvas
         ref={canvasRef}
-        className={`absolute inset-0 w-full h-full transition-opacity ${
+        className={`absolute inset-0 w-full h-full transition-opacity duration-500 ${
           isRecording ? "opacity-100" : "opacity-0"
         }`}
         style={{ width: "100%", height: "100%" }}
       />
-      <span className="relative z-10 flex items-center justify-center gap-2">
+      <span className="relative z-10 flex items-center justify-center gap-2 group-hover:scale-105 transition-transform">
         {isRecording ? (
           <>
-            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 16 16">
-              <rect x="3" y="3" width="10" height="10" rx="1" />
-            </svg>
+            <Square className="size-4" />
             Stop Recording
           </>
         ) : isConnecting ? (
           <>
-            <svg
-              className="h-4 w-4 animate-spin"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-              />
-            </svg>
+            <Loader2 className="size-4 animate-spin" />
             Connecting...
           </>
         ) : (
           <>
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"
-              />
-            </svg>
+            <Mic className="size-4" />
             Start Recording
           </>
         )}
       </span>
-    </button>
+    </Button>
   );
 }

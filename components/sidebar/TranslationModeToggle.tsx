@@ -1,5 +1,7 @@
 "use client";
 
+import { ArrowLeftRight, ArrowRight } from "lucide-react";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { TranslationMode } from "@/types/bilingual";
 
 interface TranslationModeToggleProps {
@@ -14,42 +16,33 @@ export default function TranslationModeToggle({
   disabled,
 }: TranslationModeToggleProps) {
   return (
-    <div className="px-4 py-3 border-b border-gray-100">
-      <p className="mb-2 text-xs font-medium text-gray-500 uppercase tracking-wide">
+    <div className="px-4 py-3 border-b border-border">
+      <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
         Translation Mode
       </p>
-      <div className="flex rounded-lg bg-gray-100 p-0.5">
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => onChange("two_way")}
-          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition ${
-            mode === "two_way"
-              ? "bg-white text-gray-900 shadow-sm"
-              : "text-gray-500 hover:text-gray-700"
-          } disabled:opacity-50`}
-        >
-          <span className="mr-1">⇄</span>
-          双向 Between
-        </button>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => onChange("one_way")}
-          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition ${
-            mode === "one_way"
-              ? "bg-white text-gray-900 shadow-sm"
-              : "text-gray-500 hover:text-gray-700"
-          } disabled:opacity-50`}
-        >
-          <span className="mr-1">→</span>
-          单向 From→To
-        </button>
-      </div>
-      <p className="mt-1.5 text-xs text-gray-400">
+      <ToggleGroup
+        type="single"
+        value={mode}
+        onValueChange={(v) => {
+          if (v) onChange(v as TranslationMode);
+        }}
+        disabled={disabled}
+        variant="outline"
+        className="w-full"
+      >
+        <ToggleGroupItem value="two_way" className="flex-1 gap-1.5 text-xs">
+          <ArrowLeftRight className="size-3.5" />
+          Between
+        </ToggleGroupItem>
+        <ToggleGroupItem value="one_way" className="flex-1 gap-1.5 text-xs">
+          <ArrowRight className="size-3.5" />
+          From→To
+        </ToggleGroupItem>
+      </ToggleGroup>
+      <p className="mt-1.5 text-xs text-muted-foreground">
         {mode === "two_way"
-          ? "自动识别双语对话，适合会议"
-          : "固定源语言，翻译到目标语言"}
+          ? "Auto-detect bilingual conversation"
+          : "Fixed source language, translate to target"}
       </p>
     </div>
   );
