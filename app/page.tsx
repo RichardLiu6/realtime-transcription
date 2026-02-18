@@ -132,6 +132,7 @@ export default function Home() {
     onStart: handleStart,
     onStop: handleStop,
     audioAnalyser,
+    entries,
     onExport: handleExport,
     onNewMeeting: handleNewMeeting,
     hasEntries: entries.length > 0,

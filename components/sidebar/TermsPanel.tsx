@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, useRef, useCallback, useMemo } from "react";
+import { X } from "lucide-react";
 import { INDUSTRY_PRESETS } from "@/lib/contextTerms";
 import {
   Accordion,
@@ -20,17 +22,74 @@ export default function TermsPanel({
   onTermsTextChange,
   isRecording,
 }: TermsPanelProps) {
-  const termsCount = termsText
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean).length;
+  const [inputValue, setInputValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const tags = useMemo(
+    () =>
+      termsText
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean),
+    [termsText]
+  );
+
+  const setTags = useCallback(
+    (newTags: string[]) => {
+      onTermsTextChange(newTags.join(", "));
+    },
+    [onTermsTextChange]
+  );
+
+  const addTag = useCallback(
+    (tag: string) => {
+      const trimmed = tag.trim();
+      if (!trimmed) return;
+      // Avoid duplicates (case-insensitive)
+      if (tags.some((t) => t.toLowerCase() === trimmed.toLowerCase())) return;
+      setTags([...tags, trimmed]);
+    },
+    [tags, setTags]
+  );
+
+  const removeTag = useCallback(
+    (index: number) => {
+      setTags(tags.filter((_, i) => i !== index));
+    },
+    [tags, setTags]
+  );
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      addTag(inputValue);
+      setInputValue("");
+    }
+    if (e.key === "Backspace" && !inputValue && tags.length > 0) {
+      removeTag(tags.length - 1);
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pasted = e.clipboardData.getData("text");
+    if (pasted.includes(",")) {
+      e.preventDefault();
+      const newTerms = pasted.split(",").map((t) => t.trim()).filter(Boolean);
+      for (const term of newTerms) addTag(term);
+      setInputValue("");
+    }
+  };
 
   const appendPresetTerms = (key: string) => {
     const preset = INDUSTRY_PRESETS[key];
     if (!preset) return;
-    const current = termsText.trim();
-    const joined = preset.terms.join(", ");
-    onTermsTextChange(current ? `${current}, ${joined}` : joined);
+    const newTags = [...tags];
+    for (const term of preset.terms) {
+      if (!newTags.some((t) => t.toLowerCase() === term.toLowerCase())) {
+        newTags.push(term);
+      }
+    }
+    setTags(newTags);
   };
 
   return (
@@ -40,14 +99,15 @@ export default function TermsPanel({
           <AccordionTrigger className="py-3 hover:no-underline">
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Context Terms
-              {termsCount > 0 && (
+              {tags.length > 0 && (
                 <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary normal-case">
-                  {termsCount}
+                  {tags.length}
                 </span>
               )}
             </span>
           </AccordionTrigger>
           <AccordionContent>
+            {/* Industry presets */}
             <div className="mb-3 flex flex-wrap gap-1.5">
               {Object.entries(INDUSTRY_PRESETS).map(([key, preset]) => (
                 <Button
@@ -62,13 +122,46 @@ export default function TermsPanel({
               ))}
             </div>
 
-            <textarea
-              value={termsText}
-              onChange={(e) => onTermsTextChange(e.target.value)}
-              rows={3}
-              placeholder="Enter terms, separated by commas"
-              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
-            />
+            {/* Tag input area */}
+            <div
+              className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-2 min-h-[2.5rem] cursor-text focus-within:border-ring focus-within:ring-1 focus-within:ring-ring"
+              onClick={() => inputRef.current?.focus()}
+            >
+              {tags.map((tag, i) => (
+                <span
+                  key={`${tag}-${i}`}
+                  className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs text-primary"
+                >
+                  {tag}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeTag(i);
+                    }}
+                    className="text-primary/60 hover:text-primary"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              ))}
+              <input
+                ref={inputRef}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                onBlur={() => {
+                  if (inputValue.trim()) {
+                    addTag(inputValue);
+                    setInputValue("");
+                  }
+                }}
+                placeholder={tags.length === 0 ? "输入术语，回车添加" : ""}
+                className="flex-1 min-w-[80px] bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none"
+              />
+            </div>
+
             <p className="mt-1.5 text-xs text-muted-foreground">
               {isRecording
                 ? "Takes effect on next recording"
