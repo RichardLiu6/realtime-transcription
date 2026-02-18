@@ -103,7 +103,7 @@ body {
 
 /* Safe area padding for iPhone notch/home indicator */
 .safe-area-bottom {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: max(12px, env(safe-area-inset-bottom, 12px));
 }
 
 /* Listening dots animation */
