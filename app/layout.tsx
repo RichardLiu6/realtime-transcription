@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Soniox 双语实时转录",
+  title: "ABL-translate",
   description: "Soniox-powered bilingual real-time transcription with speaker diarization",
 };
 
