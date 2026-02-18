@@ -288,11 +288,12 @@ export function useSonioxTranscription() {
       if (translationTokens.length > 0) {
         // If all tokens are final, this completes a translation → consume from queue
         const allFinal = translationTokens.every((t) => t.is_final);
+        // Queue first: finalized entries waiting for translation take priority
+        // Fall back to current segment only for interim translation display
         const targetEntryId =
+          pendingTranslationQueue.current[0] ||
           currentSegmentRef.current?.entryId ||
-          (allFinal
-            ? pendingTranslationQueue.current[0] || null
-            : pendingTranslationQueue.current[0] || null);
+          null;
 
         // === DEBUG: Log translation matching ===
         console.log(
