@@ -265,7 +265,7 @@ export default function TermsPanel({
 
   return (
     <div className="px-4 border-b border-border">
-      <Accordion type="single" collapsible>
+      <Accordion type="single" collapsible defaultValue="terms">
         <AccordionItem value="terms" className="border-b-0">
           <AccordionTrigger className="py-3 hover:no-underline">
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">

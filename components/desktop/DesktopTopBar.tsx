@@ -2,7 +2,7 @@
 
 /**
  * Desktop Layout V2: Top toolbar
- * All controls in a horizontal bar, transcript takes full width
+ * Two-row bar: controls on top, languages + terms inline below
  */
 
 import { useMemo } from "react";
@@ -12,8 +12,8 @@ import {
   Loader2,
   ArrowLeftRight,
   ArrowRight,
-  BookOpen,
-  Settings,
+  ArrowUpDown,
+  ArrowDown,
   Download,
   FilePlus,
   Users,
@@ -30,12 +30,17 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import BetweenLanguages from "@/components/sidebar/BetweenLanguages";
-import FromToLanguages from "@/components/sidebar/FromToLanguages";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import TermsPanel from "@/components/sidebar/TermsPanel";
 import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
 import type { TranslationMode, SpeakerInfo, BilingualEntry } from "@/types/bilingual";
-import { INDUSTRY_PRESETS } from "@/lib/contextTerms";
+import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import { useT } from "@/lib/i18n";
 
 interface DesktopTopBarProps {
@@ -72,16 +77,13 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
   const minutes = String(Math.floor(props.elapsedSeconds / 60)).padStart(2, "0");
   const seconds = String(props.elapsedSeconds % 60).padStart(2, "0");
 
-  const totalTerms = useMemo(() => {
-    const presetTerms = Array.from(props.selectedPresets).flatMap(
-      (key) => INDUSTRY_PRESETS[key]?.terms ?? []
-    );
-    return new Set([...presetTerms, ...props.customTerms]).size;
-  }, [props.selectedPresets, props.customTerms]);
+  // two_way mode uses single language
+  const langA = props.languageA[0] === "*" ? "zh" : (props.languageA[0] ?? "zh");
 
   return (
-    <div className="shrink-0 border-b border-border bg-background px-4 py-2">
-      <div className="flex items-center gap-3">
+    <div className="shrink-0 border-b border-border bg-background">
+      {/* Row 1: Record + Mode + Languages + Speakers + Export */}
+      <div className="flex items-center gap-3 px-4 py-2">
         {/* Record / Stop */}
         {isRecording ? (
           <div className="flex items-center gap-2">
@@ -140,94 +142,110 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
 
         <div className="h-5 w-px bg-border" />
 
-        {/* Language settings popover */}
-        <Popover>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-1.5 text-xs">
-                  <Settings className="size-3.5" />
-                  {t("languages")}
-                </Button>
-              </PopoverTrigger>
-            </TooltipTrigger>
-            <TooltipContent>{t("languages")}</TooltipContent>
-          </Tooltip>
-          <PopoverContent side="bottom" align="start" className="w-72 p-0">
-            {props.translationMode === "two_way" ? (
-              <BetweenLanguages
-                languageA={props.languageA}
-                languageB={props.languageB}
-                onLanguageAChange={props.onLanguageAChange}
-                onLanguageBChange={props.onLanguageBChange}
+        {/* Inline language selects */}
+        <div className="flex items-center gap-1.5">
+          {props.translationMode === "two_way" ? (
+            <>
+              <Select
+                value={langA}
+                onValueChange={(code) => props.onLanguageAChange([code])}
                 disabled={isRecording}
-              />
-            ) : (
-              <FromToLanguages
-                languageA={props.languageA}
-                languageB={props.languageB}
-                onLanguageAChange={props.onLanguageAChange}
-                onLanguageBChange={props.onLanguageBChange}
+              >
+                <SelectTrigger className="h-8 w-[120px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SONIOX_LANGUAGES.map((lang) => (
+                    <SelectItem key={lang.code} value={lang.code} disabled={lang.code === props.languageB}>
+                      {lang.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <ArrowUpDown className="size-3.5 text-muted-foreground shrink-0" />
+              <Select
+                value={props.languageB}
+                onValueChange={props.onLanguageBChange}
                 disabled={isRecording}
-              />
-            )}
-          </PopoverContent>
-        </Popover>
-
-        {/* Terms popover */}
-        <Popover>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-1.5 text-xs relative">
-                  <BookOpen className="size-3.5" />
-                  {t("terms")}
-                  {totalTerms > 0 && (
-                    <span className="ml-1 rounded-full bg-primary/10 px-1.5 py-0 text-[10px] font-medium text-primary">
-                      {totalTerms}
-                    </span>
-                  )}
-                </Button>
-              </PopoverTrigger>
-            </TooltipTrigger>
-            <TooltipContent>{t("context_terms")}</TooltipContent>
-          </Tooltip>
-          <PopoverContent side="bottom" align="start" className="w-80 p-0">
-            <TermsPanel
-              termsText={props.termsText}
-              onTermsTextChange={props.onTermsTextChange}
-              selectedPresets={props.selectedPresets}
-              onSelectedPresetsChange={props.onSelectedPresetsChange}
-              customTerms={props.customTerms}
-              onCustomTermsChange={props.onCustomTermsChange}
-              isRecording={isRecording}
-              inline
-            />
-          </PopoverContent>
-        </Popover>
+              >
+                <SelectTrigger className="h-8 w-[120px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SONIOX_LANGUAGES.map((lang) => (
+                    <SelectItem key={lang.code} value={lang.code} disabled={lang.code === langA}>
+                      {lang.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
+          ) : (
+            <>
+              <span className="text-[10px] text-muted-foreground shrink-0">{t("source_language")}</span>
+              <Select
+                value={props.languageA[0] === "*" ? "*" : (props.languageA[0] ?? "*")}
+                onValueChange={(code) => props.onLanguageAChange([code])}
+                disabled={isRecording}
+              >
+                <SelectTrigger className="h-8 w-[120px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="*">{t("any_language")}</SelectItem>
+                  {SONIOX_LANGUAGES.map((lang) => (
+                    <SelectItem key={lang.code} value={lang.code}>
+                      {lang.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <ArrowDown className="size-3.5 text-muted-foreground shrink-0" />
+              <Select
+                value={props.languageB}
+                onValueChange={props.onLanguageBChange}
+                disabled={isRecording}
+              >
+                <SelectTrigger className="h-8 w-[120px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SONIOX_LANGUAGES.map((lang) => (
+                    <SelectItem key={lang.code} value={lang.code}>
+                      {lang.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
+          )}
+        </div>
 
         {/* Speakers popover */}
         {props.speakers.size > 0 && (
-          <Popover>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-1.5 text-xs">
-                    <Users className="size-3.5" />
-                    {t("speakers")} ({props.speakers.size})
-                  </Button>
-                </PopoverTrigger>
-              </TooltipTrigger>
-              <TooltipContent>{t("speakers")}</TooltipContent>
-            </Tooltip>
-            <PopoverContent side="bottom" align="start" className="w-72 p-0">
-              <SpeakerPanel
-                speakers={props.speakers}
-                entries={props.entries}
-                onRenameSpeaker={props.onRenameSpeaker}
-              />
-            </PopoverContent>
-          </Popover>
+          <>
+            <div className="h-5 w-px bg-border" />
+            <Popover>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-1.5 text-xs">
+                      <Users className="size-3.5" />
+                      {t("speakers")} ({props.speakers.size})
+                    </Button>
+                  </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent>{t("speakers")}</TooltipContent>
+              </Tooltip>
+              <PopoverContent side="bottom" align="start" className="w-72 p-0">
+                <SpeakerPanel
+                  speakers={props.speakers}
+                  entries={props.entries}
+                  onRenameSpeaker={props.onRenameSpeaker}
+                />
+              </PopoverContent>
+            </Popover>
+          </>
         )}
 
         {/* Spacer */}
@@ -246,6 +264,20 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
             </Button>
           </div>
         )}
+      </div>
+
+      {/* Row 2: Terms inline */}
+      <div className="border-t border-border/50 px-4 py-2">
+        <TermsPanel
+          termsText={props.termsText}
+          onTermsTextChange={props.onTermsTextChange}
+          selectedPresets={props.selectedPresets}
+          onSelectedPresetsChange={props.onSelectedPresetsChange}
+          customTerms={props.customTerms}
+          onCustomTermsChange={props.onCustomTermsChange}
+          isRecording={isRecording}
+          inline
+        />
       </div>
     </div>
   );
