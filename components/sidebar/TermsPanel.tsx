@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { X, Info } from "lucide-react";
 import { INDUSTRY_PRESETS } from "@/lib/contextTerms";
+import { useT } from "@/lib/i18n";
 import {
   Popover,
   PopoverContent,
@@ -23,6 +24,8 @@ interface TermsPanelProps {
   customTerms: string[];
   onCustomTermsChange: (terms: string[]) => void;
   isRecording: boolean;
+  /** When true, render content directly without Accordion wrapper */
+  inline?: boolean;
 }
 
 /** Hook: long-press detection for mobile */
@@ -130,7 +133,9 @@ export default function TermsPanel({
   customTerms,
   onCustomTermsChange,
   isRecording,
+  inline = false,
 }: TermsPanelProps) {
+  const t = useT();
   const [inputValue, setInputValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -189,13 +194,82 @@ export default function TermsPanel({
     }
   };
 
+  const content = (
+    <>
+      {/* Chip grid */}
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {Object.entries(INDUSTRY_PRESETS).map(([key, preset]) => (
+          <PresetChip
+            key={key}
+            presetKey={key}
+            label={preset.label}
+            terms={preset.terms}
+            isSelected={selectedPresets.has(key)}
+            onToggle={() => togglePreset(key)}
+          />
+        ))}
+      </div>
+
+      {/* Custom terms */}
+      <div
+        className="flex flex-wrap items-center gap-1 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-[2rem] cursor-text focus-within:border-ring focus-within:ring-1 focus-within:ring-ring"
+        onClick={() => inputRef.current?.focus()}
+      >
+        {customTerms.map((tag, i) => (
+          <span
+            key={`${tag}-${i}`}
+            className="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary"
+          >
+            {tag}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                removeCustomTag(i);
+              }}
+              className="text-primary/60 hover:text-primary"
+            >
+              <X className="size-2.5" />
+            </button>
+          </span>
+        ))}
+        <input
+          ref={inputRef}
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={() => {
+            if (inputValue.trim()) {
+              addCustomTag(inputValue);
+              setInputValue("");
+            }
+          }}
+          placeholder={
+            customTerms.length === 0 ? t("add_term_placeholder") : ""
+          }
+          className="flex-1 min-w-[60px] bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none"
+        />
+      </div>
+
+      <p className="mt-2 text-[10px] text-muted-foreground">
+        {isRecording
+          ? t("terms_effect_next")
+          : t("terms_effect_start")}
+      </p>
+    </>
+  );
+
+  if (inline) {
+    return <div className="px-3 py-2">{content}</div>;
+  }
+
   return (
     <div className="px-4 border-b border-border">
       <Accordion type="single" collapsible>
         <AccordionItem value="terms" className="border-b-0">
           <AccordionTrigger className="py-3 hover:no-underline">
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Context Terms
+              {t("context_terms")}
               {totalCount > 0 && (
                 <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary normal-case">
                   {totalCount}
@@ -203,68 +277,7 @@ export default function TermsPanel({
               )}
             </span>
           </AccordionTrigger>
-          <AccordionContent>
-            {/* Chip grid */}
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              {Object.entries(INDUSTRY_PRESETS).map(([key, preset]) => (
-                <PresetChip
-                  key={key}
-                  presetKey={key}
-                  label={preset.label}
-                  terms={preset.terms}
-                  isSelected={selectedPresets.has(key)}
-                  onToggle={() => togglePreset(key)}
-                />
-              ))}
-            </div>
-
-            {/* Custom terms */}
-            <div
-              className="flex flex-wrap items-center gap-1 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-[2rem] cursor-text focus-within:border-ring focus-within:ring-1 focus-within:ring-ring"
-              onClick={() => inputRef.current?.focus()}
-            >
-              {customTerms.map((tag, i) => (
-                <span
-                  key={`${tag}-${i}`}
-                  className="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary"
-                >
-                  {tag}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeCustomTag(i);
-                    }}
-                    className="text-primary/60 hover:text-primary"
-                  >
-                    <X className="size-2.5" />
-                  </button>
-                </span>
-              ))}
-              <input
-                ref={inputRef}
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onBlur={() => {
-                  if (inputValue.trim()) {
-                    addCustomTag(inputValue);
-                    setInputValue("");
-                  }
-                }}
-                placeholder={
-                  customTerms.length === 0 ? "Add term, press Enter" : ""
-                }
-                className="flex-1 min-w-[60px] bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none"
-              />
-            </div>
-
-            <p className="mt-2 text-[10px] text-muted-foreground">
-              {isRecording
-                ? "Takes effect on next recording"
-                : "Takes effect when recording starts"}
-            </p>
-          </AccordionContent>
+          <AccordionContent>{content}</AccordionContent>
         </AccordionItem>
       </Accordion>
     </div>

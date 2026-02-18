@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from "react";
 import type { SpeakerInfo, BilingualEntry } from "@/types/bilingual";
+import { useT } from "@/lib/i18n";
 
 interface SpeakerPanelProps {
   speakers: Map<string, SpeakerInfo>;
@@ -46,6 +47,8 @@ export default function SpeakerPanel({
     [speakerCounts]
   );
 
+  const t = useT();
+
   if (speakers.size === 0) return null;
 
   const speakerList = Array.from(speakers.values());
@@ -77,10 +80,10 @@ export default function SpeakerPanel({
   return (
     <div className="border-b border-border px-4 py-3">
       <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-        Speakers ({speakers.size})
+        {t("speakers")} ({speakers.size})
         {totalWords > 0 && (
           <span className="ml-2 normal-case font-normal">
-            {totalWords} {/[\u4e00-\u9fff]/.test(entries[0]?.originalText || "") ? "字" : "words"}
+            {totalWords} {t("words")}
           </span>
         )}
       </p>

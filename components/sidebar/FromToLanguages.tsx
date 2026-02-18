@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { useT } from "@/lib/i18n";
 
 interface FromToLanguagesProps {
   languageA: string[];
@@ -34,6 +35,7 @@ export default function FromToLanguages({
   onLanguageBChange,
   disabled,
 }: FromToLanguagesProps) {
+  const t = useT();
   const [open, setOpen] = useState(false);
 
   const isAny = languageA.length === 1 && languageA[0] === "*";
@@ -65,20 +67,20 @@ export default function FromToLanguages({
   };
 
   const getLanguageName = (code: string) => {
-    if (code === "*") return "Any Language (Auto)";
+    if (code === "*") return t("any_language");
     return SONIOX_LANGUAGES.find((l) => l.code === code)?.name ?? code;
   };
 
   return (
     <div className="px-4 py-3 border-b border-border">
       <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-        Languages
+        {t("languages")}
       </p>
 
       <div className="space-y-2">
         <div>
           <label className="mb-1 block text-xs text-muted-foreground">
-            Source Language
+            {t("source_language")}
           </label>
           <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
@@ -91,7 +93,7 @@ export default function FromToLanguages({
               >
                 <div className="flex flex-wrap gap-1 flex-1 text-left">
                   {isAny ? (
-                    <span className="text-sm">Any Language (Auto)</span>
+                    <span className="text-sm">{t("any_language")}</span>
                   ) : (
                     languageA.map((code) => (
                       <Badge
@@ -133,7 +135,7 @@ export default function FromToLanguages({
                       isAny ? "opacity-100" : "opacity-0"
                     )}
                   />
-                  Any Language (Auto)
+                  {t("any_language")}
                 </button>
 
                 <div className="h-px bg-border" />
@@ -173,7 +175,7 @@ export default function FromToLanguages({
 
         <div>
           <label className="mb-1 block text-xs text-muted-foreground">
-            Target Language
+            {t("target_language")}
           </label>
           <Select
             value={languageB}

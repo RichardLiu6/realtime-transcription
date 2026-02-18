@@ -6,6 +6,7 @@ import { useSpeakerManager } from "@/hooks/useSpeakerManager";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
 import type { TranslationMode } from "@/types/bilingual";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { t } from "@/lib/i18n";
 import Sidebar from "@/components/Sidebar";
 import StatusBar from "@/components/StatusBar";
 import TranscriptPanel from "@/components/TranscriptPanel";
@@ -77,7 +78,7 @@ export default function Home() {
     (codes: string[]) => {
       if (recordingState === "recording") {
         const confirmed = window.confirm(
-          "Changing language will stop recording. Continue?"
+          t("confirm_language_change")
         );
         if (!confirmed) return;
         stop();
@@ -91,7 +92,7 @@ export default function Home() {
     (code: string) => {
       if (recordingState === "recording") {
         const confirmed = window.confirm(
-          "Changing language will stop recording. Continue?"
+          t("confirm_language_change")
         );
         if (!confirmed) return;
         stop();
@@ -105,7 +106,7 @@ export default function Home() {
     (mode: TranslationMode) => {
       if (recordingState === "recording") {
         const confirmed = window.confirm(
-          "Changing translation mode will stop recording. Continue?"
+          t("confirm_mode_change")
         );
         if (!confirmed) return;
         stop();

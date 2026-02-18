@@ -6,6 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Button } from "@/components/ui/button";
 import type { BilingualEntry, SpeakerInfo } from "@/types/bilingual";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
+import { useT } from "@/lib/i18n";
 
 // Soniox Compare style: 25 hex colors for speakers
 const SPEAKER_COLORS = [
@@ -56,6 +57,7 @@ export default function TranscriptPanel({
   languageB,
   onReassignSpeaker,
 }: TranscriptPanelProps) {
+  const t = useT();
   const containerRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [editingSpeakerEntryId, setEditingSpeakerEntryId] = useState<
@@ -107,13 +109,13 @@ export default function TranscriptPanel({
                   <span className="listening-dot inline-block h-3 w-3 rounded-full bg-blue-500" />
                   <span className="listening-dot inline-block h-3 w-3 rounded-full bg-blue-500" />
                 </div>
-                <p className="text-sm text-gray-400">Listening...</p>
+                <p className="text-sm text-gray-400">{t("listening")}</p>
               </div>
             ) : (
               <div className="text-center text-muted-foreground/40">
                 <Mic className="mx-auto size-16" strokeWidth={1} />
                 <p className="mt-2 text-sm">
-                  Click Start Recording in the sidebar
+                  {t("click_start")}
                 </p>
               </div>
             )}

@@ -2,6 +2,7 @@
 
 import { ArrowUpDown } from "lucide-react";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
+import { useT } from "@/lib/i18n";
 import {
   Select,
   SelectContent,
@@ -25,19 +26,20 @@ export default function BetweenLanguages({
   onLanguageBChange,
   disabled,
 }: BetweenLanguagesProps) {
+  const t = useT();
   // two_way mode uses single language — take first element, fallback to "zh"
   const langA = languageA[0] === "*" ? "zh" : (languageA[0] ?? "zh");
 
   return (
     <div className="px-4 py-3 border-b border-border">
       <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-        Languages
+        {t("languages")}
       </p>
 
       <div className="space-y-2">
         <div>
           <label className="mb-1 block text-xs text-muted-foreground">
-            Language A
+            {t("language_a")}
           </label>
           <Select
             value={langA}
@@ -67,7 +69,7 @@ export default function BetweenLanguages({
 
         <div>
           <label className="mb-1 block text-xs text-muted-foreground">
-            Language B
+            {t("language_b")}
           </label>
           <Select
             value={languageB}

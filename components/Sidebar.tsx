@@ -3,6 +3,7 @@
 import { Download, FilePlus } from "lucide-react";
 import type { TranslationMode, SpeakerInfo, BilingualEntry } from "@/types/bilingual";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/i18n";
 import TranslationModeToggle from "@/components/sidebar/TranslationModeToggle";
 import BetweenLanguages from "@/components/sidebar/BetweenLanguages";
 import FromToLanguages from "@/components/sidebar/FromToLanguages";
@@ -61,6 +62,7 @@ export default function Sidebar({
   onNewMeeting,
   hasEntries,
 }: SidebarProps) {
+  const t = useT();
   const isRecording = recordingState === "recording";
   const isIdle = recordingState === "idle";
   const minutes = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
@@ -140,7 +142,7 @@ export default function Sidebar({
               className="flex-1"
             >
               <Download className="size-3.5" />
-              Export
+              {t("export")}
             </Button>
             {isIdle && (
               <Button
@@ -150,7 +152,7 @@ export default function Sidebar({
                 className="flex-1"
               >
                 <FilePlus className="size-3.5" />
-                New Meeting
+                {t("new_meeting")}
               </Button>
             )}
           </div>

@@ -3,7 +3,6 @@
 import TranslationModeToggle from "@/components/sidebar/TranslationModeToggle";
 import BetweenLanguages from "@/components/sidebar/BetweenLanguages";
 import FromToLanguages from "@/components/sidebar/FromToLanguages";
-import TermsPanel from "@/components/sidebar/TermsPanel";
 import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
 import type { MobileBottomProps } from "./types";
 
@@ -15,12 +14,6 @@ type Props = Pick<
   | "languageB"
   | "onLanguageAChange"
   | "onLanguageBChange"
-  | "termsText"
-  | "onTermsTextChange"
-  | "selectedPresets"
-  | "onSelectedPresetsChange"
-  | "customTerms"
-  | "onCustomTermsChange"
   | "speakers"
   | "onRenameSpeaker"
   | "entries"
@@ -54,15 +47,6 @@ export default function MobileSettingsContent(props: Props) {
           disabled={isRecording}
         />
       )}
-      <TermsPanel
-        termsText={props.termsText}
-        onTermsTextChange={props.onTermsTextChange}
-        selectedPresets={props.selectedPresets}
-        onSelectedPresetsChange={props.onSelectedPresetsChange}
-        customTerms={props.customTerms}
-        onCustomTermsChange={props.onCustomTermsChange}
-        isRecording={isRecording}
-      />
       <SpeakerPanel
         speakers={props.speakers}
         entries={props.entries}

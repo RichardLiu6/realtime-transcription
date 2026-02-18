@@ -3,6 +3,7 @@
 import { useRef, useEffect, useCallback } from "react";
 import { Mic, Square, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/i18n";
 
 interface AudioWaveButtonProps {
   recordingState: "idle" | "connecting" | "recording";
@@ -38,6 +39,7 @@ export default function AudioWaveButton({
   const smoothBassRef = useRef(0);
   const freqDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
 
+  const t = useT();
   const isRecording = recordingState === "recording";
   const isConnecting = recordingState === "connecting";
 
@@ -168,17 +170,17 @@ export default function AudioWaveButton({
         {isRecording ? (
           <>
             <Square className="size-4" />
-            Stop Recording
+            {t("stop_recording")}
           </>
         ) : isConnecting ? (
           <>
             <Loader2 className="size-4 animate-spin" />
-            Connecting...
+            {t("connecting")}
           </>
         ) : (
           <>
             <Mic className="size-4" />
-            Start Recording
+            {t("start_recording")}
           </>
         )}
       </span>
