@@ -11,6 +11,10 @@ import Sidebar from "@/components/Sidebar";
 import StatusBar from "@/components/StatusBar";
 import TranscriptPanel from "@/components/TranscriptPanel";
 import MobileBottom from "@/components/mobile/MobileBottom";
+import DesktopTopBar from "@/components/desktop/DesktopTopBar";
+import DesktopFloatingBar from "@/components/desktop/DesktopFloatingBar";
+
+export type DesktopLayout = "sidebar" | "topbar" | "floating";
 
 export default function Home() {
   const [languageA, setLanguageA] = useState<string[]>(["*"]);
@@ -20,6 +24,20 @@ export default function Home() {
   const [customTerms, setCustomTerms] = useState<string[]>([]);
   const [translationMode, setTranslationMode] =
     useState<TranslationMode>("two_way");
+  const [desktopLayout, setDesktopLayout] = useState<DesktopLayout>("sidebar");
+
+  useEffect(() => {
+    const saved = localStorage.getItem("desktopLayout");
+    if (saved === "sidebar" || saved === "topbar" || saved === "floating") {
+      setDesktopLayout(saved);
+    }
+  }, []);
+
+  const handleDesktopLayoutChange = useCallback((layout: DesktopLayout) => {
+    setDesktopLayout(layout);
+    localStorage.setItem("desktopLayout", layout);
+  }, []);
+
   const {
     entries,
     currentInterim,
@@ -152,10 +170,12 @@ export default function Home() {
   return (
     <TooltipProvider delayDuration={300}>
     <div className="flex h-dvh overflow-hidden">
-      {/* Desktop sidebar */}
-      <div className="hidden lg:block">
-        <Sidebar {...sharedProps} />
-      </div>
+      {/* Desktop sidebar (only in sidebar layout) */}
+      {desktopLayout === "sidebar" && (
+        <div className="hidden lg:block">
+          <Sidebar {...sharedProps} />
+        </div>
+      )}
 
       {/* Main content */}
       <main className="flex flex-1 flex-col min-w-0">
@@ -163,7 +183,16 @@ export default function Home() {
           recordingState={recordingState}
           elapsedSeconds={elapsedSeconds}
           error={error}
+          desktopLayout={desktopLayout}
+          onDesktopLayoutChange={handleDesktopLayoutChange}
         />
+
+        {/* Desktop top bar (only in topbar layout) */}
+        {desktopLayout === "topbar" && (
+          <div className="hidden lg:block">
+            <DesktopTopBar {...sharedProps} />
+          </div>
+        )}
 
         <TranscriptPanel
           entries={entries}
@@ -180,6 +209,13 @@ export default function Home() {
           <MobileBottom {...sharedProps} />
         </div>
       </main>
+
+      {/* Desktop floating bar (only in floating layout) */}
+      {desktopLayout === "floating" && (
+        <div className="hidden lg:block">
+          <DesktopFloatingBar {...sharedProps} />
+        </div>
+      )}
     </div>
     </TooltipProvider>
   );
