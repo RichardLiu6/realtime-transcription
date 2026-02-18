@@ -101,9 +101,9 @@ body {
   animation: recording-pulse 1.5s ease-in-out infinite;
 }
 
-/* Safe area padding for iPhone notch/home indicator */
+/* Safe area margin for iPhone notch/home indicator — applied outside floating card */
 .safe-area-bottom {
-  padding-bottom: max(24px, env(safe-area-inset-bottom, 24px));
+  margin-bottom: max(12px, env(safe-area-inset-bottom, 12px));
 }
 
 /* Listening dots animation */

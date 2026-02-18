@@ -30,7 +30,7 @@ export default function MobileBottomV1(props: MobileBottomProps) {
   return (
     <>
       {/* Floating bottom bar */}
-      <div className="mx-3 mb-3 rounded-2xl bg-background/95 backdrop-blur-sm px-4 py-3 shadow-lg ring-1 ring-border/50 safe-area-bottom">
+      <div className="mx-3 rounded-2xl bg-background/95 backdrop-blur-sm px-4 py-3 shadow-lg ring-1 ring-border/50 safe-area-bottom">
         {isRecording ? (
           /* Recording state: timer + waveform + stop */
           <div className="flex items-center gap-3">

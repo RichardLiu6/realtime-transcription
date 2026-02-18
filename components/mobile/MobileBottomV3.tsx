@@ -22,7 +22,7 @@ export default function MobileBottomV3(props: MobileBottomProps) {
   const seconds = String(props.elapsedSeconds % 60).padStart(2, "0");
 
   return (
-    <div className="mx-3 mb-3 rounded-2xl bg-background/95 backdrop-blur-sm shadow-lg ring-1 ring-border/50 safe-area-bottom">
+    <div className="mx-3 rounded-2xl bg-background/95 backdrop-blur-sm shadow-lg ring-1 ring-border/50 safe-area-bottom">
       {isRecording ? (
         /* Recording: compact status bar */
         <div className="flex items-center gap-3 px-3 py-2">
