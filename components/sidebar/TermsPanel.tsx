@@ -66,61 +66,62 @@ function PresetChip({
   const longPress = useLongPress(() => setInfoOpen(true));
 
   return (
-    <div className="inline-flex items-center gap-0">
-      {/* Toggle chip */}
-      <button
-        type="button"
-        onClick={onToggle}
-        {...longPress}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setInfoOpen(true);
-        }}
-        className={`rounded-l-md px-2 py-1 text-[11px] leading-tight transition-colors ${
-          isSelected
-            ? "bg-primary text-primary-foreground font-medium"
-            : "bg-muted/60 text-muted-foreground hover:bg-muted"
-        }`}
-      >
-        {label.split(" ")[0]}
-        {isSelected && (
-          <span className="ml-1 opacity-70 text-[10px]">{terms.length}</span>
-        )}
-      </button>
+    <Popover open={infoOpen} onOpenChange={setInfoOpen}>
+      <div className="inline-flex items-center">
+        {/* Toggle chip */}
+        <button
+          type="button"
+          onClick={onToggle}
+          {...longPress}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setInfoOpen(true);
+          }}
+          className={`rounded-l-full px-2.5 py-1 text-[11px] leading-tight transition-colors ${
+            isSelected
+              ? "bg-primary text-primary-foreground font-medium"
+              : "bg-muted/60 text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          {label.split(" ")[0]}
+          {isSelected && (
+            <span className="ml-1 opacity-70 text-[10px]">{terms.length}</span>
+          )}
+        </button>
 
-      {/* Info button with popover */}
-      <Popover open={infoOpen} onOpenChange={setInfoOpen}>
+        {/* Info icon */}
         <PopoverTrigger asChild>
           <button
             type="button"
-            className={`rounded-r-md px-1 py-1 transition-colors border-l ${
+            className={`rounded-r-full px-1.5 py-1 transition-colors ${
               isSelected
-                ? "bg-primary/80 text-primary-foreground/70 border-primary-foreground/20 hover:bg-primary/70"
-                : "bg-muted/40 text-muted-foreground/50 border-border hover:bg-muted/60 hover:text-muted-foreground"
+                ? "bg-primary/80 text-primary-foreground/60 hover:text-primary-foreground"
+                : "bg-muted/40 text-muted-foreground/40 hover:text-muted-foreground"
             }`}
           >
-            <Info className="size-2.5" />
+            <Info className="size-3" />
           </button>
         </PopoverTrigger>
-        <PopoverContent
-          side="top"
-          align="start"
-          className="w-56 p-2"
-        >
-          <p className="text-xs font-medium mb-1.5">{label}</p>
-          <div className="flex flex-wrap gap-1">
-            {terms.map((term) => (
-              <span
-                key={term}
-                className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
-              >
-                {term}
-              </span>
-            ))}
-          </div>
-        </PopoverContent>
-      </Popover>
-    </div>
+      </div>
+
+      <PopoverContent
+        side="top"
+        align="start"
+        className="w-56 p-2"
+      >
+        <p className="text-xs font-medium mb-1.5">{label}</p>
+        <div className="flex flex-wrap gap-1">
+          {terms.map((term) => (
+            <span
+              key={term}
+              className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+            >
+              {term}
+            </span>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
