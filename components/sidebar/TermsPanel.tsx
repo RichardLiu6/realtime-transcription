@@ -95,8 +95,8 @@ function PresetChip({
             type="button"
             className={`rounded-r-full px-1.5 py-1 transition-colors ${
               isSelected
-                ? "bg-primary/80 text-primary-foreground/60 hover:text-primary-foreground"
-                : "bg-muted/40 text-muted-foreground/40 hover:text-muted-foreground"
+                ? "bg-primary text-primary-foreground/60 hover:text-primary-foreground"
+                : "bg-muted/60 text-muted-foreground/40 hover:text-muted-foreground"
             }`}
           >
             <Info className="size-3" />
