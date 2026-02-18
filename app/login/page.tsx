@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Mail, KeyRound } from "lucide-react";
@@ -9,7 +9,6 @@ import { Loader2, Mail, KeyRound } from "lucide-react";
 type Stage = "email" | "code";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [stage, setStage] = useState<Stage>("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -54,7 +53,7 @@ export default function LoginPage() {
         setError(data.error || "验证失败");
         return;
       }
-      router.push("/");
+      window.location.href = "/";
     } catch {
       setError("网络错误，请重试");
     } finally {
