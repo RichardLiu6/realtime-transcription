@@ -42,7 +42,7 @@ interface TranscriptPanelProps {
   currentInterim: string;
   speakers: Map<string, SpeakerInfo>;
   isRecording: boolean;
-  languageA: string;
+  languageA: string[];
   languageB: string;
   onReassignSpeaker: (entryId: string, newSpeaker: string) => void;
 }
@@ -88,9 +88,8 @@ export default function TranscriptPanel({
 
   const showEmpty = entries.length === 0 && !currentInterim;
 
-  // Track previous speaker/language for header display logic
+  // Track previous speaker for header display logic
   let prevSpeaker: string | null = null;
-  let prevLanguage: string | null = null;
 
   return (
     <div className="relative flex flex-1 flex-col overflow-hidden bg-white">
@@ -132,9 +131,6 @@ export default function TranscriptPanel({
 
           // Show speaker header when speaker changes
           const showSpeakerHeader = entry.speaker !== prevSpeaker;
-          // Show language badge when language changes or new speaker
-          const showLanguageBadge =
-            showSpeakerHeader || entry.language !== prevLanguage;
 
           const elements: React.ReactNode[] = [];
 
@@ -180,8 +176,8 @@ export default function TranscriptPanel({
             );
           }
 
-          // Language badge (when language changes and language is known)
-          if (showLanguageBadge && entry.language) {
+          // Language badge — always show per entry when language is known
+          if (entry.language) {
             elements.push(
               <span
                 key={`${entry.id}-lang`}
@@ -234,7 +230,9 @@ export default function TranscriptPanel({
                 <br />
                 <span className="inline-block mr-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
                   {getLanguageName(
-                    entry.language === languageA ? languageB : languageA
+                    languageA.includes("*") || languageA.includes(entry.language)
+                      ? languageB
+                      : languageA[0]
                   )}
                 </span>
                 <span className="text-sm italic text-gray-400 leading-relaxed">
@@ -251,7 +249,6 @@ export default function TranscriptPanel({
           }
 
           prevSpeaker = entry.speaker;
-          prevLanguage = entry.language;
 
           return (
             <div key={entry.id} className="inline">

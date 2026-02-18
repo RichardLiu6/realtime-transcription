@@ -13,9 +13,9 @@ import AudioWaveButton from "@/components/sidebar/AudioWaveButton";
 interface SidebarProps {
   translationMode: TranslationMode;
   onTranslationModeChange: (mode: TranslationMode) => void;
-  languageA: string;
+  languageA: string[];
   languageB: string;
-  onLanguageAChange: (code: string) => void;
+  onLanguageAChange: (codes: string[]) => void;
   onLanguageBChange: (code: string) => void;
   termsText: string;
   onTermsTextChange: (text: string) => void;

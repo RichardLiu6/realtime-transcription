@@ -12,7 +12,7 @@ import TranscriptPanel from "@/components/TranscriptPanel";
 import MobileSidebarDrawer from "@/components/MobileSidebarDrawer";
 
 export default function Home() {
-  const [languageA, setLanguageA] = useState("zh");
+  const [languageA, setLanguageA] = useState<string[]>(["*"]);
   const [languageB, setLanguageB] = useState("en");
   const [termsText, setTermsText] = useState("");
   const [translationMode, setTranslationMode] =
@@ -80,8 +80,8 @@ export default function Home() {
     clearSpeakers();
   }, [clearEntries, clearSpeakers]);
 
-  const handleLanguageChange = useCallback(
-    (which: "A" | "B", code: string) => {
+  const handleLanguageAChange = useCallback(
+    (codes: string[]) => {
       if (recordingState === "recording") {
         const confirmed = window.confirm(
           "Changing language will stop recording. Continue?"
@@ -89,8 +89,21 @@ export default function Home() {
         if (!confirmed) return;
         stop();
       }
-      if (which === "A") setLanguageA(code);
-      else setLanguageB(code);
+      setLanguageA(codes);
+    },
+    [recordingState, stop]
+  );
+
+  const handleLanguageBChange = useCallback(
+    (code: string) => {
+      if (recordingState === "recording") {
+        const confirmed = window.confirm(
+          "Changing language will stop recording. Continue?"
+        );
+        if (!confirmed) return;
+        stop();
+      }
+      setLanguageB(code);
     },
     [recordingState, stop]
   );
@@ -121,8 +134,8 @@ export default function Home() {
     onTranslationModeChange: handleTranslationModeChange,
     languageA,
     languageB,
-    onLanguageAChange: (code: string) => handleLanguageChange("A", code),
-    onLanguageBChange: (code: string) => handleLanguageChange("B", code),
+    onLanguageAChange: handleLanguageAChange,
+    onLanguageBChange: handleLanguageBChange,
     termsText,
     onTermsTextChange: setTermsText,
     speakers,

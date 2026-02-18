@@ -11,9 +11,9 @@ import {
 } from "@/components/ui/select";
 
 interface BetweenLanguagesProps {
-  languageA: string;
+  languageA: string[];
   languageB: string;
-  onLanguageAChange: (code: string) => void;
+  onLanguageAChange: (codes: string[]) => void;
   onLanguageBChange: (code: string) => void;
   disabled?: boolean;
 }
@@ -25,6 +25,9 @@ export default function BetweenLanguages({
   onLanguageBChange,
   disabled,
 }: BetweenLanguagesProps) {
+  // two_way mode uses single language — take first element, fallback to "zh"
+  const langA = languageA[0] === "*" ? "zh" : (languageA[0] ?? "zh");
+
   return (
     <div className="px-4 py-3 border-b border-border">
       <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -37,8 +40,8 @@ export default function BetweenLanguages({
             Language A
           </label>
           <Select
-            value={languageA}
-            onValueChange={onLanguageAChange}
+            value={langA}
+            onValueChange={(code) => onLanguageAChange([code])}
             disabled={disabled}
           >
             <SelectTrigger className="w-full">
@@ -79,7 +82,7 @@ export default function BetweenLanguages({
                 <SelectItem
                   key={lang.code}
                   value={lang.code}
-                  disabled={lang.code === languageA}
+                  disabled={lang.code === langA}
                 >
                   {lang.name}
                 </SelectItem>

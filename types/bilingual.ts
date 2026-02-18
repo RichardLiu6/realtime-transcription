@@ -89,7 +89,7 @@ export interface SonioxToken {
 export type TranslationMode = "two_way" | "one_way";
 
 export interface SonioxConfig {
-  languageA: string; // e.g. "zh"
+  languageA: string[]; // e.g. ["*"] or ["zh", "en"]
   languageB: string; // e.g. "en"
   contextTerms: string[];
   translationMode: TranslationMode;

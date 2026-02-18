@@ -56,7 +56,7 @@ function isControlToken(text: string): boolean {
 // Used when Soniox doesn't provide the language field on tokens
 function detectLanguageFromText(
   text: string,
-  languageA: string,
+  languageA: string[],
   languageB: string
 ): string {
   if (!text.trim()) return "";
@@ -67,19 +67,20 @@ function detectLanguageFromText(
 
   // Determine which configured language is CJK-based
   const cjkLangs = ["zh", "ja", "ko"];
-  const langAIsCJK = cjkLangs.includes(languageA);
+  const langACJK = languageA.find((l) => cjkLangs.includes(l));
+  const langANonCJK = languageA.find((l) => !cjkLangs.includes(l) && l !== "*");
   const langBIsCJK = cjkLangs.includes(languageB);
 
   if (cjkRatio > 0.2) {
     // Text is predominantly CJK
-    if (langAIsCJK) return languageA;
+    if (langACJK) return langACJK;
     if (langBIsCJK) return languageB;
-    return languageA; // fallback
+    return languageA[0] === "*" ? "zh" : (languageA[0] ?? "zh");
   } else {
     // Text is predominantly non-CJK (Latin, etc.)
-    if (!langAIsCJK) return languageA;
+    if (langANonCJK) return langANonCJK;
     if (!langBIsCJK) return languageB;
-    return languageB; // fallback
+    return languageB;
   }
 }
 
@@ -516,18 +517,19 @@ export function useSonioxTranscription() {
             let translation: Record<string, unknown>;
 
             if (config.translationMode === "one_way") {
+              const isAny = config.languageA.length === 1 && config.languageA[0] === "*";
               let sourceLanguages: string[];
-              if (config.languageA === "*") {
+              if (isAny) {
                 // Any Language (Auto) — no source hint needed
                 sourceLanguages = ["*"];
                 languageHints = [];
-              } else if (config.languageB === "en") {
-                // Soniox pattern: specific source → en, add source to hints, use wildcard
+              } else if (config.languageA.length === 1 && config.languageB === "en") {
+                // Soniox pattern: single specific source → en, add source to hints, use wildcard
                 sourceLanguages = ["*"];
-                languageHints = [config.languageA];
+                languageHints = [...config.languageA];
               } else {
-                sourceLanguages = [config.languageA];
-                languageHints = [config.languageA];
+                sourceLanguages = [...config.languageA];
+                languageHints = [...config.languageA];
               }
               translation = {
                 type: "one_way",
@@ -535,11 +537,12 @@ export function useSonioxTranscription() {
                 source_languages: sourceLanguages,
               };
             } else {
-              // two_way
-              languageHints = [config.languageA, config.languageB];
+              // two_way — uses single language for language_a
+              const langA = config.languageA[0] === "*" ? "zh" : (config.languageA[0] ?? "zh");
+              languageHints = [langA, config.languageB];
               translation = {
                 type: "two_way",
-                language_a: config.languageA,
+                language_a: langA,
                 language_b: config.languageB,
               };
             }
