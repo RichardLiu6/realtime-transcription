@@ -1,11 +1,12 @@
 "use client";
 
 /**
- * Desktop Layout V2: Top toolbar
- * Two-row bar: controls on top, languages + terms inline below
+ * Desktop Layout V2: Single-row top toolbar
+ * Record | Mode | Languages | Terms chips (fill remaining space) | Speakers | Export
+ * Terms overflow into a Popover when space is tight.
  */
 
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Mic,
   Square,
@@ -17,6 +18,7 @@ import {
   Download,
   FilePlus,
   Users,
+  BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +43,7 @@ import TermsPanel from "@/components/sidebar/TermsPanel";
 import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
 import type { TranslationMode, SpeakerInfo, BilingualEntry } from "@/types/bilingual";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
+import { INDUSTRY_PRESETS } from "@/lib/contextTerms";
 import { useT } from "@/lib/i18n";
 
 interface DesktopTopBarProps {
@@ -80,13 +83,62 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
   // two_way mode uses single language
   const langA = props.languageA[0] === "*" ? "zh" : (props.languageA[0] ?? "zh");
 
+  // Measure how many preset chips fit in the available space
+  const chipsContainerRef = useRef<HTMLDivElement>(null);
+  const [visibleCount, setVisibleCount] = useState(Object.keys(INDUSTRY_PRESETS).length);
+
+  const presetEntries = useMemo(() => Object.entries(INDUSTRY_PRESETS), []);
+
+  const measureChips = useCallback(() => {
+    const container = chipsContainerRef.current;
+    if (!container) return;
+    const children = Array.from(container.children) as HTMLElement[];
+    if (children.length === 0) return;
+
+    const containerRight = container.getBoundingClientRect().right;
+    let count = 0;
+    for (const child of children) {
+      // Skip the overflow button (last child when overflow exists)
+      if (child.dataset.overflow) break;
+      const childRight = child.getBoundingClientRect().right;
+      if (childRight > containerRight + 2) break;
+      count++;
+    }
+    setVisibleCount(count || 1);
+  }, []);
+
+  useEffect(() => {
+    measureChips();
+    const ro = new ResizeObserver(measureChips);
+    if (chipsContainerRef.current) ro.observe(chipsContainerRef.current);
+    return () => ro.disconnect();
+  }, [measureChips, props.selectedPresets]);
+
+  const togglePreset = useCallback(
+    (key: string) => {
+      const next = new Set(props.selectedPresets);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      props.onSelectedPresetsChange(next);
+    },
+    [props.selectedPresets, props.onSelectedPresetsChange]
+  );
+
+  const totalTerms = useMemo(() => {
+    const presetTerms = Array.from(props.selectedPresets).flatMap(
+      (key) => INDUSTRY_PRESETS[key]?.terms ?? []
+    );
+    return new Set([...presetTerms, ...props.customTerms]).size;
+  }, [props.selectedPresets, props.customTerms]);
+
+  const overflowPresets = presetEntries.slice(visibleCount);
+
   return (
-    <div className="shrink-0 border-b border-border bg-background">
-      {/* Row 1: Record + Mode + Languages + Speakers + Export */}
-      <div className="flex items-center gap-3 px-4 py-2">
+    <div className="shrink-0 border-b border-border bg-background px-4 py-2">
+      <div className="flex items-center gap-2">
         {/* Record / Stop */}
         {isRecording ? (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <span className="h-2.5 w-2.5 rounded-full bg-red-500 recording-pulse" />
             <span className="font-mono text-sm font-semibold">
               {minutes}:{seconds}
@@ -106,7 +158,7 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
             onClick={props.onStart}
             disabled={isConnecting}
             size="sm"
-            className="gap-1.5"
+            className="gap-1.5 shrink-0"
           >
             {isConnecting ? (
               <Loader2 className="size-3.5 animate-spin" />
@@ -117,9 +169,9 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
           </Button>
         )}
 
-        <div className="h-5 w-px bg-border" />
+        <div className="h-5 w-px bg-border shrink-0" />
 
-        {/* Mode toggle (inline) */}
+        {/* Mode toggle */}
         <ToggleGroup
           type="single"
           value={props.translationMode}
@@ -129,6 +181,7 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
           disabled={isRecording}
           variant="outline"
           size="sm"
+          className="shrink-0"
         >
           <ToggleGroupItem value="two_way" className="gap-1 text-xs px-2">
             <ArrowLeftRight className="size-3" />
@@ -140,10 +193,10 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
           </ToggleGroupItem>
         </ToggleGroup>
 
-        <div className="h-5 w-px bg-border" />
+        <div className="h-5 w-px bg-border shrink-0" />
 
         {/* Inline language selects */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           {props.translationMode === "two_way" ? (
             <>
               <Select
@@ -151,7 +204,7 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
                 onValueChange={(code) => props.onLanguageAChange([code])}
                 disabled={isRecording}
               >
-                <SelectTrigger className="h-8 w-[120px] text-xs">
+                <SelectTrigger className="h-8 w-[110px] text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -168,7 +221,7 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
                 onValueChange={props.onLanguageBChange}
                 disabled={isRecording}
               >
-                <SelectTrigger className="h-8 w-[120px] text-xs">
+                <SelectTrigger className="h-8 w-[110px] text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -182,13 +235,12 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
             </>
           ) : (
             <>
-              <span className="text-[10px] text-muted-foreground shrink-0">{t("source_language")}</span>
               <Select
                 value={props.languageA[0] === "*" ? "*" : (props.languageA[0] ?? "*")}
                 onValueChange={(code) => props.onLanguageAChange([code])}
                 disabled={isRecording}
               >
-                <SelectTrigger className="h-8 w-[120px] text-xs">
+                <SelectTrigger className="h-8 w-[110px] text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -206,7 +258,7 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
                 onValueChange={props.onLanguageBChange}
                 disabled={isRecording}
               >
-                <SelectTrigger className="h-8 w-[120px] text-xs">
+                <SelectTrigger className="h-8 w-[110px] text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -221,23 +273,82 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
           )}
         </div>
 
+        <div className="h-5 w-px bg-border shrink-0" />
+
+        {/* Terms chips — fill remaining space, overflow into popover */}
+        <div
+          ref={chipsContainerRef}
+          className="flex items-center gap-1 flex-1 min-w-0 overflow-hidden"
+        >
+          {presetEntries.map(([key, preset], idx) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => togglePreset(key)}
+              className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] leading-tight transition-colors whitespace-nowrap ${
+                props.selectedPresets.has(key)
+                  ? "bg-primary text-primary-foreground font-medium"
+                  : "bg-muted/60 text-muted-foreground hover:bg-muted"
+              } ${idx >= visibleCount ? "invisible" : ""}`}
+            >
+              <span>{preset.label.split(" ")[0]}</span>
+              {props.selectedPresets.has(key) && (
+                <span className="opacity-70 text-[10px]">{preset.terms.length}</span>
+              )}
+            </button>
+          ))}
+
+          {/* Overflow: show "+N more" button that opens full terms popover */}
+          {overflowPresets.length > 0 && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  data-overflow="true"
+                  className="shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] bg-muted/60 text-muted-foreground hover:bg-muted whitespace-nowrap"
+                >
+                  <BookOpen className="size-3" />
+                  +{overflowPresets.length}
+                  {totalTerms > 0 && (
+                    <span className="rounded-full bg-primary/15 px-1 text-[9px] font-medium text-primary">
+                      {totalTerms}
+                    </span>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent side="bottom" align="end" className="w-80 p-0">
+                <TermsPanel
+                  termsText={props.termsText}
+                  onTermsTextChange={props.onTermsTextChange}
+                  selectedPresets={props.selectedPresets}
+                  onSelectedPresetsChange={props.onSelectedPresetsChange}
+                  customTerms={props.customTerms}
+                  onCustomTermsChange={props.onCustomTermsChange}
+                  isRecording={isRecording}
+                  inline
+                />
+              </PopoverContent>
+            </Popover>
+          )}
+        </div>
+
         {/* Speakers popover */}
         {props.speakers.size > 0 && (
           <>
-            <div className="h-5 w-px bg-border" />
+            <div className="h-5 w-px bg-border shrink-0" />
             <Popover>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-1.5 text-xs">
+                    <Button variant="outline" size="sm" className="gap-1.5 text-xs shrink-0">
                       <Users className="size-3.5" />
-                      {t("speakers")} ({props.speakers.size})
+                      {props.speakers.size}
                     </Button>
                   </PopoverTrigger>
                 </TooltipTrigger>
                 <TooltipContent>{t("speakers")}</TooltipContent>
               </Tooltip>
-              <PopoverContent side="bottom" align="start" className="w-72 p-0">
+              <PopoverContent side="bottom" align="end" className="w-72 p-0">
                 <SpeakerPanel
                   speakers={props.speakers}
                   entries={props.entries}
@@ -248,36 +359,30 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
           </>
         )}
 
-        {/* Spacer */}
-        <div className="flex-1" />
-
         {/* Export / New Meeting */}
         {props.hasEntries && isIdle && (
-          <div className="flex items-center gap-1.5">
-            <Button variant="outline" size="sm" onClick={props.onExport} className="gap-1.5 text-xs">
-              <Download className="size-3.5" />
-              {t("export")}
-            </Button>
-            <Button variant="outline" size="sm" onClick={props.onNewMeeting} className="gap-1.5 text-xs">
-              <FilePlus className="size-3.5" />
-              {t("new_meeting")}
-            </Button>
-          </div>
+          <>
+            <div className="h-5 w-px bg-border shrink-0" />
+            <div className="flex items-center gap-1 shrink-0">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon-sm" onClick={props.onExport}>
+                    <Download className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("export")}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon-sm" onClick={props.onNewMeeting}>
+                    <FilePlus className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("new_meeting")}</TooltipContent>
+              </Tooltip>
+            </div>
+          </>
         )}
-      </div>
-
-      {/* Row 2: Terms inline */}
-      <div className="border-t border-border/50 px-4 py-2">
-        <TermsPanel
-          termsText={props.termsText}
-          onTermsTextChange={props.onTermsTextChange}
-          selectedPresets={props.selectedPresets}
-          onSelectedPresetsChange={props.onSelectedPresetsChange}
-          customTerms={props.customTerms}
-          onCustomTermsChange={props.onCustomTermsChange}
-          isRecording={isRecording}
-          inline
-        />
       </div>
     </div>
   );
