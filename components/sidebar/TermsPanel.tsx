@@ -1,8 +1,13 @@
 "use client";
 
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
-import { X, ChevronDown } from "lucide-react";
+import { X, Info } from "lucide-react";
 import { INDUSTRY_PRESETS } from "@/lib/contextTerms";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Accordion,
   AccordionContent,
@@ -20,6 +25,105 @@ interface TermsPanelProps {
   isRecording: boolean;
 }
 
+/** Hook: long-press detection for mobile */
+function useLongPress(callback: () => void, ms = 500) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const callbackRef = useRef(callback);
+  callbackRef.current = callback;
+
+  const start = useCallback(() => {
+    timerRef.current = setTimeout(() => callbackRef.current(), ms);
+  }, [ms]);
+
+  const cancel = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  return {
+    onTouchStart: start,
+    onTouchEnd: cancel,
+    onTouchMove: cancel,
+  };
+}
+
+function PresetChip({
+  presetKey,
+  label,
+  terms,
+  isSelected,
+  onToggle,
+}: {
+  presetKey: string;
+  label: string;
+  terms: string[];
+  isSelected: boolean;
+  onToggle: () => void;
+}) {
+  const [infoOpen, setInfoOpen] = useState(false);
+  const longPress = useLongPress(() => setInfoOpen(true));
+
+  return (
+    <div className="inline-flex items-center gap-0">
+      {/* Toggle chip */}
+      <button
+        type="button"
+        onClick={onToggle}
+        {...longPress}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setInfoOpen(true);
+        }}
+        className={`rounded-l-md px-2 py-1 text-[11px] leading-tight transition-colors ${
+          isSelected
+            ? "bg-primary text-primary-foreground font-medium"
+            : "bg-muted/60 text-muted-foreground hover:bg-muted"
+        }`}
+      >
+        {label.split(" ")[0]}
+        {isSelected && (
+          <span className="ml-1 opacity-70 text-[10px]">{terms.length}</span>
+        )}
+      </button>
+
+      {/* Info button with popover */}
+      <Popover open={infoOpen} onOpenChange={setInfoOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className={`rounded-r-md px-1 py-1 transition-colors border-l ${
+              isSelected
+                ? "bg-primary/80 text-primary-foreground/70 border-primary-foreground/20 hover:bg-primary/70"
+                : "bg-muted/40 text-muted-foreground/50 border-border hover:bg-muted/60 hover:text-muted-foreground"
+            }`}
+          >
+            <Info className="size-2.5" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          side="top"
+          align="start"
+          className="w-56 p-2"
+        >
+          <p className="text-xs font-medium mb-1.5">{label}</p>
+          <div className="flex flex-wrap gap-1">
+            {terms.map((term) => (
+              <span
+                key={term}
+                className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+              >
+                {term}
+              </span>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
 export default function TermsPanel({
   termsText,
   onTermsTextChange,
@@ -30,10 +134,9 @@ export default function TermsPanel({
   isRecording,
 }: TermsPanelProps) {
   const [inputValue, setInputValue] = useState("");
-  const [expandedPreset, setExpandedPreset] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Sync combined terms to parent whenever presets or custom terms change
+  // Sync combined terms to parent
   useEffect(() => {
     const presetTerms = Array.from(selectedPresets).flatMap(
       (key) => INDUSTRY_PRESETS[key]?.terms ?? []
@@ -49,16 +152,15 @@ export default function TermsPanel({
     return new Set([...presetTerms, ...customTerms]).size;
   }, [selectedPresets, customTerms]);
 
-  const togglePreset = useCallback((key: string) => {
-    const next = new Set(selectedPresets);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    onSelectedPresetsChange(next);
-  }, [selectedPresets, onSelectedPresetsChange]);
-
-  const toggleExpand = useCallback((key: string) => {
-    setExpandedPreset((prev) => (prev === key ? null : key));
-  }, []);
+  const togglePreset = useCallback(
+    (key: string) => {
+      const next = new Set(selectedPresets);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      onSelectedPresetsChange(next);
+    },
+    [selectedPresets, onSelectedPresetsChange]
+  );
 
   const addCustomTag = useCallback(
     (tag: string) => {
@@ -71,9 +173,12 @@ export default function TermsPanel({
     [customTerms, onCustomTermsChange]
   );
 
-  const removeCustomTag = useCallback((index: number) => {
-    onCustomTermsChange(customTerms.filter((_, i) => i !== index));
-  }, [customTerms, onCustomTermsChange]);
+  const removeCustomTag = useCallback(
+    (index: number) => {
+      onCustomTermsChange(customTerms.filter((_, i) => i !== index));
+    },
+    [customTerms, onCustomTermsChange]
+  );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" || e.key === ",") {
@@ -101,107 +206,59 @@ export default function TermsPanel({
             </span>
           </AccordionTrigger>
           <AccordionContent>
-            {/* Industry presets */}
-            <div className="space-y-1 mb-3">
-              {Object.entries(INDUSTRY_PRESETS).map(([key, preset]) => {
-                const isSelected = selectedPresets.has(key);
-                const isExpanded = expandedPreset === key;
-
-                return (
-                  <div key={key}>
-                    <div className="flex items-center gap-1.5">
-                      {/* Toggle button */}
-                      <button
-                        type="button"
-                        onClick={() => togglePreset(key)}
-                        className={`flex-1 text-left rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-                          isSelected
-                            ? "bg-primary text-primary-foreground font-medium"
-                            : "bg-muted/50 text-muted-foreground hover:bg-muted"
-                        }`}
-                      >
-                        {preset.label}
-                        {isSelected && (
-                          <span className="ml-1.5 opacity-70">
-                            ({preset.terms.length})
-                          </span>
-                        )}
-                      </button>
-                      {/* Expand chevron */}
-                      <button
-                        type="button"
-                        onClick={() => toggleExpand(key)}
-                        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted"
-                      >
-                        <ChevronDown
-                          className={`size-3.5 transition-transform ${
-                            isExpanded ? "rotate-180" : ""
-                          }`}
-                        />
-                      </button>
-                    </div>
-                    {/* Expanded terms list */}
-                    {isExpanded && (
-                      <div className="mt-1 mb-1 ml-2.5 flex flex-wrap gap-1">
-                        {preset.terms.map((term) => (
-                          <span
-                            key={term}
-                            className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                          >
-                            {term}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+            {/* Chip grid */}
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {Object.entries(INDUSTRY_PRESETS).map(([key, preset]) => (
+                <PresetChip
+                  key={key}
+                  presetKey={key}
+                  label={preset.label}
+                  terms={preset.terms}
+                  isSelected={selectedPresets.has(key)}
+                  onToggle={() => togglePreset(key)}
+                />
+              ))}
             </div>
 
-            {/* Custom terms input */}
-            <div className="space-y-1.5">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                Custom
-              </p>
-              <div
-                className="flex flex-wrap items-center gap-1 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-[2rem] cursor-text focus-within:border-ring focus-within:ring-1 focus-within:ring-ring"
-                onClick={() => inputRef.current?.focus()}
-              >
-                {customTerms.map((tag, i) => (
-                  <span
-                    key={`${tag}-${i}`}
-                    className="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary"
+            {/* Custom terms */}
+            <div
+              className="flex flex-wrap items-center gap-1 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-[2rem] cursor-text focus-within:border-ring focus-within:ring-1 focus-within:ring-ring"
+              onClick={() => inputRef.current?.focus()}
+            >
+              {customTerms.map((tag, i) => (
+                <span
+                  key={`${tag}-${i}`}
+                  className="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary"
+                >
+                  {tag}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeCustomTag(i);
+                    }}
+                    className="text-primary/60 hover:text-primary"
                   >
-                    {tag}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeCustomTag(i);
-                      }}
-                      className="text-primary/60 hover:text-primary"
-                    >
-                      <X className="size-2.5" />
-                    </button>
-                  </span>
-                ))}
-                <input
-                  ref={inputRef}
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  onBlur={() => {
-                    if (inputValue.trim()) {
-                      addCustomTag(inputValue);
-                      setInputValue("");
-                    }
-                  }}
-                  placeholder={
-                    customTerms.length === 0 ? "输入术语，回车添加" : ""
+                    <X className="size-2.5" />
+                  </button>
+                </span>
+              ))}
+              <input
+                ref={inputRef}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onBlur={() => {
+                  if (inputValue.trim()) {
+                    addCustomTag(inputValue);
+                    setInputValue("");
                   }
-                  className="flex-1 min-w-[60px] bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none"
-                />
-              </div>
+                }}
+                placeholder={
+                  customTerms.length === 0 ? "Add term, press Enter" : ""
+                }
+                className="flex-1 min-w-[60px] bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none"
+              />
             </div>
 
             <p className="mt-2 text-[10px] text-muted-foreground">
