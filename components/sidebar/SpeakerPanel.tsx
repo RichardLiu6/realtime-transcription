@@ -74,9 +74,6 @@ export default function SpeakerPanel({
                 {speaker.label}
               </button>
             )}
-            <span className="text-xs text-gray-400 tabular-nums">
-              {speaker.wordCount}
-            </span>
           </div>
         ))}
       </div>
