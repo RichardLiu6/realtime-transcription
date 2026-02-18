@@ -174,7 +174,7 @@ export default function Home() {
 
   return (
     <TooltipProvider delayDuration={300}>
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-dvh overflow-hidden">
       {/* Desktop sidebar */}
       <div className="hidden lg:block">
         <Sidebar {...sharedProps} />
