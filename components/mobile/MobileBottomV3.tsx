@@ -44,7 +44,7 @@ export default function MobileBottomV3(props: MobileBottomProps) {
         </div>
       ) : (
         /* Idle: full settings area */
-        <div className="max-h-[50vh] overflow-y-auto">
+        <div className="max-h-[50vh] overflow-y-auto pb-2">
           <TranslationModeToggle
             mode={props.translationMode}
             onChange={props.onTranslationModeChange}
