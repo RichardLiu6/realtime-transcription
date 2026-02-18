@@ -33,8 +33,8 @@ export default function MobileBottomV2(props: MobileBottomProps) {
 
   return (
     <>
-      {/* Fixed bottom bar — always visible */}
-      <div className="shrink-0 border-t border-border bg-background safe-area-bottom">
+      {/* Floating bottom bar */}
+      <div className="mx-3 mb-3 rounded-2xl bg-background/95 backdrop-blur-sm shadow-lg ring-1 ring-border/50 safe-area-bottom">
         {isRecording ? (
           /* Recording: status bar */
           <div className="flex items-center gap-3 px-3 py-2">
