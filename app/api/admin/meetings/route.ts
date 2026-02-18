@@ -12,22 +12,39 @@ function generateCode(): string {
   return code;
 }
 
-// GET — list all meeting codes
+// GET — list active meeting codes (auto-clean expired)
 export async function GET() {
   try {
     const codes = await getMeetingCodes();
     const now = Date.now();
-    const list = Object.entries(codes).map(([code, info]) => ({
-      code,
-      createdAt: info.createdAt,
-      expiresAt: info.expiresAt,
-      active: new Date(info.expiresAt).getTime() > now,
-    }));
-    // Sort: active first, then by creation time desc
-    list.sort((a, b) => {
-      if (a.active !== b.active) return a.active ? -1 : 1;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    });
+
+    // Split active vs expired
+    const active: typeof codes = {};
+    let hasExpired = false;
+    for (const [code, info] of Object.entries(codes)) {
+      if (new Date(info.expiresAt).getTime() > now) {
+        active[code] = info;
+      } else {
+        hasExpired = true;
+      }
+    }
+
+    // Clean up expired codes from Edge Config
+    if (hasExpired) {
+      updateMeetingCodes(active).catch(() => {});
+    }
+
+    const list = Object.entries(active)
+      .map(([code, info]) => ({
+        code,
+        createdAt: info.createdAt,
+        expiresAt: info.expiresAt,
+        active: true,
+      }))
+      .sort((a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
     return NextResponse.json({ meetings: list });
   } catch (err) {
     console.error("Get meetings error:", err);
