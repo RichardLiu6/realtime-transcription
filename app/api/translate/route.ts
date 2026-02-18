@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { openai } from "@/lib/openai";
-import { ALL_LANGS, LANG_NAMES } from "@/types/languages";
+
+const ALL_LANGS = ["zh", "en", "es"] as const;
+const LANG_NAMES: Record<string, string> = {
+  zh: "Chinese",
+  en: "English",
+  es: "Spanish",
+};
 
 export async function POST(req: NextRequest) {
   try {

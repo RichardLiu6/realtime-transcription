@@ -86,8 +86,11 @@ export interface SonioxToken {
   source_language?: string;
 }
 
+export type TranslationMode = "two_way" | "one_way";
+
 export interface SonioxConfig {
   languageA: string; // e.g. "zh"
   languageB: string; // e.g. "en"
   contextTerms: string[];
+  translationMode: TranslationMode;
 }
