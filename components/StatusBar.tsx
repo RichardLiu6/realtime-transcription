@@ -1,6 +1,8 @@
 "use client";
 
-import { Menu, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Menu, Loader2, LogOut, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface StatusBarProps {
@@ -16,10 +18,27 @@ export default function StatusBar({
   error,
   onToggleSidebar,
 }: StatusBarProps) {
+  const router = useRouter();
   const isRecording = recordingState === "recording";
   const isConnecting = recordingState === "connecting";
   const minutes = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
   const seconds = String(elapsedSeconds % 60).padStart(2, "0");
+
+  const [userName, setUserName] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.user) setUserName(d.user.name);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+  }, [router]);
 
   return (
     <div className="shrink-0">
@@ -62,6 +81,23 @@ export default function StatusBar({
             </div>
           )}
         </div>
+
+        {/* Right: user info + logout */}
+        {userName && (
+          <div className="flex items-center gap-2">
+            <User className="size-3.5 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">{userName}</span>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={handleLogout}
+              className="text-muted-foreground hover:text-destructive"
+              aria-label="Logout"
+            >
+              <LogOut className="size-3.5" />
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
