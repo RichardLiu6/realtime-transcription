@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useCallback, useMemo } from "react";
-import { X } from "lucide-react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
+import { X, ChevronDown } from "lucide-react";
 import { INDUSTRY_PRESETS } from "@/lib/contextTerms";
 import {
   Accordion,
@@ -9,7 +9,6 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Button } from "@/components/ui/button";
 
 interface TermsPanelProps {
   termsText: string;
@@ -22,74 +21,67 @@ export default function TermsPanel({
   onTermsTextChange,
   isRecording,
 }: TermsPanelProps) {
+  const [selectedPresets, setSelectedPresets] = useState<Set<string>>(
+    new Set()
+  );
+  const [customTerms, setCustomTerms] = useState<string[]>([]);
   const [inputValue, setInputValue] = useState("");
+  const [expandedPreset, setExpandedPreset] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const tags = useMemo(
-    () =>
-      termsText
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean),
-    [termsText]
-  );
+  // Sync combined terms to parent whenever presets or custom terms change
+  useEffect(() => {
+    const presetTerms = Array.from(selectedPresets).flatMap(
+      (key) => INDUSTRY_PRESETS[key]?.terms ?? []
+    );
+    const all = [...new Set([...presetTerms, ...customTerms])];
+    onTermsTextChange(all.join(", "));
+  }, [selectedPresets, customTerms, onTermsTextChange]);
 
-  const setTags = useCallback(
-    (newTags: string[]) => {
-      onTermsTextChange(newTags.join(", "));
-    },
-    [onTermsTextChange]
-  );
+  const totalCount = useMemo(() => {
+    const presetTerms = Array.from(selectedPresets).flatMap(
+      (key) => INDUSTRY_PRESETS[key]?.terms ?? []
+    );
+    return new Set([...presetTerms, ...customTerms]).size;
+  }, [selectedPresets, customTerms]);
 
-  const addTag = useCallback(
+  const togglePreset = useCallback((key: string) => {
+    setSelectedPresets((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const toggleExpand = useCallback((key: string) => {
+    setExpandedPreset((prev) => (prev === key ? null : key));
+  }, []);
+
+  const addCustomTag = useCallback(
     (tag: string) => {
       const trimmed = tag.trim();
       if (!trimmed) return;
-      // Avoid duplicates (case-insensitive)
-      if (tags.some((t) => t.toLowerCase() === trimmed.toLowerCase())) return;
-      setTags([...tags, trimmed]);
+      if (customTerms.some((t) => t.toLowerCase() === trimmed.toLowerCase()))
+        return;
+      setCustomTerms((prev) => [...prev, trimmed]);
     },
-    [tags, setTags]
+    [customTerms]
   );
 
-  const removeTag = useCallback(
-    (index: number) => {
-      setTags(tags.filter((_, i) => i !== index));
-    },
-    [tags, setTags]
-  );
+  const removeCustomTag = useCallback((index: number) => {
+    setCustomTerms((prev) => prev.filter((_, i) => i !== index));
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
-      addTag(inputValue);
+      addCustomTag(inputValue);
       setInputValue("");
     }
-    if (e.key === "Backspace" && !inputValue && tags.length > 0) {
-      removeTag(tags.length - 1);
+    if (e.key === "Backspace" && !inputValue && customTerms.length > 0) {
+      removeCustomTag(customTerms.length - 1);
     }
-  };
-
-  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-    const pasted = e.clipboardData.getData("text");
-    if (pasted.includes(",")) {
-      e.preventDefault();
-      const newTerms = pasted.split(",").map((t) => t.trim()).filter(Boolean);
-      for (const term of newTerms) addTag(term);
-      setInputValue("");
-    }
-  };
-
-  const appendPresetTerms = (key: string) => {
-    const preset = INDUSTRY_PRESETS[key];
-    if (!preset) return;
-    const newTags = [...tags];
-    for (const term of preset.terms) {
-      if (!newTags.some((t) => t.toLowerCase() === term.toLowerCase())) {
-        newTags.push(term);
-      }
-    }
-    setTags(newTags);
   };
 
   return (
@@ -99,70 +91,118 @@ export default function TermsPanel({
           <AccordionTrigger className="py-3 hover:no-underline">
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Context Terms
-              {tags.length > 0 && (
+              {totalCount > 0 && (
                 <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary normal-case">
-                  {tags.length}
+                  {totalCount}
                 </span>
               )}
             </span>
           </AccordionTrigger>
           <AccordionContent>
             {/* Industry presets */}
-            <div className="mb-3 flex flex-wrap gap-1.5">
-              {Object.entries(INDUSTRY_PRESETS).map(([key, preset]) => (
-                <Button
-                  key={key}
-                  variant="outline"
-                  size="xs"
-                  onClick={() => appendPresetTerms(key)}
-                  className="rounded-full"
-                >
-                  {preset.label}
-                </Button>
-              ))}
+            <div className="space-y-1 mb-3">
+              {Object.entries(INDUSTRY_PRESETS).map(([key, preset]) => {
+                const isSelected = selectedPresets.has(key);
+                const isExpanded = expandedPreset === key;
+
+                return (
+                  <div key={key}>
+                    <div className="flex items-center gap-1.5">
+                      {/* Toggle button */}
+                      <button
+                        type="button"
+                        onClick={() => togglePreset(key)}
+                        className={`flex-1 text-left rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+                          isSelected
+                            ? "bg-primary text-primary-foreground font-medium"
+                            : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                        }`}
+                      >
+                        {preset.label}
+                        {isSelected && (
+                          <span className="ml-1.5 opacity-70">
+                            ({preset.terms.length})
+                          </span>
+                        )}
+                      </button>
+                      {/* Expand chevron */}
+                      <button
+                        type="button"
+                        onClick={() => toggleExpand(key)}
+                        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted"
+                      >
+                        <ChevronDown
+                          className={`size-3.5 transition-transform ${
+                            isExpanded ? "rotate-180" : ""
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    {/* Expanded terms list */}
+                    {isExpanded && (
+                      <div className="mt-1 mb-1 ml-2.5 flex flex-wrap gap-1">
+                        {preset.terms.map((term) => (
+                          <span
+                            key={term}
+                            className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                          >
+                            {term}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
-            {/* Tag input area */}
-            <div
-              className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-2 min-h-[2.5rem] cursor-text focus-within:border-ring focus-within:ring-1 focus-within:ring-ring"
-              onClick={() => inputRef.current?.focus()}
-            >
-              {tags.map((tag, i) => (
-                <span
-                  key={`${tag}-${i}`}
-                  className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs text-primary"
-                >
-                  {tag}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeTag(i);
-                    }}
-                    className="text-primary/60 hover:text-primary"
+            {/* Custom terms input */}
+            <div className="space-y-1.5">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                Custom
+              </p>
+              <div
+                className="flex flex-wrap items-center gap-1 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-[2rem] cursor-text focus-within:border-ring focus-within:ring-1 focus-within:ring-ring"
+                onClick={() => inputRef.current?.focus()}
+              >
+                {customTerms.map((tag, i) => (
+                  <span
+                    key={`${tag}-${i}`}
+                    className="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary"
                   >
-                    <X className="size-3" />
-                  </button>
-                </span>
-              ))}
-              <input
-                ref={inputRef}
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onPaste={handlePaste}
-                onBlur={() => {
-                  if (inputValue.trim()) {
-                    addTag(inputValue);
-                    setInputValue("");
+                    {tag}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeCustomTag(i);
+                      }}
+                      className="text-primary/60 hover:text-primary"
+                    >
+                      <X className="size-2.5" />
+                    </button>
+                  </span>
+                ))}
+                <input
+                  ref={inputRef}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  onBlur={() => {
+                    if (inputValue.trim()) {
+                      addCustomTag(inputValue);
+                      setInputValue("");
+                    }
+                  }}
+                  placeholder={
+                    customTerms.length === 0 ? "输入术语，回车添加" : ""
                   }
-                }}
-                placeholder={tags.length === 0 ? "输入术语，回车添加" : ""}
-                className="flex-1 min-w-[80px] bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none"
-              />
+                  className="flex-1 min-w-[60px] bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none"
+                />
+              </div>
             </div>
 
-            <p className="mt-1.5 text-xs text-muted-foreground">
+            <p className="mt-2 text-[10px] text-muted-foreground">
               {isRecording
                 ? "Takes effect on next recording"
                 : "Takes effect when recording starts"}
