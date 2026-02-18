@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { BilingualEntry, SonioxConfig, SonioxToken } from "@/types/bilingual";
 
-const TARGET_SAMPLE_RATE = 24000;
+const TARGET_SAMPLE_RATE = 16000;
 
 const WORKLET_CODE = `
 class PCMProcessor extends AudioWorkletProcessor {
@@ -548,10 +548,10 @@ export function useSonioxTranscription() {
                 api_key: token,
                 model: "stt-rt-v4",
                 audio_format: "pcm_s16le",
-                sample_rate: 24000,
+                sample_rate: 16000,
                 num_channels: 1,
                 language_hints: languageHints,
-                enable_endpoint_detection: true,
+                enable_endpoint_detection: false,
                 enable_speaker_diarization: true,
                 enable_language_identification: true,
                 ...(Object.keys(context).length > 0 ? { context } : {}),
