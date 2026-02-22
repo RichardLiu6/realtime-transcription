@@ -239,11 +239,6 @@ export default function TranscriptPanel({
                 </span>
                 <span className="text-sm italic text-gray-400 leading-relaxed">
                   {entry.translatedText}
-                  {entry.interimTranslated && (
-                    <span className="text-gray-300">
-                      {entry.interimTranslated}
-                    </span>
-                  )}
                 </span>
                 <div className="h-2" />
               </React.Fragment>

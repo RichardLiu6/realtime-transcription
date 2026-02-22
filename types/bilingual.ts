@@ -61,7 +61,6 @@ export interface BilingualEntry {
   originalText: string;
   translatedText: string;
   interimOriginal?: string;
-  interimTranslated?: string;
   isFinal: boolean;
   startMs: number;
   endMs: number;

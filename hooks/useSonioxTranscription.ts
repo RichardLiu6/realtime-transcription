@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import type { BilingualEntry, SonioxConfig, SonioxToken } from "@/types/bilingual";
 
 const TARGET_SAMPLE_RATE = 16000;
@@ -87,7 +87,7 @@ function detectLanguageFromText(
 type RecordingState = "idle" | "connecting" | "recording";
 
 export function useSonioxTranscription() {
-  const [entries, setEntries] = useState<BilingualEntry[]>([]);
+  const [entries, setEntries] = useState<Map<string, BilingualEntry>>(new Map());
   const [recordingState, setRecordingState] = useState<RecordingState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -114,9 +114,6 @@ export function useSonioxTranscription() {
     endMs: number;
   } | null>(null);
 
-  // Queue of finalized entry IDs awaiting translation (FIFO)
-  const pendingTranslationQueue = useRef<string[]>([]);
-
   // Last finalized entry data for auto-merge heuristic
   const lastFinalizedDataRef = useRef<{
     speaker: string;
@@ -124,24 +121,50 @@ export function useSonioxTranscription() {
     endMs: number;
   } | null>(null);
 
-  // Accumulated translation text for the current/last entry
-  const translationBufferRef = useRef<{
-    entryId: string;
-    finalText: string;
-    interimText: string;
-  } | null>(null);
+  // Derive array from Map for external consumers
+  const entriesArray = useMemo(() => Array.from(entries.values()), [entries]);
 
-  // Upsert entry
+  // Upsert entry into Map (O(1) lookup)
   const upsertEntry = useCallback((entry: BilingualEntry) => {
-    setEntries((prev) => {
-      const idx = prev.findIndex((e) => e.id === entry.id);
-      if (idx >= 0) {
-        const updated = [...prev];
-        updated[idx] = entry;
-        return updated;
+    setEntries((prev) => new Map(prev).set(entry.id, entry));
+  }, []);
+
+  // Request GPT translation for a finalized entry
+  const requestTranslation = useCallback((entryId: string, text: string, sourceLang: string) => {
+    const config = configRef.current;
+    if (!config || !text) return;
+
+    // Determine target language
+    let targetLang = config.languageB;
+    if (config.translationMode === "two_way") {
+      const langA = config.languageA[0] === "*" ? "zh" : (config.languageA[0] ?? "zh");
+      if (sourceLang === config.languageB) {
+        targetLang = langA;
       }
-      return [...prev, entry];
-    });
+    }
+
+    // Skip if source and target are the same
+    if (sourceLang && sourceLang === targetLang) return;
+
+    fetch("/api/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, sourceLang, targetLang }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.translatedText) {
+          setEntries((prev) => {
+            const existing = prev.get(entryId);
+            if (!existing) return prev;
+            return new Map(prev).set(entryId, {
+              ...existing,
+              translatedText: data.translatedText,
+            });
+          });
+        }
+      })
+      .catch((err) => console.error("[Translation] Failed:", err));
   }, []);
 
   // Finalize current segment into an entry
@@ -150,7 +173,11 @@ export function useSonioxTranscription() {
     if (!seg || seg.tokens.length === 0) {
       // Remove any interim entry that was already displayed
       if (seg?.entryId) {
-        setEntries((prev) => prev.filter((e) => e.id !== seg.entryId));
+        setEntries((prev) => {
+          const m = new Map(prev);
+          m.delete(seg.entryId);
+          return m;
+        });
       }
       currentSegmentRef.current = null;
       return;
@@ -163,7 +190,11 @@ export function useSonioxTranscription() {
 
     if (!originalText) {
       // Remove any interim entry that was already displayed
-      setEntries((prev) => prev.filter((e) => e.id !== seg.entryId));
+      setEntries((prev) => {
+        const m = new Map(prev);
+        m.delete(seg.entryId);
+        return m;
+      });
       currentSegmentRef.current = null;
       return;
     }
@@ -176,12 +207,6 @@ export function useSonioxTranscription() {
         configRef.current.languageB
       );
     }
-
-    // Get any accumulated translation
-    const transText =
-      translationBufferRef.current?.entryId === seg.entryId
-        ? translationBufferRef.current.finalText
-        : "";
 
     // Auto-merge: if this is a short segment close to the previous one
     // with a different speaker but same language, adopt the previous speaker
@@ -203,7 +228,7 @@ export function useSonioxTranscription() {
       speakerLabel: `Speaker ${effectiveSpeaker || "1"}`,
       language: seg.language,
       originalText,
-      translatedText: transText,
+      translatedText: "",
       isFinal: true,
       startMs: seg.startMs,
       endMs: seg.endMs,
@@ -211,12 +236,15 @@ export function useSonioxTranscription() {
     };
 
     upsertEntry(entry);
-    pendingTranslationQueue.current.push(seg.entryId);
     lastFinalizedDataRef.current = {
       speaker: effectiveSpeaker,
       language: seg.language,
       endMs: seg.endMs,
     };
+
+    // Fire async GPT translation
+    requestTranslation(seg.entryId, originalText, seg.language);
+
     currentSegmentRef.current = null;
     setCurrentInterim("");
 
@@ -224,10 +252,10 @@ export function useSonioxTranscription() {
     console.log(
       `%c[FINALIZE] ${seg.entryId}`,
       "color: #22c55e; font-weight: bold",
-      { speaker: effectiveSpeaker, lang: seg.language, original: originalText, translation: transText, startMs: seg.startMs, endMs: seg.endMs }
+      { speaker: effectiveSpeaker, lang: seg.language, original: originalText, startMs: seg.startMs, endMs: seg.endMs }
     );
     // === END DEBUG ===
-  }, [upsertEntry]);
+  }, [upsertEntry, requestTranslation]);
 
   // Handle Soniox WebSocket messages
   const handleSonioxMessage = useCallback(
@@ -245,219 +273,109 @@ export function useSonioxTranscription() {
 
       if (!data.tokens || !Array.isArray(data.tokens)) return;
 
-      // === DEBUG: Log raw token stream ===
-      const rawTokens = data.tokens as SonioxToken[];
-      if (rawTokens.length > 0) {
-        const summary = rawTokens.map((t: SonioxToken) => ({
-          text: t.text,
-          final: t.is_final,
-          spk: t.speaker,
-          lang: t.language,
-          ts: t.translation_status,
-          src_lang: t.source_language,
-          start: t.start_ms,
-          end: t.end_ms,
-        }));
-        console.log(
-          `%c[SONIOX RAW] ${rawTokens.length} tokens`,
-          "color: #0ea5e9; font-weight: bold",
-          summary
-        );
-      }
-      // === END DEBUG ===
-
-      // Filter out control tokens
+      // Filter out control tokens and any translation tokens (not used with GPT translation)
       const tokens: SonioxToken[] = data.tokens.filter(
-        (t: SonioxToken) => t.text && !isControlToken(t.text)
+        (t: SonioxToken) =>
+          t.text &&
+          !isControlToken(t.text) &&
+          (t.translation_status || "none") !== "translation"
       );
       if (tokens.length === 0) return;
 
-      // Split into original and translation tokens
-      const originalTokens: SonioxToken[] = [];
-      const translationTokens: SonioxToken[] = [];
+      const finalTokens = tokens.filter((t) => t.is_final);
+      const interimTokens = tokens.filter((t) => !t.is_final);
 
-      for (const token of tokens) {
-        const status = token.translation_status || "none";
-        if (status === "translation") {
-          translationTokens.push(token);
-        } else {
-          originalTokens.push(token);
+      const batchSpeaker =
+        tokens.find((t) => t.speaker)?.speaker ||
+        currentSegmentRef.current?.speaker ||
+        "0";
+
+      const batchLanguage =
+        tokens.find((t) => t.language)?.language || "";
+
+      // Speaker change → finalize previous segment
+      if (
+        currentSegmentRef.current &&
+        currentSegmentRef.current.speaker !== batchSpeaker
+      ) {
+        finalizeSegment();
+      }
+
+      // Initialize segment if needed
+      if (!currentSegmentRef.current) {
+        const newId = `entry-${entryCounterRef.current++}`;
+        currentSegmentRef.current = {
+          speaker: batchSpeaker,
+          tokens: [],
+          interimTokens: [],
+          language: batchLanguage,
+          entryId: newId,
+          startMs: tokens[0]?.start_ms ?? 0,
+          endMs: 0,
+        };
+      }
+
+      const seg = currentSegmentRef.current;
+
+      // Update language if detected from Soniox or via CJK fallback
+      if (batchLanguage && !seg.language) {
+        seg.language = batchLanguage;
+      }
+      if (!seg.language && configRef.current) {
+        const accumulatedText = [...seg.tokens, ...finalTokens]
+          .map((t) => t.text)
+          .join("");
+        if (accumulatedText.length >= 3) {
+          seg.language = detectLanguageFromText(
+            accumulatedText,
+            configRef.current.languageA,
+            configRef.current.languageB
+          );
         }
       }
 
-      // --- Handle translation tokens: match to pending queue (FIFO) or current segment ---
-      if (translationTokens.length > 0) {
-        // If all tokens are final, this completes a translation → consume from queue
-        const allFinal = translationTokens.every((t) => t.is_final);
-        // Queue first: finalized entries waiting for translation take priority
-        // Fall back to current segment only for interim translation display
-        const targetEntryId =
-          pendingTranslationQueue.current[0] ||
-          currentSegmentRef.current?.entryId ||
-          null;
-
-        // === DEBUG: Log translation matching ===
-        console.log(
-          `%c[TRANS MATCH] → ${targetEntryId}`,
-          "color: #f59e0b; font-weight: bold",
-          {
-            text: translationTokens.map((t) => t.text).join(""),
-            allFinal,
-            queueLen: pendingTranslationQueue.current.length,
-            queue: [...pendingTranslationQueue.current],
-            fromCurrent: !!currentSegmentRef.current?.entryId,
-          }
-        );
-
-        if (targetEntryId) {
-          const finalTransTokens = translationTokens.filter((t) => t.is_final);
-          const interimTransTokens = translationTokens.filter((t) => !t.is_final);
-
-          if (!translationBufferRef.current || translationBufferRef.current.entryId !== targetEntryId) {
-            translationBufferRef.current = {
-              entryId: targetEntryId,
-              finalText: "",
-              interimText: "",
-            };
-          }
-
-          if (finalTransTokens.length > 0) {
-            translationBufferRef.current.finalText +=
-              finalTransTokens.map((t) => t.text).join("");
-          }
-          translationBufferRef.current.interimText =
-            interimTransTokens.map((t) => t.text).join("");
-
-          // Use src_lang from translation tokens to correct language detection
-          // (translation engine is more accurate than per-token lang field)
-          const srcLang = translationTokens.find((t) => t.source_language)?.source_language;
-
-          // Update existing entry with translation + corrected language
-          setEntries((prev) => {
-            const idx = prev.findIndex((e) => e.id === targetEntryId);
-            if (idx < 0) return prev;
-            const existing = prev[idx];
-            const updated = [...prev];
-            updated[idx] = {
-              ...existing,
-              translatedText: translationBufferRef.current!.finalText.trim(),
-              interimTranslated:
-                translationBufferRef.current!.interimText || undefined,
-              ...(srcLang && srcLang !== existing.language ? { language: srcLang } : {}),
-            };
-            return updated;
-          });
-
-          // Pop from queue once translation is complete (all final)
-          if (allFinal && pendingTranslationQueue.current[0] === targetEntryId) {
-            pendingTranslationQueue.current.shift();
-          }
-        }
+      // Append final original tokens
+      if (finalTokens.length > 0) {
+        seg.tokens.push(...finalTokens);
+        seg.endMs =
+          finalTokens[finalTokens.length - 1]?.end_ms ?? seg.endMs;
       }
 
-      // --- Handle original tokens ---
-      if (originalTokens.length > 0) {
-        const finalOrigTokens = originalTokens.filter((t) => t.is_final);
-        const interimOrigTokens = originalTokens.filter((t) => !t.is_final);
+      // Replace interim original tokens
+      seg.interimTokens = interimTokens;
 
-        const batchSpeaker =
-          originalTokens.find((t) => t.speaker)?.speaker ||
-          currentSegmentRef.current?.speaker ||
-          "0";
+      // Check if this is an endpoint (all final, no interim)
+      const isEndpoint =
+        finalTokens.length > 0 && interimTokens.length === 0;
 
-        const batchLanguage =
-          originalTokens.find((t) => t.language)?.language || "";
+      if (isEndpoint) {
+        // Finalize: create the entry
+        finalizeSegment();
+      } else {
+        // Update interim display in entries list
+        const originalText = seg.tokens
+          .map((t) => t.text)
+          .join("")
+          .trim();
+        const interimOriginal = seg.interimTokens
+          .map((t) => t.text)
+          .join("");
 
-        // Speaker change → finalize previous segment
-        if (
-          currentSegmentRef.current &&
-          currentSegmentRef.current.speaker !== batchSpeaker
-        ) {
-          finalizeSegment();
-        }
+        const entry: BilingualEntry = {
+          id: seg.entryId,
+          speaker: seg.speaker,
+          speakerLabel: `Speaker ${seg.speaker || "1"}`,
+          language: seg.language,
+          originalText,
+          translatedText: "",
+          interimOriginal: interimOriginal || undefined,
+          isFinal: false,
+          startMs: seg.startMs,
+          endMs: seg.endMs,
+          timestamp: new Date(),
+        };
 
-        // Initialize segment if needed
-        if (!currentSegmentRef.current) {
-          const newId = `entry-${entryCounterRef.current++}`;
-          currentSegmentRef.current = {
-            speaker: batchSpeaker,
-            tokens: [],
-            interimTokens: [],
-            language: batchLanguage,
-            entryId: newId,
-            startMs: originalTokens[0]?.start_ms ?? 0,
-            endMs: 0,
-          };
-          // Reset translation buffer for new entry
-          translationBufferRef.current = {
-            entryId: newId,
-            finalText: "",
-            interimText: "",
-          };
-        }
-
-        const seg = currentSegmentRef.current;
-
-        // Update language if detected from Soniox or via CJK fallback
-        if (batchLanguage && !seg.language) {
-          seg.language = batchLanguage;
-        }
-        if (!seg.language && configRef.current) {
-          const accumulatedText = [...seg.tokens, ...finalOrigTokens]
-            .map((t) => t.text)
-            .join("");
-          if (accumulatedText.length >= 3) {
-            seg.language = detectLanguageFromText(
-              accumulatedText,
-              configRef.current.languageA,
-              configRef.current.languageB
-            );
-          }
-        }
-
-        // Append final original tokens
-        if (finalOrigTokens.length > 0) {
-          seg.tokens.push(...finalOrigTokens);
-          seg.endMs =
-            finalOrigTokens[finalOrigTokens.length - 1]?.end_ms ?? seg.endMs;
-        }
-
-        // Replace interim original tokens
-        seg.interimTokens = interimOrigTokens;
-
-        // Check if this is an endpoint (all final, no interim)
-        const isEndpoint =
-          finalOrigTokens.length > 0 && interimOrigTokens.length === 0;
-
-        if (isEndpoint) {
-          // Finalize: create the entry
-          finalizeSegment();
-        } else {
-          // Update interim display in entries list
-          const originalText = seg.tokens
-            .map((t) => t.text)
-            .join("")
-            .trim();
-          const interimOriginal = seg.interimTokens
-            .map((t) => t.text)
-            .join("");
-
-          const entry: BilingualEntry = {
-            id: seg.entryId,
-            speaker: seg.speaker,
-            speakerLabel: `Speaker ${seg.speaker || "1"}`,
-            language: seg.language,
-            originalText,
-            translatedText: "",
-            interimOriginal: interimOriginal || undefined,
-            isFinal: false,
-            startMs: seg.startMs,
-            endMs: seg.endMs,
-            timestamp: new Date(),
-          };
-
-          upsertEntry(entry);
-        }
+        upsertEntry(entry);
       }
     },
     [finalizeSegment, upsertEntry]
@@ -474,9 +392,7 @@ export function useSonioxTranscription() {
       entryCounterRef.current = 0;
       configRef.current = config;
       currentSegmentRef.current = null;
-      pendingTranslationQueue.current = [];
       lastFinalizedDataRef.current = null;
-      translationBufferRef.current = null;
 
       try {
         const tokenRes = await fetch("/api/soniox-token", { method: "POST" });
@@ -512,39 +428,14 @@ export function useSonioxTranscription() {
               context.terms = config.contextTerms;
             }
 
-            // Build language_hints and translation config based on mode
+            // Build language_hints for STT quality (no translation config)
             let languageHints: string[];
-            let translation: Record<string, unknown>;
-
             if (config.translationMode === "one_way") {
               const isAny = config.languageA.length === 1 && config.languageA[0] === "*";
-              let sourceLanguages: string[];
-              if (isAny) {
-                // Any Language (Auto) — no source hint needed
-                sourceLanguages = ["*"];
-                languageHints = [];
-              } else if (config.languageA.length === 1 && config.languageB === "en") {
-                // Soniox pattern: single specific source → en, add source to hints, use wildcard
-                sourceLanguages = ["*"];
-                languageHints = [...config.languageA];
-              } else {
-                sourceLanguages = [...config.languageA];
-                languageHints = [...config.languageA];
-              }
-              translation = {
-                type: "one_way",
-                target_language: config.languageB,
-                source_languages: sourceLanguages,
-              };
+              languageHints = isAny ? [] : [...config.languageA];
             } else {
-              // two_way — uses single language for language_a
               const langA = config.languageA[0] === "*" ? "zh" : (config.languageA[0] ?? "zh");
               languageHints = [langA, config.languageB];
-              translation = {
-                type: "two_way",
-                language_a: langA,
-                language_b: config.languageB,
-              };
             }
 
             ws.send(
@@ -560,7 +451,6 @@ export function useSonioxTranscription() {
                 enable_speaker_diarization: true,
                 enable_language_identification: true,
                 ...(Object.keys(context).length > 0 ? { context } : {}),
-                translation,
               })
             );
 
@@ -678,25 +568,23 @@ export function useSonioxTranscription() {
   // Reassign a single entry's speaker (manual correction)
   const reassignSpeaker = useCallback(
     (entryId: string, newSpeaker: string) => {
-      setEntries((prev) =>
-        prev.map((e) =>
-          e.id === entryId ? { ...e, speaker: newSpeaker } : e
-        )
-      );
+      setEntries((prev) => {
+        const existing = prev.get(entryId);
+        if (!existing) return prev;
+        return new Map(prev).set(entryId, { ...existing, speaker: newSpeaker });
+      });
     },
     []
   );
 
   const clearEntries = useCallback(() => {
-    setEntries([]);
+    setEntries(new Map());
     setElapsedSeconds(0);
     setError(null);
     setCurrentInterim("");
     entryCounterRef.current = 0;
     currentSegmentRef.current = null;
-    pendingTranslationQueue.current = [];
     lastFinalizedDataRef.current = null;
-    translationBufferRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -710,7 +598,7 @@ export function useSonioxTranscription() {
   }, []);
 
   return {
-    entries,
+    entries: entriesArray,
     currentInterim,
     recordingState,
     error,
