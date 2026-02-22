@@ -146,10 +146,23 @@ export function useSonioxTranscription() {
     // Skip if source and target are the same
     if (sourceLang && sourceLang === targetLang) return;
 
+    // Gather last 3 finalized entries as context
+    const allEntries = Array.from(entries.values());
+    const context = allEntries
+      .filter((e) => e.isFinal && e.originalText && e.id !== entryId)
+      .slice(-3)
+      .map((e) => e.originalText);
+
     fetch("/api/translate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, sourceLang, targetLang }),
+      body: JSON.stringify({
+        text,
+        sourceLang,
+        targetLang,
+        context: context.length > 0 ? context : undefined,
+        terms: config.contextTerms.length > 0 ? config.contextTerms : undefined,
+      }),
     })
       .then((res) => res.json())
       .then((data) => {
@@ -165,7 +178,7 @@ export function useSonioxTranscription() {
         }
       })
       .catch((err) => console.error("[Translation] Failed:", err));
-  }, []);
+  }, [entries]);
 
   // Finalize current segment into an entry
   const finalizeSegment = useCallback(() => {
