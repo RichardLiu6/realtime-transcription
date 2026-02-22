@@ -5,7 +5,6 @@ import { ChevronDown, Mic } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import type { BilingualEntry, SpeakerInfo } from "@/types/bilingual";
-import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import { useT } from "@/lib/i18n";
 
 // Soniox Compare style: 25 hex colors for speakers
@@ -21,14 +20,8 @@ function getSpeakerColor(speakerNum: number): string {
   return SPEAKER_COLORS[(speakerNum - 1) % SPEAKER_COLORS.length];
 }
 
-function getLanguageName(code: string): string {
-  try {
-    return (
-      new Intl.DisplayNames(["en"], { type: "language" }).of(code) || code
-    );
-  } catch {
-    return SONIOX_LANGUAGES.find((l) => l.code === code)?.name || code;
-  }
+function getLanguageLabel(code: string): string {
+  return code.toUpperCase();
 }
 
 function formatTime(ms: number): string {
@@ -185,7 +178,7 @@ export default function TranscriptPanel({
                 key={`${entry.id}-lang`}
                 className="inline-block mr-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium"
               >
-                {getLanguageName(entry.language)}
+                {getLanguageLabel(entry.language)}
               </span>
             );
           }
@@ -231,7 +224,7 @@ export default function TranscriptPanel({
               <React.Fragment key={`${entry.id}-translation`}>
                 <br />
                 <span className="inline-block mr-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
-                  {getLanguageName(
+                  {getLanguageLabel(
                     languageA.includes("*") || languageA.includes(entry.language)
                       ? languageB
                       : languageA[0]
