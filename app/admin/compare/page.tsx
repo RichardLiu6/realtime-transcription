@@ -10,7 +10,9 @@ import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import type { TranslationMode } from "@/types/bilingual";
 
 const COMPARE_MODELS = [
-  { id: "gpt-5-nano", label: "GPT-5 Nano" },
+  { id: "gpt-5-nano/minimal", label: "Nano (minimal)" },
+  { id: "gpt-5-nano/low", label: "Nano (low)" },
+  { id: "gpt-5-nano/medium", label: "Nano (medium)" },
   { id: "gpt-5-mini", label: "GPT-5 Mini" },
   { id: "gpt-4o-mini", label: "GPT-4o Mini" },
   { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
@@ -33,7 +35,7 @@ interface CompareRow {
 
 export default function ComparePage() {
   const [selectedModels, setSelectedModels] = useState<Set<string>>(
-    new Set(["gpt-5-nano"])
+    new Set(["gpt-5-nano/minimal"])
   );
   const [languageA, setLanguageA] = useState("*");
   const [languageB, setLanguageB] = useState("en");

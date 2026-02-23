@@ -55,7 +55,18 @@ async function resolveModel(req: NextRequest, requestedModel?: string): Promise<
 
 export async function POST(req: NextRequest) {
   try {
-    const { text, sourceLang, targetLang, context, terms, model: requestedModel } = await req.json();
+    const { text, sourceLang, targetLang, context, terms, model: rawRequestedModel } = await req.json();
+
+    // Parse composite model ID: "gpt-5-nano/low" → model "gpt-5-nano", reasoning "low"
+    let requestedModel = rawRequestedModel;
+    let reasoningOverride: string | undefined;
+    if (typeof rawRequestedModel === "string" && rawRequestedModel.includes("/")) {
+      const [base, effort] = rawRequestedModel.split("/");
+      requestedModel = base;
+      if (["minimal", "low", "medium", "high"].includes(effort)) {
+        reasoningOverride = effort;
+      }
+    }
 
     if (!text || typeof text !== "string") {
       return NextResponse.json({ error: "Missing text" }, { status: 400 });
@@ -129,7 +140,7 @@ Rules:
         params.max_tokens = 1000;
       }
       if (REASONING_MODELS.has(model)) {
-        params.reasoning_effort = "minimal";
+        params.reasoning_effort = reasoningOverride || "minimal";
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -139,7 +150,11 @@ Rules:
 
     const latencyMs = Date.now() - start;
 
-    return NextResponse.json({ translatedText, model, latencyMs });
+    return NextResponse.json({
+      translatedText,
+      model: rawRequestedModel || model,
+      latencyMs,
+    });
   } catch (error) {
     console.error("Translation error:", error);
     return NextResponse.json(
