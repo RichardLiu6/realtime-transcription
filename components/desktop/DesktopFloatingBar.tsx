@@ -30,6 +30,7 @@ import {
 import TranslationModeToggle from "@/components/sidebar/TranslationModeToggle";
 import BetweenLanguages from "@/components/sidebar/BetweenLanguages";
 import FromToLanguages from "@/components/sidebar/FromToLanguages";
+import PresentationLanguages from "@/components/sidebar/PresentationLanguages";
 import TermsPanel from "@/components/sidebar/TermsPanel";
 import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
 import type { TranslationMode, SpeakerInfo, BilingualEntry } from "@/types/bilingual";
@@ -43,6 +44,8 @@ interface DesktopFloatingBarProps {
   languageB: string;
   onLanguageAChange: (codes: string[]) => void;
   onLanguageBChange: (code: string) => void;
+  targetLangs: string[];
+  onTargetLangsChange: (codes: string[]) => void;
   termsText: string;
   onTermsTextChange: (text: string) => void;
   selectedPresets: Set<string>;
@@ -146,12 +149,20 @@ export default function DesktopFloatingBar(props: DesktopFloatingBarProps) {
                 onLanguageBChange={props.onLanguageBChange}
                 disabled={isRecording}
               />
-            ) : (
+            ) : props.translationMode === "one_way" ? (
               <FromToLanguages
                 languageA={props.languageA}
                 languageB={props.languageB}
                 onLanguageAChange={props.onLanguageAChange}
                 onLanguageBChange={props.onLanguageBChange}
+                disabled={isRecording}
+              />
+            ) : (
+              <PresentationLanguages
+                languageA={props.languageA}
+                targetLangs={props.targetLangs}
+                onLanguageAChange={props.onLanguageAChange}
+                onTargetLangsChange={props.onTargetLangsChange}
                 disabled={isRecording}
               />
             )}

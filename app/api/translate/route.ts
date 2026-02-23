@@ -53,9 +53,169 @@ async function resolveModel(req: NextRequest, requestedModel?: string): Promise<
   return DEFAULT_MODEL;
 }
 
+// Track usage asynchronously (fire-and-forget)
+function trackUsage(req: NextRequest, inputTokens: number, outputTokens: number) {
+  const authToken = req.cookies.get("auth_token")?.value;
+  if (authToken && (inputTokens > 0 || outputTokens > 0)) {
+    verifyToken(authToken).then((payload) => {
+      if (payload?.email && typeof payload.email === "string") {
+        incrementUsage(payload.email, {
+          llm_input_tokens: inputTokens,
+          llm_output_tokens: outputTokens,
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+  }
+}
+
+// Build context messages (shared between single and multi-target)
+function buildContextMessages(context?: string[]) {
+  const msgs: { role: "user" | "assistant"; content: string }[] = [];
+  if (Array.isArray(context) && context.length > 0) {
+    msgs.push({
+      role: "user",
+      content: `[Context — previous sentences for reference, do NOT translate these]\n${context.join("\n")}`,
+    });
+    msgs.push({
+      role: "assistant",
+      content: "(understood, I will use this context for coherent translation)",
+    });
+  }
+  return msgs;
+}
+
+// --- Multi-target translation (presentation mode) ---
+
+async function handleMultiTarget(
+  req: NextRequest,
+  text: string,
+  sourceLang: string | undefined,
+  targetLangs: string[],
+  context: string[] | undefined,
+  terms: string[] | undefined,
+  model: string,
+  reasoningOverride: string | undefined,
+) {
+  const sourceName = sourceLang ? getLanguageName(sourceLang) : "source language";
+  const targetNames = targetLangs.map((l) => `${l} (${getLanguageName(l)})`).join(", ");
+
+  let systemPrompt = `You are a real-time meeting translator. Translate spoken ${sourceName} into multiple languages simultaneously.
+
+Target languages: ${targetNames}
+
+Rules:
+- Output a JSON object with one key per target language code
+- Keep the conversational/spoken tone — do not formalize
+- Preserve the speaker's intent, including hedging, filler, and emphasis
+- Keep proper nouns, brand names, and technical terms as-is unless a translation is standard`;
+
+  if (Array.isArray(terms) && terms.length > 0) {
+    systemPrompt += `\n\nTerminology — always use these translations when applicable:\n${terms.join(", ")}`;
+  }
+
+  const contextMsgs = buildContextMessages(context);
+  const start = Date.now();
+  let translations: Record<string, string> = {};
+  let inputTokens = 0;
+  let outputTokens = 0;
+
+  if (isClaude(model)) {
+    // Claude: use tool_use for structured output
+    const toolSchema = {
+      type: "object" as const,
+      properties: Object.fromEntries(
+        targetLangs.map((l) => [l, { type: "string" as const, description: `Translation in ${getLanguageName(l)}` }])
+      ),
+      required: targetLangs,
+    };
+
+    const anthropicMessages = [
+      ...contextMsgs,
+      { role: "user" as const, content: text },
+    ];
+
+    const r = await getAnthropic().messages.create({
+      model,
+      max_tokens: Math.min(200 * targetLangs.length, 4000),
+      temperature: 0.3,
+      system: systemPrompt,
+      messages: anthropicMessages,
+      tools: [{
+        name: "output_translations",
+        description: "Output translations for each target language",
+        input_schema: toolSchema,
+      }],
+      tool_choice: { type: "tool" as const, name: "output_translations" },
+    });
+
+    const toolBlock = r.content.find((b) => b.type === "tool_use");
+    if (toolBlock && toolBlock.type === "tool_use") {
+      translations = toolBlock.input as Record<string, string>;
+    }
+    inputTokens = r.usage?.input_tokens ?? 0;
+    outputTokens = r.usage?.output_tokens ?? 0;
+  } else {
+    // OpenAI: use json_schema structured output
+    const schema = {
+      type: "object",
+      properties: Object.fromEntries(
+        targetLangs.map((l) => [l, { type: "string" }])
+      ),
+      required: targetLangs,
+      additionalProperties: false,
+    };
+
+    const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+      { role: "system", content: systemPrompt },
+      ...contextMsgs,
+      { role: "user", content: text },
+    ];
+
+    const params: Record<string, unknown> = {
+      model,
+      messages,
+      response_format: {
+        type: "json_schema",
+        json_schema: { name: "multi_translation", schema, strict: true },
+      },
+    };
+
+    if (!NO_TEMPERATURE_MODELS.has(model)) {
+      params.temperature = 0.3;
+    }
+    const tokenLimit = Math.min(200 * targetLangs.length, 4000);
+    if (NEW_API_MODELS.has(model)) {
+      params.max_completion_tokens = tokenLimit;
+    } else {
+      params.max_tokens = tokenLimit;
+    }
+    if (REASONING_MODELS.has(model)) {
+      params.reasoning_effort = reasoningOverride || "minimal";
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = await openai.chat.completions.create(params as any);
+    const raw = r.choices[0]?.message?.content?.trim() || "{}";
+    try {
+      translations = JSON.parse(raw);
+    } catch {
+      translations = {};
+    }
+    inputTokens = r.usage?.prompt_tokens ?? 0;
+    outputTokens = r.usage?.completion_tokens ?? 0;
+  }
+
+  const latencyMs = Date.now() - start;
+  trackUsage(req, inputTokens, outputTokens);
+
+  return NextResponse.json({ translations, model, latencyMs });
+}
+
+// --- Single-target translation (existing path) ---
+
 export async function POST(req: NextRequest) {
   try {
-    const { text, sourceLang, targetLang, context, terms, model: rawRequestedModel } = await req.json();
+    const { text, sourceLang, targetLang, targetLangs, context, terms, model: rawRequestedModel } = await req.json();
 
     // Parse composite model ID: "gpt-5-nano/low" → model "gpt-5-nano", reasoning "low"
     let requestedModel = rawRequestedModel;
@@ -71,15 +231,22 @@ export async function POST(req: NextRequest) {
     if (!text || typeof text !== "string") {
       return NextResponse.json({ error: "Missing text" }, { status: 400 });
     }
+
+    const model = await resolveModel(req, requestedModel);
+
+    // Multi-target path (presentation mode)
+    if (Array.isArray(targetLangs) && targetLangs.length > 0) {
+      return handleMultiTarget(req, text, sourceLang, targetLangs, context, terms, model, reasoningOverride);
+    }
+
+    // Single-target path (existing)
     if (!targetLang || typeof targetLang !== "string") {
       return NextResponse.json({ error: "Missing targetLang" }, { status: 400 });
     }
 
-    const model = await resolveModel(req, requestedModel);
     const targetName = getLanguageName(targetLang);
     const sourceName = sourceLang ? getLanguageName(sourceLang) : null;
 
-    // Build system prompt
     let systemPrompt = `You are a real-time meeting translator. Translate spoken ${sourceName || "source language"} to ${targetName}.
 
 Rules:
@@ -92,23 +259,12 @@ Rules:
       systemPrompt += `\n\nTerminology — always use these translations when applicable:\n${terms.join(", ")}`;
     }
 
-    // Build messages with context
+    const contextMsgs = buildContextMessages(context);
     const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
       { role: "system", content: systemPrompt },
+      ...contextMsgs,
+      { role: "user", content: text },
     ];
-
-    if (Array.isArray(context) && context.length > 0) {
-      messages.push({
-        role: "user",
-        content: `[Context — previous sentences for reference, do NOT translate these]\n${context.join("\n")}`,
-      });
-      messages.push({
-        role: "assistant",
-        content: "(understood, I will use this context for coherent translation)",
-      });
-    }
-
-    messages.push({ role: "user", content: text });
 
     const start = Date.now();
     let translatedText: string;
@@ -116,7 +272,6 @@ Rules:
     let outputTokens = 0;
 
     if (isClaude(model)) {
-      // Anthropic: system is a separate param, not in messages
       const anthropicMessages = messages
         .filter((m) => m.role !== "system")
         .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
@@ -132,7 +287,6 @@ Rules:
       inputTokens = r.usage?.input_tokens ?? 0;
       outputTokens = r.usage?.output_tokens ?? 0;
     } else {
-      // OpenAI
       const params: Record<string, unknown> = { model, messages };
 
       if (!NO_TEMPERATURE_MODELS.has(model)) {
@@ -155,19 +309,7 @@ Rules:
     }
 
     const latencyMs = Date.now() - start;
-
-    // Async usage tracking (fire-and-forget)
-    const authToken = req.cookies.get("auth_token")?.value;
-    if (authToken && (inputTokens > 0 || outputTokens > 0)) {
-      verifyToken(authToken).then((payload) => {
-        if (payload?.email && typeof payload.email === "string") {
-          incrementUsage(payload.email, {
-            llm_input_tokens: inputTokens,
-            llm_output_tokens: outputTokens,
-          }).catch(() => {});
-        }
-      }).catch(() => {});
-    }
+    trackUsage(req, inputTokens, outputTokens);
 
     return NextResponse.json({
       translatedText,

@@ -60,6 +60,7 @@ export interface BilingualEntry {
   language: string; // Language code of original text
   originalText: string;
   translatedText: string;
+  translations?: Record<string, string>; // Presentation mode: { en: "...", ja: "..." }
   interimOriginal?: string;
   isFinal: boolean;
   startMs: number;
@@ -85,11 +86,12 @@ export interface SonioxToken {
   source_language?: string;
 }
 
-export type TranslationMode = "two_way" | "one_way";
+export type TranslationMode = "two_way" | "one_way" | "presentation";
 
 export interface SonioxConfig {
   languageA: string[]; // e.g. ["*"] or ["zh", "en"]
   languageB: string; // e.g. "en"
+  targetLangs?: string[]; // Presentation mode: ["en", "ja", "fr"]
   contextTerms: string[];
   translationMode: TranslationMode;
 }

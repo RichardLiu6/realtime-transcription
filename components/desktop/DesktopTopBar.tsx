@@ -13,6 +13,7 @@ import {
   Loader2,
   ArrowLeftRight,
   ArrowRight,
+  Monitor,
   ArrowUpDown,
   ArrowDown,
   Download,
@@ -39,8 +40,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import TermsPanel from "@/components/sidebar/TermsPanel";
 import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
+import PresentationLanguages from "@/components/sidebar/PresentationLanguages";
 import type { TranslationMode, SpeakerInfo, BilingualEntry } from "@/types/bilingual";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import { INDUSTRY_PRESETS } from "@/lib/contextTerms";
@@ -53,6 +56,8 @@ interface DesktopTopBarProps {
   languageB: string;
   onLanguageAChange: (codes: string[]) => void;
   onLanguageBChange: (code: string) => void;
+  targetLangs: string[];
+  onTargetLangsChange: (codes: string[]) => void;
   termsText: string;
   onTermsTextChange: (text: string) => void;
   selectedPresets: Set<string>;
@@ -191,6 +196,10 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
             <ArrowRight className="size-3" />
             {t("mode_from_to")}
           </ToggleGroupItem>
+          <ToggleGroupItem value="presentation" className="gap-1 text-xs px-2">
+            <Monitor className="size-3" />
+            {t("mode_presentation")}
+          </ToggleGroupItem>
         </ToggleGroup>
 
         <div className="h-5 w-px bg-border shrink-0" />
@@ -233,7 +242,7 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
                 </SelectContent>
               </Select>
             </>
-          ) : (
+          ) : props.translationMode === "one_way" ? (
             <>
               <Select
                 value={props.languageA[0] === "*" ? "*" : (props.languageA[0] ?? "*")}
@@ -270,6 +279,28 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
                 </SelectContent>
               </Select>
             </>
+          ) : (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" disabled={isRecording}>
+                  <ArrowDown className="size-3" />
+                  {props.targetLangs.map((code) => (
+                    <Badge key={code} variant="secondary" className="text-[10px] px-1 py-0 h-4">
+                      {SONIOX_LANGUAGES.find((l) => l.code === code)?.name ?? code}
+                    </Badge>
+                  ))}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent side="bottom" align="start" className="w-72 p-0">
+                <PresentationLanguages
+                  languageA={props.languageA}
+                  targetLangs={props.targetLangs}
+                  onLanguageAChange={props.onLanguageAChange}
+                  onTargetLangsChange={props.onTargetLangsChange}
+                  disabled={isRecording}
+                />
+              </PopoverContent>
+            </Popover>
           )}
         </div>
 

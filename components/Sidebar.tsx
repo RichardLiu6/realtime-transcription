@@ -7,6 +7,7 @@ import { useT } from "@/lib/i18n";
 import TranslationModeToggle from "@/components/sidebar/TranslationModeToggle";
 import BetweenLanguages from "@/components/sidebar/BetweenLanguages";
 import FromToLanguages from "@/components/sidebar/FromToLanguages";
+import PresentationLanguages from "@/components/sidebar/PresentationLanguages";
 import TermsPanel from "@/components/sidebar/TermsPanel";
 import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
 import AudioWaveButton from "@/components/sidebar/AudioWaveButton";
@@ -18,6 +19,8 @@ interface SidebarProps {
   languageB: string;
   onLanguageAChange: (codes: string[]) => void;
   onLanguageBChange: (code: string) => void;
+  targetLangs: string[];
+  onTargetLangsChange: (codes: string[]) => void;
   termsText: string;
   onTermsTextChange: (text: string) => void;
   selectedPresets: Set<string>;
@@ -44,6 +47,8 @@ export default function Sidebar({
   languageB,
   onLanguageAChange,
   onLanguageBChange,
+  targetLangs,
+  onTargetLangsChange,
   termsText,
   onTermsTextChange,
   selectedPresets,
@@ -104,12 +109,20 @@ export default function Sidebar({
             onLanguageBChange={onLanguageBChange}
             disabled={isRecording}
           />
-        ) : (
+        ) : translationMode === "one_way" ? (
           <FromToLanguages
             languageA={languageA}
             languageB={languageB}
             onLanguageAChange={onLanguageAChange}
             onLanguageBChange={onLanguageBChange}
+            disabled={isRecording}
+          />
+        ) : (
+          <PresentationLanguages
+            languageA={languageA}
+            targetLangs={targetLangs}
+            onLanguageAChange={onLanguageAChange}
+            onTargetLangsChange={onTargetLangsChange}
             disabled={isRecording}
           />
         )}

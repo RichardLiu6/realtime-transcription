@@ -143,7 +143,45 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     const config = configRef.current;
     if (!config || !text) return;
 
-    // Determine target language
+    // Gather last 3 finalized entries as context
+    const allEntries = Array.from(entries.values());
+    const context = allEntries
+      .filter((e) => e.isFinal && e.originalText && e.id !== entryId)
+      .slice(-3)
+      .map((e) => e.originalText);
+
+    const commonBody = {
+      text,
+      sourceLang,
+      context: context.length > 0 ? context : undefined,
+      terms: config.contextTerms.length > 0 ? config.contextTerms : undefined,
+    };
+
+    // Presentation mode: multi-target with targetLangs
+    if (config.translationMode === "presentation" && config.targetLangs && config.targetLangs.length > 0) {
+      fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...commonBody, targetLangs: config.targetLangs }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.translations) {
+            setEntries((prev) => {
+              const existing = prev.get(entryId);
+              if (!existing) return prev;
+              return new Map(prev).set(entryId, {
+                ...existing,
+                translations: data.translations,
+              });
+            });
+          }
+        })
+        .catch((err) => console.error("[Translation] Multi-target failed:", err));
+      return;
+    }
+
+    // Single-target: two_way / one_way
     let targetLang = config.languageB;
     if (config.translationMode === "two_way") {
       const langA = config.languageA[0] === "*" ? "zh" : (config.languageA[0] ?? "zh");
@@ -155,23 +193,10 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     // Skip if source and target are the same
     if (sourceLang && sourceLang === targetLang) return;
 
-    // Gather last 3 finalized entries as context
-    const allEntries = Array.from(entries.values());
-    const context = allEntries
-      .filter((e) => e.isFinal && e.originalText && e.id !== entryId)
-      .slice(-3)
-      .map((e) => e.originalText);
-
     fetch("/api/translate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text,
-        sourceLang,
-        targetLang,
-        context: context.length > 0 ? context : undefined,
-        terms: config.contextTerms.length > 0 ? config.contextTerms : undefined,
-      }),
+      body: JSON.stringify({ ...commonBody, targetLang }),
     })
       .then((res) => res.json())
       .then((data) => {
@@ -456,7 +481,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
 
             // Build language_hints for STT quality (no translation config)
             let languageHints: string[];
-            if (config.translationMode === "one_way") {
+            if (config.translationMode === "one_way" || config.translationMode === "presentation") {
               const isAny = config.languageA.length === 1 && config.languageA[0] === "*";
               languageHints = isAny ? [] : [...config.languageA];
             } else {

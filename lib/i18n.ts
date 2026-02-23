@@ -22,6 +22,9 @@ const translations = {
     "mode_from_to": "From→To",
     "mode_between_desc": "Auto-detect bilingual conversation",
     "mode_from_to_desc": "Fixed source language, translate to target",
+    "mode_presentation": "Presentation",
+    "mode_presentation_desc": "Multi-language table view",
+    "target_languages": "Target Languages",
 
     // Languages
     "languages": "Languages",
@@ -68,6 +71,9 @@ const translations = {
     "mode_from_to": "单向",
     "mode_between_desc": "自动检测双语对话",
     "mode_from_to_desc": "固定源语言，翻译到目标语言",
+    "mode_presentation": "演讲",
+    "mode_presentation_desc": "多语言表格视图",
+    "target_languages": "目标语言",
 
     // Languages
     "languages": "语言",

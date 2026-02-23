@@ -7,6 +7,8 @@ export interface MobileBottomProps {
   languageB: string;
   onLanguageAChange: (codes: string[]) => void;
   onLanguageBChange: (code: string) => void;
+  targetLangs: string[];
+  onTargetLangsChange: (codes: string[]) => void;
   termsText: string;
   onTermsTextChange: (text: string) => void;
   selectedPresets: Set<string>;

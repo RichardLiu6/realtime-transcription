@@ -10,6 +10,7 @@ import { t } from "@/lib/i18n";
 import Sidebar from "@/components/Sidebar";
 import StatusBar from "@/components/StatusBar";
 import TranscriptPanel from "@/components/TranscriptPanel";
+import PresentationPanel from "@/components/PresentationPanel";
 import MobileBottom from "@/components/mobile/MobileBottom";
 import DesktopTopBar from "@/components/desktop/DesktopTopBar";
 import DesktopFloatingBar from "@/components/desktop/DesktopFloatingBar";
@@ -24,6 +25,7 @@ export default function Home() {
   const [customTerms, setCustomTerms] = useState<string[]>([]);
   const [translationMode, setTranslationMode] =
     useState<TranslationMode>("two_way");
+  const [targetLangs, setTargetLangs] = useState<string[]>(["en"]);
   const [desktopLayout, setDesktopLayout] = useState<DesktopLayout>("sidebar");
 
   useEffect(() => {
@@ -68,12 +70,19 @@ export default function Home() {
       .filter(Boolean);
     clearEntries();
     clearSpeakers();
-    start({ languageA, languageB, contextTerms: terms, translationMode });
+    start({
+      languageA,
+      languageB,
+      contextTerms: terms,
+      translationMode,
+      ...(translationMode === "presentation" ? { targetLangs } : {}),
+    });
   }, [
     languageA,
     languageB,
     termsText,
     translationMode,
+    targetLangs,
     start,
     clearEntries,
     clearSpeakers,
@@ -102,6 +111,20 @@ export default function Home() {
         stop();
       }
       setLanguageA(codes);
+    },
+    [recordingState, stop]
+  );
+
+  const handleTargetLangsChange = useCallback(
+    (codes: string[]) => {
+      if (recordingState === "recording") {
+        const confirmed = window.confirm(
+          t("confirm_language_change")
+        );
+        if (!confirmed) return;
+        stop();
+      }
+      setTargetLangs(codes);
     },
     [recordingState, stop]
   );
@@ -148,6 +171,8 @@ export default function Home() {
     languageB,
     onLanguageAChange: handleLanguageAChange,
     onLanguageBChange: handleLanguageBChange,
+    targetLangs,
+    onTargetLangsChange: handleTargetLangsChange,
     termsText,
     onTermsTextChange: setTermsText,
     selectedPresets,
@@ -194,15 +219,25 @@ export default function Home() {
           </div>
         )}
 
-        <TranscriptPanel
-          entries={entries}
-          currentInterim={currentInterim}
-          speakers={speakers}
-          isRecording={recordingState === "recording"}
-          languageA={languageA}
-          languageB={languageB}
-          onReassignSpeaker={reassignSpeaker}
-        />
+        {translationMode === "presentation" ? (
+          <PresentationPanel
+            entries={entries}
+            currentInterim={currentInterim}
+            speakers={speakers}
+            isRecording={recordingState === "recording"}
+            targetLangs={targetLangs}
+          />
+        ) : (
+          <TranscriptPanel
+            entries={entries}
+            currentInterim={currentInterim}
+            speakers={speakers}
+            isRecording={recordingState === "recording"}
+            languageA={languageA}
+            languageB={languageB}
+            onReassignSpeaker={reassignSpeaker}
+          />
+        )}
 
         {/* Mobile bottom bar (hidden on desktop) */}
         <div className="lg:hidden">
