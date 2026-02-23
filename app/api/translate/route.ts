@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { openai } from "@/lib/openai";
-import { anthropic } from "@/lib/anthropic";
+import { getAnthropic } from "@/lib/anthropic";
 import { verifyToken } from "@/lib/auth";
 import { getUserModel, DEFAULT_MODEL, SUPPORTED_MODELS } from "@/lib/edge-config";
 import { jwtVerify } from "jose";
@@ -108,7 +108,7 @@ Rules:
         .filter((m) => m.role !== "system")
         .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
-      const r = await anthropic.messages.create({
+      const r = await getAnthropic().messages.create({
         model,
         max_tokens: 1000,
         temperature: 0.3,
