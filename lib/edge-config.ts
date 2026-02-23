@@ -9,7 +9,7 @@ export const SUPPORTED_MODELS = [
 ] as const;
 
 export type TranslationModel = (typeof SUPPORTED_MODELS)[number];
-export const DEFAULT_MODEL: TranslationModel = "gpt-5-mini";
+export const DEFAULT_MODEL: TranslationModel = "gpt-5-nano";
 
 export interface AuthUser {
   name: string;
