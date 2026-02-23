@@ -33,7 +33,7 @@ interface CompareRow {
 
 export default function ComparePage() {
   const [selectedModels, setSelectedModels] = useState<Set<string>>(
-    new Set(["gpt-5-nano", "gpt-4o-mini", "claude-haiku-4-5-20251001"])
+    new Set(["gpt-5-nano"])
   );
   const [languageA, setLanguageA] = useState("*");
   const [languageB, setLanguageB] = useState("en");

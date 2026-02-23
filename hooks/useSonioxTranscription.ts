@@ -98,6 +98,10 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [currentInterim, setCurrentInterim] = useState("");
 
+  // Keep latest options in ref to avoid stale closures in finalizeSegment
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -260,9 +264,9 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       endMs: seg.endMs,
     };
 
-    // Fire translation (or external callback)
-    if (options?.skipTranslation) {
-      options.onSegmentFinalized?.(seg.entryId, originalText, seg.language);
+    // Fire translation (or external callback via ref for latest callback)
+    if (optionsRef.current?.skipTranslation) {
+      optionsRef.current.onSegmentFinalized?.(seg.entryId, originalText, seg.language);
     } else {
       requestTranslation(seg.entryId, originalText, seg.language);
     }
