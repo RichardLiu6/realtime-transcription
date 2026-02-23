@@ -33,8 +33,8 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Admin page — check admin_token, redirect to /admin/login
-  if (pathname === "/admin") {
+  // Admin pages — check admin_token, redirect to /admin/login
+  if (pathname.startsWith("/admin") && pathname !== "/admin/login") {
     const adminToken = request.cookies.get("admin_token")?.value;
     if (!adminToken) {
       return NextResponse.redirect(new URL("/admin/login", request.url));
@@ -46,11 +46,6 @@ export async function middleware(request: NextRequest) {
     } catch {
       return NextResponse.redirect(new URL("/admin/login", request.url));
     }
-  }
-
-  // Admin login page — always accessible
-  if (pathname === "/admin/login") {
-    return NextResponse.next();
   }
 
   // All other routes — check auth_token

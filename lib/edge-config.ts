@@ -1,8 +1,20 @@
 import { createClient, type EdgeConfigClient } from "@vercel/edge-config";
 
+export const SUPPORTED_MODELS = [
+  "gpt-5-nano",
+  "gpt-5-mini",
+  "gpt-4o-mini",
+  "claude-haiku-4-5-20251001",
+  "claude-sonnet-4-6",
+] as const;
+
+export type TranslationModel = (typeof SUPPORTED_MODELS)[number];
+export const DEFAULT_MODEL: TranslationModel = "gpt-5-mini";
+
 export interface AuthUser {
   name: string;
   addedAt: string;
+  model?: string;
 }
 
 export type AuthUsers = Record<string, AuthUser>;
@@ -30,6 +42,11 @@ export async function getUserByEmail(
 ): Promise<AuthUser | null> {
   const users = await getAuthUsers();
   return users[email.toLowerCase()] ?? null;
+}
+
+export async function getUserModel(email: string): Promise<string> {
+  const user = await getUserByEmail(email);
+  return user?.model || DEFAULT_MODEL;
 }
 
 // --- Meeting codes ---

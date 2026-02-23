@@ -86,7 +86,12 @@ function detectLanguageFromText(
 
 type RecordingState = "idle" | "connecting" | "recording";
 
-export function useSonioxTranscription() {
+interface TranscriptionOptions {
+  skipTranslation?: boolean;
+  onSegmentFinalized?: (entryId: string, text: string, sourceLang: string) => void;
+}
+
+export function useSonioxTranscription(options?: TranscriptionOptions) {
   const [entries, setEntries] = useState<Map<string, BilingualEntry>>(new Map());
   const [recordingState, setRecordingState] = useState<RecordingState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -255,8 +260,12 @@ export function useSonioxTranscription() {
       endMs: seg.endMs,
     };
 
-    // Fire async GPT translation
-    requestTranslation(seg.entryId, originalText, seg.language);
+    // Fire translation (or external callback)
+    if (options?.skipTranslation) {
+      options.onSegmentFinalized?.(seg.entryId, originalText, seg.language);
+    } else {
+      requestTranslation(seg.entryId, originalText, seg.language);
+    }
 
     currentSegmentRef.current = null;
     setCurrentInterim("");

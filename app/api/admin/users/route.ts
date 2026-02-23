@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthUsers, updateAuthUsers } from "@/lib/edge-config";
+import { getAuthUsers, updateAuthUsers, SUPPORTED_MODELS } from "@/lib/edge-config";
 
 // GET: list all users
 export async function GET() {
@@ -58,6 +58,41 @@ export async function POST(request: NextRequest) {
       { error: "添加用户失败" },
       { status: 500 }
     );
+  }
+}
+
+// PATCH: update user model
+export async function PATCH(request: NextRequest) {
+  try {
+    const { email, model } = await request.json();
+
+    if (!email || typeof email !== "string") {
+      return NextResponse.json({ error: "请指定邮箱" }, { status: 400 });
+    }
+
+    if (model && !(SUPPORTED_MODELS as readonly string[]).includes(model)) {
+      return NextResponse.json({ error: "不支持的模型" }, { status: 400 });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const users = await getAuthUsers();
+
+    if (!(normalizedEmail in users)) {
+      return NextResponse.json({ error: "用户不存在" }, { status: 404 });
+    }
+
+    if (model) {
+      users[normalizedEmail].model = model;
+    } else {
+      delete users[normalizedEmail].model;
+    }
+
+    await updateAuthUsers(users);
+
+    return NextResponse.json({ success: true, user: { email: normalizedEmail, ...users[normalizedEmail] } });
+  } catch (err) {
+    console.error("Update user model error:", err);
+    return NextResponse.json({ error: "更新失败" }, { status: 500 });
   }
 }
 

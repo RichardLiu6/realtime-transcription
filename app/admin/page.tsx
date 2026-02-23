@@ -11,13 +11,24 @@ import {
   Plus,
   Copy,
   XCircle,
+  GitCompareArrows,
 } from "lucide-react";
 import Link from "next/link";
+
+const SUPPORTED_MODELS = [
+  { value: "", label: "默认 (gpt-5-mini)" },
+  { value: "gpt-5-nano", label: "GPT-5 Nano" },
+  { value: "gpt-5-mini", label: "GPT-5 Mini" },
+  { value: "gpt-4o-mini", label: "GPT-4o Mini" },
+  { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
+  { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+];
 
 interface User {
   email: string;
   name: string;
   addedAt: string;
+  model?: string;
 }
 
 interface Meeting {
@@ -170,6 +181,25 @@ export default function AdminPage() {
     }
   };
 
+  const handleModelChange = async (userEmail: string, model: string) => {
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: userEmail, model: model || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "更新失败");
+        return;
+      }
+      setSuccess(`已更新 ${userEmail} 的模型`);
+      fetchUsers();
+    } catch {
+      setError("网络错误");
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && email.trim() && !loading) handleAdd();
   };
@@ -179,12 +209,20 @@ export default function AdminPage() {
       <div className="mx-auto max-w-lg space-y-8">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-foreground">用户管理</h1>
-          <Link href="/">
-            <Button variant="ghost" size="sm">
-              <ArrowLeft className="size-4 mr-1" />
-              返回首页
-            </Button>
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/admin/compare">
+              <Button variant="outline" size="sm">
+                <GitCompareArrows className="size-4 mr-1" />
+                模型对比
+              </Button>
+            </Link>
+            <Link href="/">
+              <Button variant="ghost" size="sm">
+                <ArrowLeft className="size-4 mr-1" />
+                返回首页
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {/* Add user form */}
@@ -344,10 +382,18 @@ export default function AdminPage() {
                       {user.email}
                     </p>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0 ml-4">
-                    <span className="text-xs text-muted-foreground">
-                      {user.addedAt}
-                    </span>
+                  <div className="flex items-center gap-2 shrink-0 ml-4">
+                    <select
+                      value={user.model || ""}
+                      onChange={(e) => handleModelChange(user.email, e.target.value)}
+                      className="h-7 rounded border border-input bg-background px-1.5 text-xs text-muted-foreground"
+                    >
+                      {SUPPORTED_MODELS.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
                     <Button
                       variant="ghost"
                       size="icon-sm"
