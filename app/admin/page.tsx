@@ -16,7 +16,7 @@ import {
 import Link from "next/link";
 
 const SUPPORTED_MODELS = [
-  { value: "", label: "默认 (gpt-5-mini)" },
+  { value: "", label: "默认 (Nano)" },
   { value: "gpt-5-nano", label: "GPT-5 Nano" },
   { value: "gpt-5-mini", label: "GPT-5 Mini" },
   { value: "gpt-4o-mini", label: "GPT-4o Mini" },
@@ -24,11 +24,18 @@ const SUPPORTED_MODELS = [
   { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
 ];
 
+interface MonthlyUsage {
+  stt_seconds: number;
+  llm_input_tokens: number;
+  llm_output_tokens: number;
+}
+
 interface User {
   email: string;
   name: string;
   addedAt: string;
   model?: string;
+  usage?: Record<string, MonthlyUsage>;
 }
 
 interface Meeting {
@@ -36,6 +43,17 @@ interface Meeting {
   createdAt: string;
   expiresAt: string;
   active: boolean;
+}
+
+function getCurrentMonthKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
 }
 
 export default function AdminPage() {
@@ -369,47 +387,59 @@ export default function AdminPage() {
             </p>
           ) : (
             <div className="divide-y divide-border rounded-lg border border-border">
-              {users.map((user) => (
-                <div
-                  key={user.email}
-                  className="flex items-center justify-between px-4 py-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {user.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {user.email}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 ml-4">
-                    <select
-                      value={user.model || ""}
-                      onChange={(e) => handleModelChange(user.email, e.target.value)}
-                      className="h-7 rounded border border-input bg-background px-1.5 text-xs text-muted-foreground"
-                    >
-                      {SUPPORTED_MODELS.map((m) => (
-                        <option key={m.value} value={m.value}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </select>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => handleDelete(user.email)}
-                      disabled={deleting === user.email}
-                      className="text-muted-foreground hover:text-destructive"
-                    >
-                      {deleting === user.email ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="size-4" />
+              {users.map((user) => {
+                const monthKey = getCurrentMonthKey();
+                const mu = user.usage?.[monthKey];
+                const sttMin = mu ? Math.round(mu.stt_seconds / 60) : 0;
+                const llmIn = mu?.llm_input_tokens ?? 0;
+                const llmOut = mu?.llm_output_tokens ?? 0;
+                return (
+                  <div
+                    key={user.email}
+                    className="flex items-center justify-between px-4 py-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {user.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {user.email}
+                      </p>
+                      {(sttMin > 0 || llmIn > 0) && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          本月: 转录 {sttMin}分 · LLM {formatTokens(llmIn)}↑ {formatTokens(llmOut)}↓
+                        </p>
                       )}
-                    </Button>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 ml-4">
+                      <select
+                        value={user.model || ""}
+                        onChange={(e) => handleModelChange(user.email, e.target.value)}
+                        className="h-7 rounded border border-input bg-background px-1.5 text-xs text-muted-foreground"
+                      >
+                        {SUPPORTED_MODELS.map((m) => (
+                          <option key={m.value} value={m.value}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => handleDelete(user.email)}
+                        disabled={deleting === user.email}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        {deleting === user.email ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="size-4" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

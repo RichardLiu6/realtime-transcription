@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { openai } from "@/lib/openai";
 import { getAnthropic } from "@/lib/anthropic";
 import { verifyToken } from "@/lib/auth";
-import { getUserModel, DEFAULT_MODEL, SUPPORTED_MODELS } from "@/lib/edge-config";
+import { getUserModel, DEFAULT_MODEL, SUPPORTED_MODELS, incrementUsage } from "@/lib/edge-config";
 import { jwtVerify } from "jose";
 
 function getLanguageName(code: string): string {
@@ -112,6 +112,8 @@ Rules:
 
     const start = Date.now();
     let translatedText: string;
+    let inputTokens = 0;
+    let outputTokens = 0;
 
     if (isClaude(model)) {
       // Anthropic: system is a separate param, not in messages
@@ -127,6 +129,8 @@ Rules:
         messages: anthropicMessages,
       });
       translatedText = r.content[0].type === "text" ? r.content[0].text.trim() : "";
+      inputTokens = r.usage?.input_tokens ?? 0;
+      outputTokens = r.usage?.output_tokens ?? 0;
     } else {
       // OpenAI
       const params: Record<string, unknown> = { model, messages };
@@ -146,9 +150,24 @@ Rules:
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const r = await openai.chat.completions.create(params as any);
       translatedText = r.choices[0]?.message?.content?.trim() || "";
+      inputTokens = r.usage?.prompt_tokens ?? 0;
+      outputTokens = r.usage?.completion_tokens ?? 0;
     }
 
     const latencyMs = Date.now() - start;
+
+    // Async usage tracking (fire-and-forget)
+    const authToken = req.cookies.get("auth_token")?.value;
+    if (authToken && (inputTokens > 0 || outputTokens > 0)) {
+      verifyToken(authToken).then((payload) => {
+        if (payload?.email && typeof payload.email === "string") {
+          incrementUsage(payload.email, {
+            llm_input_tokens: inputTokens,
+            llm_output_tokens: outputTokens,
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+    }
 
     return NextResponse.json({
       translatedText,

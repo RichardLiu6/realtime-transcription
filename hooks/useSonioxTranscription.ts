@@ -588,8 +588,17 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
     mediaStreamRef.current = null;
 
+    // Report STT usage (fire-and-forget)
+    if (elapsedSeconds > 0) {
+      fetch("/api/usage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "stt", seconds: elapsedSeconds }),
+      }).catch(() => {});
+    }
+
     setRecordingState("idle");
-  }, [finalizeSegment]);
+  }, [finalizeSegment, elapsedSeconds]);
 
   // Reassign a single entry's speaker (manual correction)
   const reassignSpeaker = useCallback(

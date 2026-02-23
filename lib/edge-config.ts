@@ -11,10 +11,17 @@ export const SUPPORTED_MODELS = [
 export type TranslationModel = (typeof SUPPORTED_MODELS)[number];
 export const DEFAULT_MODEL: TranslationModel = "gpt-5-nano";
 
+export interface MonthlyUsage {
+  stt_seconds: number;
+  llm_input_tokens: number;
+  llm_output_tokens: number;
+}
+
 export interface AuthUser {
   name: string;
   addedAt: string;
   model?: string;
+  usage?: Record<string, MonthlyUsage>; // key = "2026-02"
 }
 
 export type AuthUsers = Record<string, AuthUser>;
@@ -123,4 +130,39 @@ export async function updateAuthUsers(users: AuthUsers): Promise<void> {
     const text = await res.text();
     throw new Error(`Edge Config update failed: ${res.status} ${text}`);
   }
+}
+
+// --- Usage tracking ---
+
+function getCurrentMonthKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export async function incrementUsage(
+  email: string,
+  delta: Partial<MonthlyUsage>
+): Promise<void> {
+  if (!email) return;
+  const key = email.toLowerCase();
+  const users = await getAuthUsers();
+  const user = users[key];
+  if (!user) return;
+
+  const month = getCurrentMonthKey();
+  const prev = user.usage?.[month] ?? { stt_seconds: 0, llm_input_tokens: 0, llm_output_tokens: 0 };
+
+  users[key] = {
+    ...user,
+    usage: {
+      ...user.usage,
+      [month]: {
+        stt_seconds: prev.stt_seconds + (delta.stt_seconds ?? 0),
+        llm_input_tokens: prev.llm_input_tokens + (delta.llm_input_tokens ?? 0),
+        llm_output_tokens: prev.llm_output_tokens + (delta.llm_output_tokens ?? 0),
+      },
+    },
+  };
+
+  await updateAuthUsers(users);
 }
