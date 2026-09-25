@@ -3,10 +3,12 @@ import { isSupportedModel, QWEN_MT_DEFAULT_MODEL, OPENROUTER_DEFAULT_MODEL, type
 
 export { SUPPORTED_MODELS, type TranslationModel } from "@/lib/models";
 
-// Default for users without an admin-assigned model: Qwen-MT Flash when a
-// DashScope key is set, else Qwen3.8 Flash via OpenRouter
+// Default for users without an admin-assigned model: the OpenRouter default.
+// A DashScope key alone doesn't change it (Qwen-MT is then assigned per user
+// in admin, and joins the fallback chain); Qwen-MT is the default only when
+// DashScope is the sole provider configured.
 export function getDefaultModel(): TranslationModel {
-  if (process.env.DASHSCOPE_API_KEY) return QWEN_MT_DEFAULT_MODEL;
+  if (!process.env.OPENROUTER_API_KEY && process.env.DASHSCOPE_API_KEY) return QWEN_MT_DEFAULT_MODEL;
   return OPENROUTER_DEFAULT_MODEL;
 }
 

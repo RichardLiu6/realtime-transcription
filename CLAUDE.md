@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ABL-translate: Web-based real-time bilingual transcription for meetings. Browser captures audio via AudioWorklet, streams to a speech engine over WebSocket — Soniox (cloud, speaker diarization) or self-hosted NetEase Youdao Confucius4-R2T2 — then translates via a per-user model from a pool capped at $0.5 per million tokens (default: Qwen3.8 Flash via OpenRouter; Qwen-MT Flash on Alibaba Cloud Model Studio if `DASHSCOPE_API_KEY` is set). Main use case: Chinese↔English. Supports 54 languages, two-way/one-way translation modes.
+ABL-translate: Web-based real-time bilingual transcription for meetings. Browser captures audio via AudioWorklet, streams to a speech engine over WebSocket — Soniox (cloud, speaker diarization) or self-hosted NetEase Youdao Confucius4-R2T2 — then translates via a per-user model from a pool capped at $0.5 per million tokens (default: Qwen3.8 Flash via OpenRouter; Qwen-MT Flash on Alibaba Cloud Model Studio only when DashScope is the sole provider configured). Main use case: Chinese↔English. Supports 54 languages, two-way/one-way translation modes.
 
 - **Live**: https://realtime-transcription-murex.vercel.app
 - **GitHub**: https://github.com/RichardLiu6/realtime-transcription
@@ -147,7 +147,7 @@ Central logic for the entire app:
 
 ```bash
 SONIOX_API_KEY=...           # Soniox STT API key
-DASHSCOPE_API_KEY=sk-...     # Alibaba Cloud Model Studio — Qwen-MT Flash (default translator when set)
+DASHSCOPE_API_KEY=sk-...     # Alibaba Cloud Model Studio — Qwen-MT Flash/Lite (assign per user in admin; default only without OpenRouter)
 DASHSCOPE_BASE_URL=...       # Optional; default intl endpoint, use https://dashscope.aliyuncs.com/compatible-mode/v1 for a China-region key
 OPENROUTER_API_KEY=sk-or-... # Translation pool + summaries (required unless DashScope-only)
 R2T2_WS_URL=wss://.../asr_stream_api_v1  # Self-hosted R2T2 (optional)
