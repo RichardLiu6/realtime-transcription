@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { createContext, createElement, useContext, useMemo, type ReactNode } from "react";
+import { localeFromLanguage, type Locale } from "@/lib/locale";
 
 const translations = {
   en: {
@@ -103,19 +104,16 @@ const translations = {
   },
 } as const;
 
-type Locale = keyof typeof translations;
 type TranslationKey = keyof typeof translations.en;
 
 function detectLocale(): Locale {
   if (typeof window === "undefined") return "en";
-  const lang = navigator.language || "en";
-  // Match zh-CN, zh-TW, zh-HK, zh etc.
-  if (lang.startsWith("zh")) return "zh";
-  return "en";
+  return localeFromLanguage(navigator.language);
 }
 
 let cachedLocale: Locale | null = null;
 
+// Used by the module-level t() (event handlers only, never during render).
 export function getLocale(): Locale {
   if (!cachedLocale) cachedLocale = detectLocale();
   return cachedLocale;
@@ -126,10 +124,25 @@ export function t(key: TranslationKey): string {
   return translations[locale][key] ?? translations.en[key] ?? key;
 }
 
+// Locale resolved on the server from Accept-Language, so SSR and hydration agree.
+const LocaleContext = createContext<Locale | null>(null);
+
+export function LocaleProvider({
+  locale,
+  children,
+}: {
+  locale: Locale;
+  children: ReactNode;
+}) {
+  return createElement(LocaleContext.Provider, { value: locale }, children);
+}
+
 export function useT() {
-  return useMemo(() => {
-    const locale = getLocale();
-    return (key: TranslationKey): string =>
-      translations[locale][key] ?? translations.en[key] ?? key;
-  }, []);
+  const contextLocale = useContext(LocaleContext);
+  const locale = contextLocale ?? getLocale();
+  return useMemo(
+    () => (key: TranslationKey): string =>
+      translations[locale][key] ?? translations.en[key] ?? key,
+    [locale]
+  );
 }

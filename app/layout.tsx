@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
+import { LocaleProvider } from "@/lib/i18n";
+import { localeFromAcceptLanguage } from "@/lib/locale";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -23,17 +26,21 @@ export const metadata: Metadata = {
   description: "ABL real-time bilingual transcription and translation",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const locale = localeFromAcceptLanguage(
+    (await headers()).get("accept-language")
+  );
+
   return (
-    <html lang="zh">
+    <html lang={locale}>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <LocaleProvider locale={locale}>{children}</LocaleProvider>
       </body>
     </html>
   );
