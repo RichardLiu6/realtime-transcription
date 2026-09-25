@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOpenAI } from "@/lib/openai";
+import { getOpenRouter } from "@/lib/openrouter";
 import { getAnthropic } from "@/lib/anthropic";
 import { verifyToken } from "@/lib/auth";
-import { getUserModel, DEFAULT_MODEL, SUPPORTED_MODELS, incrementUsage } from "@/lib/edge-config";
+import { getUserModel, getDefaultModel, QWEN_DEFAULT_MODEL, OPENAI_DEFAULT_MODEL, SUPPORTED_MODELS, incrementUsage } from "@/lib/edge-config";
 import { jwtVerify } from "jose";
 
 function getLanguageName(code: string): string {
@@ -15,6 +16,41 @@ function getLanguageName(code: string): string {
 
 function isClaude(model: string): boolean {
   return model.startsWith("claude-");
+}
+
+// OpenRouter model IDs are vendor-prefixed ("qwen/qwen3.7-plus")
+function isOpenRouter(model: string): boolean {
+  return model.startsWith("qwen/");
+}
+
+type Provider = "openai" | "anthropic" | "openrouter";
+
+function providerOf(model: string): Provider {
+  if (isClaude(model)) return "anthropic";
+  if (isOpenRouter(model)) return "openrouter";
+  return "openai";
+}
+
+// OpenAI-compatible client for GPT and OpenRouter models
+function chatClient(model: string) {
+  return isOpenRouter(model) ? getOpenRouter() : getOpenAI();
+}
+
+// Qwen3.x models may think before answering; for live translation that is
+// pure latency. OpenRouter ignores the field for models that don't reason.
+function applyProviderParams(model: string, params: Record<string, unknown>) {
+  if (isOpenRouter(model)) params.reasoning = { enabled: false };
+}
+
+// Models may wrap JSON in a ```json fence despite response_format
+function parseJsonObject(raw: string): Record<string, string> {
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try {
+    const parsed = JSON.parse(cleaned);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 const REASONING_MODELS = new Set(["gpt-5-mini", "gpt-5-nano"]);
@@ -50,7 +86,7 @@ async function resolveModel(req: NextRequest, requestedModel?: string): Promise<
     }
   }
 
-  return DEFAULT_MODEL;
+  return getDefaultModel();
 }
 
 // Input comes from live speech recognition, often mid-sentence
@@ -197,15 +233,12 @@ ${SPEECH_INPUT_RULES}`;
     if (REASONING_MODELS.has(model)) {
       params.reasoning_effort = reasoningOverride || "minimal";
     }
+    applyProviderParams(model, params);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const r = await getOpenAI().chat.completions.create(params as any);
+    const r = await chatClient(model).chat.completions.create(params as any);
     const raw = r.choices[0]?.message?.content?.trim() || "{}";
-    try {
-      translations = JSON.parse(raw);
-    } catch {
-      translations = {};
-    }
+    translations = parseJsonObject(raw);
     inputTokens = r.usage?.prompt_tokens ?? 0;
     outputTokens = r.usage?.completion_tokens ?? 0;
   }
@@ -290,9 +323,10 @@ ${SPEECH_INPUT_RULES}`;
     if (REASONING_MODELS.has(model)) {
       params.reasoning_effort = reasoningOverride || "minimal";
     }
+    applyProviderParams(model, params);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const r = await getOpenAI().chat.completions.create(params as any);
+    const r = await chatClient(model).chat.completions.create(params as any);
     translatedText = r.choices[0]?.message?.content?.trim() || "";
     inputTokens = r.usage?.prompt_tokens ?? 0;
     outputTokens = r.usage?.completion_tokens ?? 0;
@@ -325,22 +359,36 @@ function providerError(error: unknown): { status?: number; code?: string; messag
 function isProviderFailure(error: unknown): boolean {
   const { status, message } = providerError(error);
   if (status === undefined) return false;
-  if (status === 401 || status === 403 || status === 429 || status >= 500) return true;
+  if (status === 401 || status === 402 || status === 403 || status === 429 || status >= 500) return true;
   // Anthropic reports an empty balance as a 400
   return status === 400 && /credit balance/i.test(message);
 }
 
-// The other provider's cheapest model, if its key is configured
-function fallbackModelFor(model: string): string | null {
-  if (isClaude(model)) return process.env.OPENAI_API_KEY ? DEFAULT_MODEL : null;
-  return process.env.ANTHROPIC_API_KEY ? "claude-haiku-4-5-20251001" : null;
+// Models on the other providers to try, in order, when `model` fails —
+// only providers whose key is configured
+function fallbackModelsFor(model: string): string[] {
+  const candidates: [Provider, string, string | undefined][] = [
+    ["openrouter", QWEN_DEFAULT_MODEL, process.env.OPENROUTER_API_KEY],
+    ["openai", OPENAI_DEFAULT_MODEL, process.env.OPENAI_API_KEY],
+    ["anthropic", "claude-haiku-4-5-20251001", process.env.ANTHROPIC_API_KEY],
+  ];
+  const primary = providerOf(model);
+  return candidates
+    .filter(([provider, , key]) => provider !== primary && !!key)
+    .map(([, m]) => m);
 }
 
+const PROVIDER_NAME: Record<Provider, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  openrouter: "OpenRouter",
+};
+
 // User-facing message; the client shows it in the error banner
-function describeFailure(error: unknown): { status: number; body: { error: string; code: string } } {
+function describeFailure(error: unknown, model: string): { status: number; body: { error: string; code: string } } {
   const { status, code, message } = providerError(error);
-  const provider = /anthropic|claude/i.test(message) ? "Anthropic" : "OpenAI";
-  if (code === "insufficient_quota" || code === "credit_balance_exhausted" || /credit/i.test(message)) {
+  const provider = PROVIDER_NAME[providerOf(model)];
+  if (status === 402 || code === "insufficient_quota" || code === "credit_balance_exhausted" || /credit/i.test(message)) {
     return { status: 402, body: { error: `翻译失败：${provider} 账户额度已用完，请充值或在后台切换翻译模型`, code: "quota" } };
   }
   if (status === 401 || status === 403) {
@@ -353,17 +401,21 @@ function describeFailure(error: unknown): { status: number; body: { error: strin
 }
 
 export async function POST(req: NextRequest) {
+  let model: string = getDefaultModel();
   try {
     const { text, sourceLang, targetLang, targetLangs, context, terms, model: rawRequestedModel, provisional: rawProvisional } = await req.json();
     const provisional = rawProvisional === true;
 
-    // Parse composite model ID: "gpt-5-nano/low" → model "gpt-5-nano", reasoning "low"
+    // Parse composite model ID: "gpt-5-nano/low" → model "gpt-5-nano", reasoning "low".
+    // Only a known effort suffix counts: OpenRouter IDs contain "/" too
+    // ("qwen/qwen3.7-plus").
     let requestedModel = rawRequestedModel;
     let reasoningOverride: string | undefined;
-    if (typeof rawRequestedModel === "string" && rawRequestedModel.includes("/")) {
-      const [base, effort] = rawRequestedModel.split("/");
-      requestedModel = base;
-      if (["minimal", "low", "medium", "high"].includes(effort)) {
+    if (typeof rawRequestedModel === "string") {
+      const slash = rawRequestedModel.lastIndexOf("/");
+      const effort = rawRequestedModel.slice(slash + 1);
+      if (slash > 0 && ["minimal", "low", "medium", "high"].includes(effort)) {
+        requestedModel = rawRequestedModel.slice(0, slash);
         reasoningOverride = effort;
       }
     }
@@ -377,7 +429,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing targetLang" }, { status: 400 });
     }
 
-    const model = await resolveModel(req, requestedModel);
+    model = await resolveModel(req, requestedModel);
+    const primary = model;
     const run = (m: string, responseModel: string) =>
       isMulti
         // Multi-target path (presentation mode)
@@ -385,17 +438,27 @@ export async function POST(req: NextRequest) {
         : handleSingleTarget(req, text, sourceLang, targetLang, context, terms, m, reasoningOverride, provisional, responseModel);
 
     try {
-      return await run(model, rawRequestedModel || model);
+      return await run(primary, rawRequestedModel || primary);
     } catch (error) {
       // The compare page asks for a specific model — don't substitute there
-      const fallback = rawRequestedModel ? null : fallbackModelFor(model);
-      if (!fallback || !isProviderFailure(error)) throw error;
-      console.error(`Translation with ${model} failed, falling back to ${fallback}:`, providerError(error).message);
-      return await run(fallback, fallback);
+      if (rawRequestedModel || !isProviderFailure(error)) throw error;
+      let lastError = error;
+      for (const fallback of fallbackModelsFor(primary)) {
+        console.error(`Translation with ${model} failed, falling back to ${fallback}:`, providerError(lastError).message);
+        model = fallback;
+        try {
+          return await run(fallback, fallback);
+        } catch (e) {
+          lastError = e;
+          if (!isProviderFailure(e)) break;
+        }
+      }
+      throw lastError;
     }
   } catch (error) {
     console.error("Translation error:", error);
-    const { status, body } = describeFailure(error);
+    // `model` is the last one tried, so the message names the right provider
+    const { status, body } = describeFailure(error, model);
     return NextResponse.json(body, { status });
   }
 }

@@ -17,6 +17,9 @@ const COMPARE_MODELS = [
   { id: "gpt-4o-mini", label: "GPT-4o Mini" },
   { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
   { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+  { id: "qwen/qwen3.7-plus", label: "Qwen3.7 Plus" },
+  { id: "qwen/qwen3.7-max", label: "Qwen3.7 Max" },
+  { id: "qwen/qwen3.8-max-0902", label: "Qwen3.8 Max" },
 ];
 
 interface ModelResult {
@@ -35,7 +38,7 @@ interface CompareRow {
 
 export default function ComparePage() {
   const [selectedModels, setSelectedModels] = useState<Set<string>>(
-    new Set(["gpt-5-nano/minimal"])
+    new Set(["qwen/qwen3.7-plus"])
   );
   const [languageA, setLanguageA] = useState("*");
   const [languageB, setLanguageB] = useState("en");

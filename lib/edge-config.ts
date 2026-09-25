@@ -6,10 +6,21 @@ export const SUPPORTED_MODELS = [
   "gpt-4o-mini",
   "claude-haiku-4-5-20251001",
   "claude-sonnet-4-6",
+  // Qwen via OpenRouter
+  "qwen/qwen3.7-plus",
+  "qwen/qwen3.7-max",
+  "qwen/qwen3.8-max-0902",
 ] as const;
 
 export type TranslationModel = (typeof SUPPORTED_MODELS)[number];
-export const DEFAULT_MODEL: TranslationModel = "gpt-5-nano";
+export const QWEN_DEFAULT_MODEL: TranslationModel = "qwen/qwen3.7-plus";
+export const OPENAI_DEFAULT_MODEL: TranslationModel = "gpt-5-nano";
+
+// Default for users without an admin-assigned model: Qwen3.7 Plus once
+// OpenRouter is configured, GPT-5 Nano otherwise
+export function getDefaultModel(): TranslationModel {
+  return process.env.OPENROUTER_API_KEY ? QWEN_DEFAULT_MODEL : OPENAI_DEFAULT_MODEL;
+}
 
 export interface MonthlyUsage {
   stt_seconds: number;
@@ -53,7 +64,7 @@ export async function getUserByEmail(
 
 export async function getUserModel(email: string): Promise<string> {
   const user = await getUserByEmail(email);
-  return user?.model || DEFAULT_MODEL;
+  return user?.model || getDefaultModel();
 }
 
 // --- Meeting codes ---

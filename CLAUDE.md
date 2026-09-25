@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ABL-translate: Web-based real-time bilingual transcription for meetings. Browser captures audio via AudioWorklet, streams to a speech engine over WebSocket — Soniox (cloud, speaker diarization) or self-hosted NetEase Youdao Confucius4-R2T2 — then translates via a per-user LLM (default gpt-5-nano). Supports 54 languages, two-way/one-way translation modes.
+ABL-translate: Web-based real-time bilingual transcription for meetings. Browser captures audio via AudioWorklet, streams to a speech engine over WebSocket — Soniox (cloud, speaker diarization) or self-hosted NetEase Youdao Confucius4-R2T2 — then translates via a per-user LLM (default Qwen3.7 Plus via OpenRouter when `OPENROUTER_API_KEY` is set, else gpt-5-nano). Supports 54 languages, two-way/one-way translation modes.
 
 - **Live**: https://realtime-transcription-murex.vercel.app
 - **GitHub**: https://github.com/RichardLiu6/realtime-transcription
@@ -21,7 +21,7 @@ npm run lint     # ESLint
 
 ## Tech Stack
 
-Next.js 16.3 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4 + shadcn/ui (Radix). Soniox stt-rt-v4 or Confucius4-R2T2 for real-time STT. OpenAI / Anthropic models for translation (per-user, configured in admin), GPT for summary. Vercel Edge Config for user database. jose for JWT. Resend for email OTP. Transcript rows are memoized (no virtualization).
+Next.js 16.3 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4 + shadcn/ui (Radix). Soniox stt-rt-v4 or Confucius4-R2T2 for real-time STT. OpenRouter (Qwen) / OpenAI / Anthropic models for translation (per-user, configured in admin), GPT for summary. Vercel Edge Config for user database. jose for JWT. Resend for email OTP. Transcript rows are memoized (no virtualization).
 
 ## Architecture
 
@@ -33,7 +33,7 @@ Browser AudioWorklet (16kHz PCM16, batched 100 ms / 160 ms frames)
              or R2T2 ws_server.py /asr_stream_api_v1        [provider "r2t2"]
   ← Soniox tokens / R2T2 incremental text + VAD `reset`
   → useSonioxTranscription hook builds BilingualEntry[]
-  → POST /api/translate → LLM translation
+  → POST /api/translate → LLM translation (Qwen via OpenRouter / GPT / Claude)
   → TranscriptPanel (memoized rows)
 ```
 
@@ -43,6 +43,13 @@ Audio goes directly from browser to the STT engine — the server never touches 
 
 - **Soniox** (default): cloud, 60+ languages, speaker diarization + language ID.
 - **R2T2** (NetEase Youdao Confucius4-R2T2, Qwen3-ASR based): must be self-hosted on a GPU (vLLM + `ws_server.py` from github.com/netease-youdao/Confucius4-R2T2). Append-only output, Chinese/English optimized, **no speaker diarization or language ID** (language comes from the CJK heuristic). The picker in StatusBar enables it only when `R2T2_WS_URL` + `R2T2_SECRET_KEY` are set. Protocol: first frame JSON header `{requestId, secret_key, language, use_vad, system_prompt}`, then binary 16 kHz int16 PCM, end with the string `YOUDAO_ONETIME_ASR_STREAM_EOS`. Change `secret_key_list` in `ws_server.py` (defaults to a debug key).
+
+### Translation providers (`app/api/translate/route.ts`)
+
+- Model ID picks the provider: `qwen/*` → OpenRouter (`lib/openrouter.ts`), `claude-*` → Anthropic, else OpenAI. Composite `model/effort` IDs (compare page) only split on a known effort suffix, since OpenRouter IDs contain `/`.
+- Context terms are plain mixed-language word lists (not source→target pairs), so they go into the system prompt; that's why Qwen-MT's pair-based `terms` isn't used.
+- On a provider failure (401/402/403/429/5xx, empty balance) the route retries on the other configured providers in order Qwen → GPT-5 Nano → Claude Haiku; explicit model requests (compare page) are never substituted. Errors return a Chinese message the client shows in the banner.
+- SDK clients use `maxRetries: 1`.
 
 ### Two-Tier Authentication
 
@@ -115,6 +122,7 @@ Central logic for the entire app:
 
 ```bash
 SONIOX_API_KEY=...           # Soniox STT API key
+OPENROUTER_API_KEY=sk-or-... # Qwen translation via OpenRouter (default translator when set)
 OPENAI_API_KEY=sk-...        # GPT translations & summaries
 ANTHROPIC_API_KEY=...        # Claude translation models (optional)
 R2T2_WS_URL=wss://.../asr_stream_api_v1  # Self-hosted R2T2 (optional)
