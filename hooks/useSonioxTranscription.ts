@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import type { BilingualEntry, SonioxConfig, SonioxToken, SttProvider } from "@/types/bilingual";
 import { type Direction, directionFor, joinForTarget, joinTranslation } from "@/lib/t3po/protocol";
-import { type EngineCallbacks, SimulEngine } from "@/lib/t3po/engine";
+import { SimulEngine } from "@/lib/t3po/engine";
 import { ClauseEngine } from "@/lib/clause/engine";
 
 const TARGET_SAMPLE_RATE = 16000;
@@ -164,14 +164,25 @@ function flattenTerms(terms: string[]): string[] {
   return Array.from(new Set(terms.flatMap((t) => t.split("=").map((x) => x.trim())).filter(Boolean)));
 }
 
-// Language covering most of the text (by non-space characters), from the
-// per-token language tags; "" if the tokens carry none
+// Language covering most of the text, from the per-token language tags; ""
+// if the tokens carry none. Weighted in "units" — one per CJK character, one
+// per Latin word — since counting letters would let "delay the launch"
+// outweigh eleven Chinese characters.
+const CJK_CHAR = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/g;
+function textUnits(text: string): number {
+  const cjk = (text.match(CJK_CHAR) ?? []).length;
+  const words = text.replace(CJK_CHAR, " ").split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+  return cjk + words;
+}
 function majorityLanguage(tokens: SonioxToken[]): string {
-  const weight = new Map<string, number>();
+  // Soniox tokens are word pieces: join per language before counting words
+  const textByLang = new Map<string, string>();
   for (const t of tokens) {
     if (!t.language) continue;
-    weight.set(t.language, (weight.get(t.language) ?? 0) + t.text.replace(/\s/g, "").length);
+    textByLang.set(t.language, (textByLang.get(t.language) ?? "") + t.text);
   }
+  const weight = new Map<string, number>();
+  for (const [lang, text] of textByLang) weight.set(lang, textUnits(text));
   let best = "";
   let bestWeight = 0;
   for (const [lang, w] of weight) {
@@ -308,14 +319,10 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     // Build request target(s)
     let target: { targetLangs: string[] } | { targetLang: string };
     if (config.translationMode === "presentation" && config.targetLangs && config.targetLangs.length > 0) {
-      // Translate into every selected language except the one being spoken;
-      // that column shows the original
-      const targetLangs = config.targetLangs.filter((l) => l !== sourceLang);
-      if (targetLangs.length === 0) {
-        st.done = true;
-        return;
-      }
-      target = { targetLangs };
+      // Translate into every column, including the language being spoken:
+      // that column gets a clean version fully in that language, since
+      // speakers mix languages. The original has its own column.
+      target = { targetLangs: config.targetLangs };
     } else {
       // Single-target: two_way / one_way
       const targetLang = singleTargetFor(sourceLang, config);
@@ -427,85 +434,131 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
   }, [requestTranslation, getTranslationState]);
 
   // --- Streaming translation: translate while the sentence is spoken ---
-  // Two engines behind one interface, both fed committed (final) ASR text
-  // from any STT engine and both append-only:
-  //   "t3po"   — Youdao Confucius4-T3PO simultaneous model (zh<->en)
-  //   "clause" — any translation API, one clause at a time
-  // Segments neither engine handles (multilingual mode, T3PO + other
-  // languages, after a failure) use sentence-level translation.
-  type StreamRoute = { key: string; kind: "t3po" | "clause"; target: string; direction?: Direction };
+  // Two engines, both fed committed (final) ASR text from any STT engine and
+  // both append-only:
+  //   "t3po"   — Youdao Confucius4-T3PO simultaneous model (zh<->en only)
+  //   "clause" — any translation API, one clause at a time, one or several
+  //              target languages per call
+  // A segment can use several routes at once: in multilingual mode with
+  // 同传, the zh<->en column goes through T3PO and the other columns
+  // through the clause engine. Segments with no route (整句, or after a
+  // failure) use sentence-level translation.
+  type StreamRoute =
+    | { key: string; kind: "t3po"; direction: Direction; target: string }
+    | { key: string; kind: "clause"; targets: string[] };
   type StreamEngine = { feed: (entryId: string, text: string) => void; flush: (entryId: string) => void; close: () => void };
+  type StreamEntry = {
+    routes: StreamRoute[];
+    unflushed: number; // routes still to report onFlushed
+    leftover: boolean; // some route couldn't translate everything
+    parts: Map<string, string[]>; // committed translation per target language
+    multi: boolean; // multilingual mode: write entry.translations
+    fullText: string;
+    lang: string;
+  };
   const streamEnginesRef = useRef(new Map<string, StreamEngine>());
-  const streamEntriesRef = useRef(
-    new Map<string, { route: StreamRoute; parts: string[]; fullText: string; lang: string }>()
-  );
+  const streamEntriesRef = useRef(new Map<string, StreamEntry>());
   // Committed text seen before the segment's language was known
   const streamPendingRef = useRef(new Map<string, string>());
   // Set after a failure: the rest of the session uses sentence translation
   const streamFailedRef = useRef(false);
 
-  const streamRouteFor = useCallback((sourceLang: string): StreamRoute | null => {
+  const streamRoutesFor = useCallback((sourceLang: string): StreamRoute[] => {
     const config = configRef.current;
     const engine = config?.translationEngine;
-    if (!config || (engine !== "t3po" && engine !== "clause") || streamFailedRef.current) return null;
-    if (config.translationMode === "presentation" || optionsRef.current?.skipTranslation) return null;
-    const target = singleTargetFor(sourceLang, config);
-    if (!sourceLang || sourceLang === target) return null;
-    if (engine === "t3po") {
-      const direction = directionFor(sourceLang, target);
-      return direction ? { key: `t3po:${direction}`, kind: "t3po", target, direction } : null;
+    if (!config || (engine !== "t3po" && engine !== "clause") || streamFailedRef.current) return [];
+    if (optionsRef.current?.skipTranslation || !sourceLang) return [];
+
+    // Multilingual: every column, including the spoken language
+    let targets: string[];
+    if (config.translationMode === "presentation") {
+      targets = config.targetLangs ?? [];
+    } else {
+      const target = singleTargetFor(sourceLang, config);
+      targets = target === sourceLang ? [] : [target];
     }
-    return { key: "clause", kind: "clause", target };
+    if (targets.length === 0) return [];
+
+    const routes: StreamRoute[] = [];
+    let clauseTargets = targets;
+    if (engine === "t3po") {
+      clauseTargets = [];
+      for (const target of targets) {
+        const direction = directionFor(sourceLang, target);
+        if (direction) routes.push({ key: `t3po:${direction}`, kind: "t3po", direction, target });
+        else clauseTargets.push(target);
+      }
+      // 同传 outside multilingual mode stays zh<->en only
+      if (config.translationMode !== "presentation") clauseTargets = [];
+    }
+    if (clauseTargets.length > 0) {
+      routes.push({ key: `clause:${clauseTargets.join(",")}`, kind: "clause", targets: clauseTargets });
+    }
+    return routes;
   }, []);
 
-  const streamCallbacks = useMemo<EngineCallbacks>(() => ({
-    onCommit: (entryId, segment) => {
-      const info = streamEntriesRef.current.get(entryId);
-      if (!info) return;
-      info.parts.push(segment);
-      const translatedText = info.route.direction
-        ? joinTranslation(info.parts, info.route.direction)
-        : joinForTarget(info.parts, info.route.target);
-      setEntries((prev) => {
-        const existing = prev.get(entryId);
-        if (!existing) return prev;
-        return new Map(prev).set(entryId, { ...existing, translatedText, translationProvisional: false });
-      });
-    },
-    onFlushed: (entryId, leftover) => {
-      const info = streamEntriesRef.current.get(entryId);
-      streamEntriesRef.current.delete(entryId);
-      // Some source never got translated (a step failed, or T3PO's backend
-      // couldn't force output): retranslate the whole sentence the normal way
-      if (info && leftover.trim() && info.fullText) {
-        requestFinalTranslationRef.current?.(entryId, info.fullText, info.lang);
-      }
-    },
-    onError: (error) => {
-      console.error("[Streaming translation] step failed:", error);
-      // Shown once and kept (not via translationErrorRef, which a later
-      // successful sentence translation would clear): the user should know
-      // the session switched to sentence translation
-      if (!streamFailedRef.current) {
-        setError(error instanceof Error ? error.message : "同传翻译失败，已改用整句翻译");
-      }
-      streamFailedRef.current = true;
-    },
-  }), []);
-
-  // Latest requestFinalTranslation for the engine callbacks above
+  // Latest requestFinalTranslation for the engine callbacks below
   const requestFinalTranslationRef = useRef<typeof requestFinalTranslation | null>(null);
   useEffect(() => {
     requestFinalTranslationRef.current = requestFinalTranslation;
   }, [requestFinalTranslation]);
+
+  // Append committed translation parts to an entry and show them
+  const commitStreamParts = useCallback((entryId: string, parts: Record<string, string>) => {
+    const info = streamEntriesRef.current.get(entryId);
+    if (!info) return;
+    for (const [lang, text] of Object.entries(parts)) {
+      const list = info.parts.get(lang) ?? [];
+      list.push(text);
+      info.parts.set(lang, list);
+    }
+    const joined = (lang: string) => {
+      const list = info.parts.get(lang) ?? [];
+      const t3po = info.routes.find((r) => r.kind === "t3po" && r.target === lang);
+      return t3po?.kind === "t3po" ? joinTranslation(list, t3po.direction) : joinForTarget(list, lang);
+    };
+    setEntries((prev) => {
+      const existing = prev.get(entryId);
+      if (!existing) return prev;
+      const update: Partial<BilingualEntry> = info.multi
+        ? { translations: Object.fromEntries(Array.from(info.parts.keys()).map((l) => [l, joined(l)])) }
+        : { translatedText: joined(Array.from(info.parts.keys())[0]) };
+      return new Map(prev).set(entryId, { ...existing, ...update, translationProvisional: false });
+    });
+  }, []);
+
+  const onStreamFlushed = useCallback((entryId: string, leftover: string) => {
+    const info = streamEntriesRef.current.get(entryId);
+    if (!info) return;
+    if (leftover.trim()) info.leftover = true;
+    if (--info.unflushed > 0) return;
+    streamEntriesRef.current.delete(entryId);
+    // Some source never got translated (a step failed, or T3PO's backend
+    // couldn't force output): retranslate the whole sentence the normal way
+    if (info.leftover && info.fullText) {
+      requestFinalTranslationRef.current?.(entryId, info.fullText, info.lang);
+    }
+  }, []);
+
+  const onStreamError = useCallback((error: unknown) => {
+    console.error("[Streaming translation] step failed:", error);
+    // Shown once and kept (not via translationErrorRef, which a later
+    // successful sentence translation would clear): the user should know
+    // the session switched to sentence translation
+    if (!streamFailedRef.current) {
+      setError(error instanceof Error ? error.message : "同传翻译失败，已改用整句翻译");
+    }
+    streamFailedRef.current = true;
+  }, []);
 
   const getStreamEngine = useCallback((route: StreamRoute): StreamEngine => {
     const existing = streamEnginesRef.current.get(route.key);
     if (existing) return existing;
     let engine: StreamEngine;
     if (route.kind === "t3po") {
+      const target = route.target;
       engine = new SimulEngine(
-        route.direction!,
+        route.direction,
         async ({ direction, history, current, force }) => {
           const res = await fetch("/api/simul", {
             method: "POST",
@@ -516,67 +569,87 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
           if (!res.ok) throw new Error(data.error || `同传翻译失败（HTTP ${res.status}）`);
           return { action: data.action === "TRANS" ? "TRANS" : "WAIT", text: String(data.text ?? "") };
         },
-        streamCallbacks
+        {
+          onCommit: (entryId, segment) => commitStreamParts(entryId, { [target]: segment }),
+          onFlushed: onStreamFlushed,
+          onError: onStreamError,
+        }
       );
     } else {
+      const routeKey = route.key;
       engine = new ClauseEngine(
-        async ({ clause, sourceSoFar, translationSoFar, sourceLang, targetLang }) => {
+        async ({ clause, sourceSoFar, translationsSoFar, sourceLang, targetLangs }) => {
           const config = configRef.current;
-          const withContinuation = !!(sourceSoFar.trim() && translationSoFar.trim());
+          const multi = config?.translationMode === "presentation";
+          const withContinuation =
+            !!sourceSoFar.trim() && Object.values(translationsSoFar).some((t) => t.trim());
           // Earlier sentences as context / translation memory, as usual
           const recent = Array.from(entriesRef.current.values())
-            .filter((e) => e.isFinal && e.originalText && e.translatedText && !e.translationProvisional)
+            .filter((e) => e.isFinal && e.originalText && !e.translationProvisional &&
+              (e.translatedText || e.translations))
             .slice(-3);
-          const post = async (continuation: boolean) => {
-          const res = await fetch("/api/translate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              text: clause,
-              sourceLang,
-              targetLang,
-              context: recent.length > 0 ? recent.map((e) => e.originalText) : undefined,
-              memory: recent.length > 0
-                ? recent.map((e) => ({
-                    source: e.originalText,
-                    sourceLang: e.language,
-                    translations: { [config ? singleTargetFor(e.language, config) : targetLang]: e.translatedText },
-                  }))
-                : undefined,
-              terms: config && config.contextTerms.length > 0 ? config.contextTerms : undefined,
-              ...(continuation ? { continuation: { sourceSoFar, translationSoFar } } : {}),
-            }),
-          });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(data.error || `分句翻译失败（HTTP ${res.status}）`);
-          return String(data.translatedText ?? "").trim();
+          const post = async (continuation: boolean): Promise<Record<string, string>> => {
+            const res = await fetch("/api/translate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                text: clause,
+                sourceLang,
+                ...(multi ? { targetLangs } : { targetLang: targetLangs[0] }),
+                context: recent.length > 0 ? recent.map((e) => e.originalText) : undefined,
+                memory: recent.length > 0
+                  ? recent.map((e) => ({
+                      source: e.originalText,
+                      sourceLang: e.language,
+                      translations: e.translations ??
+                        { [config ? singleTargetFor(e.language, config) : targetLangs[0]]: e.translatedText },
+                    }))
+                  : undefined,
+                terms: config && config.contextTerms.length > 0 ? config.contextTerms : undefined,
+                ...(continuation ? { continuation: { sourceSoFar, translationsSoFar } } : {}),
+              }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || `分句翻译失败（HTTP ${res.status}）`);
+            if (multi) return (data.translations ?? {}) as Record<string, string>;
+            return { [targetLangs[0]]: String(data.translatedText ?? "") };
           };
 
-          let text = await post(withContinuation);
+          const result = await post(withContinuation);
           if (withContinuation) {
-            // Models sometimes restate the part already shown; keep only the new tail
-            const shown = translationSoFar.trim();
-            if (text.startsWith(shown)) text = text.slice(shown.length).trim();
+            const missing: string[] = [];
+            for (const lang of targetLangs) {
+              let text = (result[lang] ?? "").trim();
+              // Models sometimes restate the part already shown; keep only the new tail
+              const shown = (translationsSoFar[lang] ?? "").trim();
+              if (shown && text.startsWith(shown)) text = text.slice(shown.length).trim();
+              result[lang] = text;
+              if (!text) missing.push(lang);
+            }
             // …or return nothing for it: translate the clause on its own
             // rather than drop it
-            if (!text) text = await post(false);
+            if (missing.length > 0) {
+              const retry = await post(false);
+              for (const lang of missing) result[lang] = (retry[lang] ?? "").trim();
+            }
           }
-          return text;
+          return result;
         },
         (entryId) => {
           const info = streamEntriesRef.current.get(entryId);
-          return info ? { sourceLang: info.lang, targetLang: info.route.target } : null;
+          const route = info?.routes.find((r) => r.key === routeKey);
+          return info && route?.kind === "clause" ? { sourceLang: info.lang, targetLangs: route.targets } : null;
         },
         joinForTarget,
-        streamCallbacks
+        { onCommit: commitStreamParts, onFlushed: onStreamFlushed, onError: onStreamError }
       );
     }
     streamEnginesRef.current.set(route.key, engine);
     return engine;
-  }, [streamCallbacks]);
+  }, [commitStreamParts, onStreamFlushed, onStreamError]);
 
-  // Feed newly committed source text of a segment; true if a streaming
-  // engine handles it
+  // Feed newly committed source text of a segment; true if streaming
+  // translation handles it
   const simulFeed = useCallback((entryId: string, sourceLang: string, text: string): boolean => {
     let info = streamEntriesRef.current.get(entryId);
     if (!info) {
@@ -589,19 +662,29 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       }
       const pending = streamPendingRef.current.get(entryId) ?? "";
       streamPendingRef.current.delete(entryId);
-      const route = streamRouteFor(sourceLang);
-      if (!route) return false;
-      info = { route, parts: [], fullText: "", lang: sourceLang };
+      const routes = streamRoutesFor(sourceLang);
+      if (routes.length === 0) return false;
+      info = {
+        routes,
+        unflushed: routes.length,
+        leftover: false,
+        parts: new Map(),
+        multi: configRef.current?.translationMode === "presentation",
+        fullText: "",
+        lang: sourceLang,
+      };
       streamEntriesRef.current.set(entryId, info);
       text = pending + text;
     }
     // After a failure the sentence is retranslated whole at finalize; don't
     // keep spending calls on it
-    if (text && !streamFailedRef.current) getStreamEngine(info.route).feed(entryId, text);
+    if (text && !streamFailedRef.current) {
+      for (const route of info.routes) getStreamEngine(route).feed(entryId, text);
+    }
     return true;
-  }, [streamRouteFor, getStreamEngine]);
+  }, [streamRoutesFor, getStreamEngine]);
 
-  // Segment finished: flush the rest. False if no streaming engine handles it.
+  // Segment finished: flush the rest. False if streaming isn't handling it.
   const simulFinalize = useCallback((entryId: string, fullText: string, sourceLang: string): boolean => {
     // Text held back for an unknown language gets routed now
     if (streamPendingRef.current.has(entryId)) {
@@ -617,7 +700,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       requestFinalTranslation(entryId, fullText, info.lang);
       return true;
     }
-    getStreamEngine(info.route).flush(entryId);
+    for (const route of info.routes) getStreamEngine(route).flush(entryId);
     return true;
   }, [simulFeed, getStreamEngine, requestFinalTranslation]);
 
@@ -634,7 +717,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     if (optionsRef.current?.skipTranslation) return;
     // Streaming-translated segments get real incremental translation instead
     if (streamEntriesRef.current.has(entryId) || streamPendingRef.current.has(entryId)) return;
-    if (sourceLang && streamRouteFor(sourceLang)) return;
+    if (sourceLang && streamRoutesFor(sourceLang).length > 0) return;
     if (!sourceLang) return; // targets depend on the source language
     const trimmed = text.trim();
     if (trimmed.length < PROVISIONAL_MIN_CHARS) return;
@@ -643,7 +726,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     if (Date.now() - st.lastAt < PROVISIONAL_INTERVAL_MS) return;
     if (trimmed === st.lastText) return;
     requestTranslation(entryId, trimmed, sourceLang, true);
-  }, [requestTranslation, getTranslationState, streamRouteFor]);
+  }, [requestTranslation, getTranslationState, streamRoutesFor]);
 
   // Finalize current segment into an entry
   const finalizeSegment = useCallback(() => {

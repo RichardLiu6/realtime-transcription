@@ -2,26 +2,34 @@
 //
 // Committed ASR text is split at clause punctuation (，。！？；： … and ASCII
 // ,.!?;: followed by a space); each clause is translated as soon as it is
-// complete, as a continuation of the sentence so far, and appended — never
-// rewritten. A clause too short to translate well ("嗯，", "OK,") is merged
-// into the next one; a long stretch without punctuation is forced out.
+// complete — into one or several target languages — as a continuation of
+// the sentence so far, and appended; earlier output is never rewritten. A
+// clause too short to translate well ("嗯，", "OK,") is merged into the next
+// one; a long stretch without punctuation is forced out.
 //
-// Same shape as the T3PO SimulEngine (feed / flush / close + callbacks), so
-// the transcription hook treats both alike and either accepts text from any
-// streaming ASR.
-
-import type { EngineCallbacks } from "@/lib/t3po/engine";
+// Accepts text from any streaming ASR (feed / flush / close), like the T3PO
+// SimulEngine.
 
 export interface ClauseRequest {
   entryId: string;
   clause: string;
   sourceSoFar: string; // earlier clauses of this sentence
-  translationSoFar: string; // their committed translation
+  // Their committed translation, per target language
+  translationsSoFar: Record<string, string>;
   sourceLang: string;
-  targetLang: string;
+  targetLangs: string[];
 }
 
-export type ClauseTranslateFn = (req: ClauseRequest) => Promise<string>;
+// Returns the new translation text per target language
+export type ClauseTranslateFn = (req: ClauseRequest) => Promise<Record<string, string>>;
+
+export interface ClauseCallbacks {
+  // New translation text for an entry, per target language (append-only)
+  onCommit: (entryId: string, parts: Record<string, string>) => void;
+  // flush() finished; leftover = source that could not be translated
+  onFlushed: (entryId: string, leftover: string) => void;
+  onError: (error: unknown) => void;
+}
 
 const CJK = /[぀-ヿ㐀-鿿가-힯]/g;
 // Clause end: CJK punctuation anywhere; ASCII punctuation only once a space
@@ -64,7 +72,7 @@ type Op = { kind: "feed"; entryId: string; text: string } | { kind: "flush"; ent
 interface EntryState {
   buffer: string;
   source: string[];
-  translation: string[];
+  translations: Map<string, string[]>;
 }
 
 export class ClauseEngine {
@@ -75,11 +83,11 @@ export class ClauseEngine {
 
   constructor(
     private readonly translate: ClauseTranslateFn,
-    // Source/target language of an entry (owned by the caller)
-    private readonly langsFor: (entryId: string) => { sourceLang: string; targetLang: string } | null,
+    // Source language and target languages of an entry (owned by the caller)
+    private readonly langsFor: (entryId: string) => { sourceLang: string; targetLangs: string[] } | null,
     // Join committed translation parts for display (spaces vs none)
     private readonly join: (parts: string[], targetLang: string) => string,
-    private readonly cb: EngineCallbacks,
+    private readonly cb: ClauseCallbacks,
   ) {}
 
   feed(entryId: string, text: string) {
@@ -104,7 +112,7 @@ export class ClauseEngine {
   private state(entryId: string): EntryState {
     let st = this.entries.get(entryId);
     if (!st) {
-      st = { buffer: "", source: [], translation: [] };
+      st = { buffer: "", source: [], translations: new Map() };
       this.entries.set(entryId, st);
     }
     return st;
@@ -148,18 +156,27 @@ export class ClauseEngine {
 
   private async translateClause(entryId: string, st: EntryState, clause: string) {
     const langs = this.langsFor(entryId);
-    if (!langs) return;
-    const text = await this.translate({
+    if (!langs || langs.targetLangs.length === 0) return;
+    const translationsSoFar = Object.fromEntries(
+      langs.targetLangs.map((l) => [l, this.join(st.translations.get(l) ?? [], l)])
+    );
+    const result = await this.translate({
       entryId,
       clause: clause.trim(),
       sourceSoFar: st.source.join(""),
-      translationSoFar: this.join(st.translation, langs.targetLang),
+      translationsSoFar,
       ...langs,
     });
     st.source.push(clause);
-    if (text.trim()) {
-      st.translation.push(text.trim());
-      this.cb.onCommit(entryId, text.trim());
+    const parts: Record<string, string> = {};
+    for (const lang of langs.targetLangs) {
+      const text = result[lang]?.trim();
+      if (!text) continue;
+      const list = st.translations.get(lang) ?? [];
+      list.push(text);
+      st.translations.set(lang, list);
+      parts[lang] = text;
     }
+    if (Object.keys(parts).length > 0) this.cb.onCommit(entryId, parts);
   }
 }

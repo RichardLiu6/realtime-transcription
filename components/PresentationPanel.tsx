@@ -20,8 +20,7 @@ const Cursor = () => (
   <span className="blink-cursor ml-0.5 inline-block h-4 w-0.5 bg-gray-400 align-text-bottom" />
 );
 
-// The spoken text, as it appears in its own language column (or in the
-// fallback 原文 column)
+// The spoken text in the 原文 column (with the live, unconfirmed tail)
 function OriginalText({ entry }: { entry: BilingualEntry }) {
   if (entry.isFinal) return <span>{entry.originalText}</span>;
   return (
@@ -39,13 +38,10 @@ interface RowProps {
   entry: BilingualEntry;
   index: number;
   targetLangs: string[];
-  showOriginalColumn: boolean;
 }
 
 // Memoized: while someone is speaking only the live row re-renders
-const Row = memo(function Row({ entry, index, targetLangs, showOriginalColumn }: RowProps) {
-  const sourceInColumns = targetLangs.includes(entry.language);
-
+const Row = memo(function Row({ entry, index, targetLangs }: RowProps) {
   return (
     <tr className="align-top">
       <td className="px-3 py-2 text-muted-foreground">
@@ -54,21 +50,13 @@ const Row = memo(function Row({ entry, index, targetLangs, showOriginalColumn }:
           {entry.language?.toUpperCase() || "?"}
         </span>
       </td>
-      {showOriginalColumn && (
-        <td className="px-3 py-2">
-          {!sourceInColumns && <OriginalText entry={entry} />}
-        </td>
-      )}
+      {/* The transcript is always shown once, whatever the columns */}
+      <td className="px-3 py-2 bg-blue-50/40">
+        <OriginalText entry={entry} />
+      </td>
+      {/* Every column is a translation — including the spoken language's,
+          which gets a clean version fully in that language */}
       {targetLangs.map((lang) => {
-        // The column in the spoken language shows the original, so every
-        // column reads as a complete transcript in that language
-        if (lang === entry.language) {
-          return (
-            <td key={lang} className="px-3 py-2 bg-blue-50/40">
-              <OriginalText entry={entry} />
-            </td>
-          );
-        }
         const text = entry.translations?.[lang];
         return (
           <td key={lang} className="px-3 py-2">
@@ -131,21 +119,15 @@ function PresentationPanel({
     );
   }
 
-  // Extra column only needed when someone speaks a language that has no
-  // column of its own (or the language is unknown)
-  const showOriginalColumn = rows.some((e) => !targetLangs.includes(e.language));
-
   return (
     <div ref={scrollRef} className="flex-1 overflow-auto">
       <table className="w-full text-sm">
         <thead className="sticky top-0 bg-background border-b border-border z-10">
           <tr>
             <th className="text-left px-3 py-2 font-medium text-muted-foreground w-8">#</th>
-            {showOriginalColumn && (
-              <th className="text-left px-3 py-2 font-medium text-muted-foreground min-w-[200px]">
-                原文
-              </th>
-            )}
+            <th className="text-left px-3 py-2 font-medium text-muted-foreground min-w-[200px]">
+              原文
+            </th>
             {targetLangs.map((lang) => (
               <th
                 key={lang}
@@ -163,7 +145,6 @@ function PresentationPanel({
               entry={entry}
               index={idx}
               targetLangs={targetLangs}
-              showOriginalColumn={showOriginalColumn}
             />
           ))}
         </tbody>

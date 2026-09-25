@@ -56,9 +56,9 @@ Audio goes directly from browser to the STT engine — the server never touches 
 
 ### Streaming translation (translate while the sentence is spoken)
 
-StatusBar 翻译方式 **整句 | 分句 | 同传** (`config.translationEngine` = `llm` | `clause` | `t3po`). Both streaming engines share one interface (`feed` / `flush` / `close` + `EngineCallbacks`), consume only *final* ASR text from any STT engine, and are append-only. The hook routes each segment (`streamRouteFor`); multilingual mode and unsupported pairs use sentence translation. On any failure the session falls back to sentence translation (banner stays) and affected sentences are retranslated whole.
+StatusBar 翻译方式 **整句 | 分句 | 同传** (`config.translationEngine` = `llm` | `clause` | `t3po`). Both streaming engines expose `feed` / `flush` / `close`, consume only *final* ASR text from any STT engine, and are append-only. The hook plans **routes per segment** (`streamRoutesFor`): one or more engines, each covering some target languages; commits are merged per language (`commitStreamParts`), and the segment is done when every route has flushed. With 同传 in multilingual mode, zh↔en columns go through T3PO and all other columns (incl. same-language) through the clause engine; outside multilingual mode 同传 only covers zh↔en. On any failure the session falls back to sentence translation (banner stays) and affected sentences are retranslated whole.
 
-**分句 (`lib/clause/engine.ts`)** — any translation API, any language pair. Commits a clause at `，。！？；：…` or ASCII `,.!?;:` followed by a space (so `3.5` doesn't split); clauses under 4 CJK chars / 3 words merge into the next; 20 units without punctuation forces. Each clause goes to `/api/translate` with `continuation: {sourceSoFar, translationSoFar}`: chat models get a "[Sentence so far] / [Translation so far] / [Next part]" prompt and output only the continuation; Qwen-MT gets the sentence so far as a `tm_list` pair.
+**分句 (`lib/clause/engine.ts`)** — any translation API, any language pair, one or several targets per call. Commits a clause at `，。！？；：…` or ASCII `,.!?;:` followed by a space (so `3.5` doesn't split); clauses under 4 CJK chars / 3 words merge into the next; 20 units without punctuation forces. Each clause goes to `/api/translate` with `continuation: {sourceSoFar, translationsSoFar: {lang: text}}` (`translationSoFar` string also accepted for one target): chat models get a "[Sentence so far] / [Translation so far] / [Next part]" prompt and output only the continuation (per language as JSON when multi-target); Qwen-MT gets the sentence so far as a `tm_list` pair. Client guards: a restated prefix is stripped; an empty continuation is retried as a standalone clause.
 
 **同传 (Youdao Confucius4-T3PO)** — Chinese↔English only, needs a self-hosted model.
 
@@ -91,7 +91,7 @@ Central logic for the entire app:
 - Endpoint detection (all tokens final) auto-finalizes segments
 - Language detection: CJK character ratio >20% → detected language
 - Provisional translation: while a segment is still being spoken, re-translates the partial text at most once per second (`provisional: true`, shown grey); the final translation replaces it, or the provisional result is promoted when it already covers the final text
-- Segment language = majority language of its tokens by character count (not the first token — a leading "嗯" used to mislabel English sentences as ZH)
+- Segment language = majority language of its tokens, weighted in units (1 per CJK character, 1 per Latin word — not letters), not the first token (a leading "嗯" used to mislabel English sentences as ZH)
 - Auto-merge heuristic: short same-language segments adopt previous speaker
 - Starting a new recording **continues** the transcript (entry ids keep counting, timestamps offset past the last entry); only 新会议 (`clearEntries`) clears it
 - Meeting settings (languageA/B, translationMode, targetLangs) persist in localStorage via `lib/useStoredState.ts`
@@ -106,7 +106,7 @@ Central logic for the entire app:
 ### Translation modes
 
 - **two_way / one_way**: one target language per sentence, flowing transcript view.
-- **presentation** (UI label "多语言 / Multilingual"): `targetLangs` are the meeting languages (default 中文 + English), one table column each. Sentence translation only — 分句/同传 are disabled in this mode. Each sentence is translated into every column language except the one spoken; that column shows the original. Soniox `language_hints` = source languages ∪ `targetLangs`. An extra 原文 column appears only if someone speaks a language without a column.
+- **presentation** (UI label "多语言 / Multilingual"): table with an always-present **原文** column (the transcript, shown exactly once) plus one column per `targetLangs` entry (default 中文 + English). Every sentence is translated into **every** column, including the spoken language — that column gets a clean version fully in that language (speakers mix languages; the prompt's SAME_LANGUAGE_RULES / Qwen-MT `source_lang: auto`). Costs one extra target per sentence by design. Works with 整句, 分句 and 同传. Soniox `language_hints` = source languages ∪ `targetLangs`.
 
 ### API Routes
 

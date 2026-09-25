@@ -124,14 +124,29 @@ const SPEECH_INPUT_RULES = `- The input is live speech recognition output: it ma
 // only continue from them
 interface Continuation {
   sourceSoFar: string;
-  translationSoFar: string;
+  // Translation shown so far, per target language
+  translationsSoFar: Record<string, string>;
 }
 
-function parseContinuation(raw: unknown): Continuation | undefined {
-  const c = raw as Partial<Continuation> | undefined;
-  if (!c || typeof c.sourceSoFar !== "string" || typeof c.translationSoFar !== "string") return undefined;
-  if (!c.sourceSoFar.trim() || !c.translationSoFar.trim()) return undefined;
-  return { sourceSoFar: c.sourceSoFar.slice(-2000), translationSoFar: c.translationSoFar.slice(-2000) };
+// Accepts {sourceSoFar, translationSoFar} (one target) or
+// {sourceSoFar, translationsSoFar: {lang: text}} (several)
+function parseContinuation(raw: unknown, targets: string[]): Continuation | undefined {
+  const c = raw as { sourceSoFar?: unknown; translationSoFar?: unknown; translationsSoFar?: unknown } | undefined;
+  if (!c || typeof c.sourceSoFar !== "string" || !c.sourceSoFar.trim()) return undefined;
+  const translationsSoFar: Record<string, string> = {};
+  if (typeof c.translationSoFar === "string" && targets.length === 1) {
+    translationsSoFar[targets[0]] = c.translationSoFar;
+  } else if (c.translationsSoFar && typeof c.translationsSoFar === "object") {
+    for (const [lang, text] of Object.entries(c.translationsSoFar as Record<string, unknown>)) {
+      if (typeof text === "string") translationsSoFar[lang] = text;
+    }
+  }
+  for (const lang of Object.keys(translationsSoFar)) {
+    translationsSoFar[lang] = translationsSoFar[lang].slice(-2000);
+    if (!translationsSoFar[lang].trim()) delete translationsSoFar[lang];
+  }
+  if (Object.keys(translationsSoFar).length === 0) return undefined;
+  return { sourceSoFar: c.sourceSoFar.slice(-2000), translationsSoFar };
 }
 
 const CONTINUATION_RULES = `The sentence is being translated piece by piece while it is spoken. The earlier part and its translation are already shown to the audience and cannot be changed.
@@ -139,9 +154,22 @@ const CONTINUATION_RULES = `The sentence is being translated piece by piece whil
 - Do not repeat, revise or re-translate the earlier part
 - Output only the new translation text`;
 
-function continuationMessage(c: Continuation, next: string): string {
-  return `[Sentence so far]\n${c.sourceSoFar}\n\n[Translation so far]\n${c.translationSoFar}\n\n[Next part]\n${next}`;
+function continuationMessage(c: Continuation, next: string, targetLang: string): string {
+  return `[Sentence so far]\n${c.sourceSoFar}\n\n[Translation so far]\n${c.translationsSoFar[targetLang] ?? ""}\n\n[Next part]\n${next}`;
 }
+
+// Several targets: one "translation so far" per language (JSON output keys)
+function multiContinuationMessage(c: Continuation, next: string, targetLangs: string[]): string {
+  const soFar = targetLangs
+    .map((l) => `${l}: ${c.translationsSoFar[l] ?? "(nothing yet)"}`)
+    .join("\n");
+  return `[Sentence so far]\n${c.sourceSoFar}\n\n[Translation so far, per language]\n${soFar}\n\n[Next part]\n${next}`;
+}
+
+// Multilingual mode translates into every column, including the language
+// being spoken: that column gets the utterance fully in that language, so
+// speakers who mix languages still produce a clean version per column
+const SAME_LANGUAGE_RULES = `- A target language may be the same as the spoken language. For it, output the utterance entirely in that language: translate any words or phrases from other languages into it, keep the rest as said (do not paraphrase)`;
 
 // Track usage asynchronously (fire-and-forget)
 function trackUsage(req: NextRequest, inputTokens: number, outputTokens: number) {
@@ -186,6 +214,7 @@ async function handleMultiTarget(
   model: string,
   reasoningOverride: string | undefined,
   provisional: boolean,
+  continuation?: Continuation,
 ) {
   const sourceName = sourceLang ? getLanguageName(sourceLang) : "source language";
   const targetNames = targetLangs.map((l) => `${l} (${getLanguageName(l)})`).join(", ");
@@ -199,11 +228,17 @@ Rules:
 - Keep the conversational/spoken tone — do not formalize
 - Preserve the speaker's intent, including hedging, filler, and emphasis
 - Keep proper nouns, brand names, and technical terms as-is unless a translation is standard
+${SAME_LANGUAGE_RULES}
 ${SPEECH_INPUT_RULES}`;
 
   if (Array.isArray(terms) && terms.length > 0) {
     systemPrompt += `\n\nTerminology — always use these translations when applicable:\n${terms.join(", ")}`;
   }
+  // Clause mode: each language's value is only the continuation
+  if (continuation) {
+    systemPrompt += `\n\n${CONTINUATION_RULES.replace("Translate ONLY the [Next part], so that it reads naturally when appended directly after [Translation so far]", "For each language, translate ONLY the [Next part], so that it reads naturally when appended directly after that language's translation so far")}`;
+  }
+  const userContent = continuation ? multiContinuationMessage(continuation, text, targetLangs) : text;
 
   const contextMsgs = buildContextMessages(context);
   const start = Date.now();
@@ -225,7 +260,7 @@ ${SPEECH_INPUT_RULES}`;
 
     const anthropicMessages = [
       ...contextMsgs,
-      { role: "user" as const, content: text },
+      { role: "user" as const, content: userContent },
     ];
 
     const r = await getAnthropic().messages.create({
@@ -262,7 +297,7 @@ ${SPEECH_INPUT_RULES}`;
     const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
       { role: "system", content: systemPrompt },
       ...contextMsgs,
-      { role: "user", content: text },
+      { role: "user", content: userContent },
     ];
 
     const params: Record<string, unknown> = {
@@ -345,7 +380,7 @@ ${SPEECH_INPUT_RULES}`;
   const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
     { role: "system", content: systemPrompt },
     ...contextMsgs,
-    { role: "user", content: continuation ? continuationMessage(continuation, text) : text },
+    { role: "user", content: continuation ? continuationMessage(continuation, text, targetLang) : text },
   ];
 
   const start = Date.now();
@@ -480,7 +515,9 @@ async function translateQwenMT(
     model,
     messages: [{ role: "user", content: text }],
     translation_options: {
-      source_lang: sourceLang ? getLanguageName(sourceLang) : "auto",
+      // Same-language target (multilingual mode): the input is mixed, let
+      // the model detect each part
+      source_lang: sourceLang && sourceLang !== targetLang ? getLanguageName(sourceLang) : "auto",
       target_lang: getLanguageName(targetLang),
       domains,
       ...(termPairs.length > 0 ? { terms: termPairs.slice(0, 200) } : {}),
@@ -515,10 +552,10 @@ async function handleQwenMT(
   const { pairs, vocabulary } = splitTerms(terms);
   // Qwen-MT can't take instructions: give it the sentence so far as a
   // translation-memory pair so the next part stays consistent with it
-  if (continuation && !multi && sourceLang) {
+  if (continuation && sourceLang) {
     memory = [
       ...(memory ?? []),
-      { source: continuation.sourceSoFar, sourceLang, translations: { [targetLangs[0]]: continuation.translationSoFar } },
+      { source: continuation.sourceSoFar, sourceLang, translations: continuation.translationsSoFar },
     ];
   }
   const start = Date.now();
@@ -603,7 +640,10 @@ export async function POST(req: NextRequest) {
   let model: string = getDefaultModel();
   try {
     const { text, sourceLang, targetLang, targetLangs, context, terms, memory, model: rawRequestedModel, provisional: rawProvisional, continuation: rawContinuation } = await req.json();
-    const continuation = parseContinuation(rawContinuation);
+    const continuation = parseContinuation(
+      rawContinuation,
+      Array.isArray(targetLangs) && targetLangs.length > 0 ? targetLangs : typeof targetLang === "string" ? [targetLang] : []
+    );
     const provisional = rawProvisional === true;
 
     // Parse composite model ID: "gpt-5-nano/low" → model "gpt-5-nano", reasoning "low".
@@ -636,7 +676,7 @@ export async function POST(req: NextRequest) {
         ? handleQwenMT(req, text, sourceLang, isMulti ? targetLangs : [targetLang], isMulti, terms, Array.isArray(memory) ? memory : undefined, m, provisional, responseModel, continuation)
         : isMulti
         // Multi-target path (presentation mode)
-        ? handleMultiTarget(req, text, sourceLang, targetLangs, context, terms, m, reasoningOverride, provisional)
+        ? handleMultiTarget(req, text, sourceLang, targetLangs, context, terms, m, reasoningOverride, provisional, continuation)
         : handleSingleTarget(req, text, sourceLang, targetLang, context, terms, m, reasoningOverride, provisional, responseModel, continuation);
 
     try {

@@ -329,7 +329,6 @@ export default function Home() {
           translationEngine={translationEngine}
           onTranslationEngineChange={handleTranslationEngineChange}
           t3poEnabled={t3poEnabled}
-          streamingAllowed={translationMode !== "presentation"}
         />
 
         {/* Desktop top bar (only in topbar layout) */}
