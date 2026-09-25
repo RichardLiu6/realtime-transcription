@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import { useSonioxTranscription } from "@/hooks/useSonioxTranscription";
 import { useSpeakerManager } from "@/hooks/useSpeakerManager";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
-import type { SttProvider, TranslationMode } from "@/types/bilingual";
+import type { SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { t } from "@/lib/i18n";
 import Sidebar from "@/components/Sidebar";
@@ -49,6 +49,8 @@ export default function Home() {
   const [desktopLayout, setDesktopLayout] = useState<DesktopLayout>("sidebar");
   const [sttProvider, setSttProvider] = useState<SttProvider>("soniox");
   const [r2t2Enabled, setR2t2Enabled] = useState(false);
+  const [translationEngine, setTranslationEngine] = useState<TranslationEngine>("llm");
+  const [t3poEnabled, setT3poEnabled] = useState(false);
   // Browser noise suppression etc. Off by default: raw audio transcribes
   // better. Stored in localStorage; false during server render.
   const audioProcessing = useSyncExternalStore(
@@ -76,6 +78,29 @@ export default function Home() {
         }
       })
       .catch(() => {});
+  }, []);
+
+  // Simultaneous translation is only selectable when a T3PO server is configured
+  useEffect(() => {
+    fetch("/api/simul")
+      .then((r) => r.json())
+      .then((d) => {
+        const enabled = !!d.enabled;
+        setT3poEnabled(enabled);
+        if (enabled && localStorage.getItem("translationEngine") === "t3po") {
+          setTranslationEngine("t3po");
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleTranslationEngineChange = useCallback((engine: TranslationEngine) => {
+    setTranslationEngine(engine);
+    try {
+      localStorage.setItem("translationEngine", engine);
+    } catch {
+      // storage unavailable: the choice just won't stick
+    }
   }, []);
 
   const handleAudioProcessingChange = useCallback((on: boolean) => {
@@ -134,6 +159,7 @@ export default function Home() {
     start({
       provider: sttProvider === "r2t2" && r2t2Enabled ? "r2t2" : "soniox",
       audioProcessing,
+      translationEngine: translationEngine === "t3po" && t3poEnabled ? "t3po" : "llm",
       languageA,
       languageB,
       contextTerms: terms,
@@ -149,6 +175,8 @@ export default function Home() {
     sttProvider,
     r2t2Enabled,
     audioProcessing,
+    translationEngine,
+    t3poEnabled,
     start,
     clearEntries,
     clearSpeakers,
@@ -281,6 +309,9 @@ export default function Home() {
           r2t2Enabled={r2t2Enabled}
           audioProcessing={audioProcessing}
           onAudioProcessingChange={handleAudioProcessingChange}
+          translationEngine={translationEngine}
+          onTranslationEngineChange={handleTranslationEngineChange}
+          t3poEnabled={t3poEnabled}
         />
 
         {/* Desktop top bar (only in topbar layout) */}

@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import type { BilingualEntry, SonioxConfig, SonioxToken, SttProvider } from "@/types/bilingual";
+import { type Direction, directionFor, joinTranslation } from "@/lib/t3po/protocol";
+import { SimulEngine } from "@/lib/t3po/engine";
 
 const TARGET_SAMPLE_RATE = 16000;
 
@@ -401,9 +403,136 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     requestTranslation(entryId, text, sourceLang);
   }, [requestTranslation, getTranslationState]);
 
+  // --- Simultaneous translation (Youdao Confucius4-T3PO) ---
+  // Chinese<->English segments are translated while they are spoken: each
+  // piece of committed ASR text is fed to a per-direction engine, which
+  // appends translation segments as the model commits them. Other segments
+  // (multilingual mode, other languages) use sentence-level translation.
+  const simulEnginesRef = useRef(new Map<Direction, SimulEngine>());
+  const simulEntriesRef = useRef(
+    new Map<string, { direction: Direction; parts: string[]; fullText: string; lang: string }>()
+  );
+  // Committed text seen before the segment's language was known
+  const simulPendingRef = useRef(new Map<string, string>());
+  // Set after a T3PO failure: the rest of the session uses sentence translation
+  const simulFailedRef = useRef(false);
+
+  const simulDirectionFor = useCallback((sourceLang: string): Direction | null => {
+    const config = configRef.current;
+    if (!config || config.translationEngine !== "t3po" || simulFailedRef.current) return null;
+    if (config.translationMode === "presentation" || optionsRef.current?.skipTranslation) return null;
+    return directionFor(sourceLang, singleTargetFor(sourceLang, config));
+  }, []);
+
+  const getSimulEngine = useCallback((direction: Direction) => {
+    let engine = simulEnginesRef.current.get(direction);
+    if (engine) return engine;
+    engine = new SimulEngine(
+      direction,
+      async ({ direction, history, current, force }) => {
+        const res = await fetch("/api/simul", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ direction, history, current, force, terms: configRef.current?.contextTerms }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `同传翻译失败（HTTP ${res.status}）`);
+        return { action: data.action === "TRANS" ? "TRANS" : "WAIT", text: String(data.text ?? "") };
+      },
+      {
+        onCommit: (entryId, segment) => {
+          const info = simulEntriesRef.current.get(entryId);
+          if (!info) return;
+          info.parts.push(segment);
+          const translatedText = joinTranslation(info.parts, info.direction);
+          setEntries((prev) => {
+            const existing = prev.get(entryId);
+            if (!existing) return prev;
+            return new Map(prev).set(entryId, { ...existing, translatedText, translationProvisional: false });
+          });
+        },
+        onFlushed: (entryId, leftover) => {
+          const info = simulEntriesRef.current.get(entryId);
+          simulEntriesRef.current.delete(entryId);
+          // Some source never got translated (backend couldn't force output,
+          // or a step failed): retranslate the whole sentence the normal way
+          if (info && leftover.trim() && info.fullText) {
+            requestFinalTranslation(entryId, info.fullText, info.lang);
+          }
+        },
+        onError: (error) => {
+          console.error("[Simul] step failed:", error);
+          // Shown once and kept (not via translationErrorRef, which a later
+          // successful sentence translation would clear): the user should
+          // know the session silently switched to sentence translation
+          if (!simulFailedRef.current) {
+            setError(error instanceof Error ? error.message : "同传翻译失败，已改用整句翻译");
+          }
+          simulFailedRef.current = true;
+        },
+      }
+    );
+    simulEnginesRef.current.set(direction, engine);
+    return engine;
+  }, [requestFinalTranslation]);
+
+  // Feed newly committed source text of a segment; true if T3PO handles it
+  const simulFeed = useCallback((entryId: string, sourceLang: string, text: string): boolean => {
+    if (!text) return simulEntriesRef.current.has(entryId);
+    let info = simulEntriesRef.current.get(entryId);
+    if (!info) {
+      if (!sourceLang) {
+        // Language not known yet: hold the text until it is
+        simulPendingRef.current.set(entryId, (simulPendingRef.current.get(entryId) ?? "") + text);
+        return configRef.current?.translationEngine === "t3po" && !simulFailedRef.current;
+      }
+      const direction = simulDirectionFor(sourceLang);
+      if (!direction) {
+        simulPendingRef.current.delete(entryId);
+        return false;
+      }
+      info = { direction, parts: [], fullText: "", lang: sourceLang };
+      simulEntriesRef.current.set(entryId, info);
+      const pending = simulPendingRef.current.get(entryId);
+      simulPendingRef.current.delete(entryId);
+      if (pending) text = pending + text;
+    }
+    getSimulEngine(info.direction).feed(entryId, text);
+    return true;
+  }, [simulDirectionFor, getSimulEngine]);
+
+  // Segment finished: force out the rest. False if T3PO isn't handling it.
+  const simulFinalize = useCallback((entryId: string, fullText: string, sourceLang: string): boolean => {
+    const pending = simulPendingRef.current.get(entryId);
+    if (pending !== undefined && sourceLang) simulFeed(entryId, sourceLang, "");
+    simulPendingRef.current.delete(entryId);
+    const info = simulEntriesRef.current.get(entryId);
+    if (!info) return false;
+    info.fullText = fullText;
+    info.lang = sourceLang || info.lang;
+    if (simulFailedRef.current) {
+      simulEntriesRef.current.delete(entryId);
+      requestFinalTranslation(entryId, fullText, info.lang);
+      return true;
+    }
+    getSimulEngine(info.direction).flush(entryId);
+    return true;
+  }, [simulFeed, getSimulEngine, requestFinalTranslation]);
+
+  const resetSimul = useCallback(() => {
+    for (const engine of simulEnginesRef.current.values()) engine.close();
+    simulEnginesRef.current.clear();
+    simulEntriesRef.current.clear();
+    simulPendingRef.current.clear();
+    simulFailedRef.current = false;
+  }, []);
+
   // Throttled provisional translation while a segment is still being spoken
   const maybeTranslateProvisional = useCallback((entryId: string, text: string, sourceLang: string) => {
     if (optionsRef.current?.skipTranslation) return;
+    // T3PO segments get real incremental translation instead
+    if (simulEntriesRef.current.has(entryId) || simulPendingRef.current.has(entryId)) return;
+    if (sourceLang && simulDirectionFor(sourceLang)) return;
     if (!sourceLang) return; // targets depend on the source language
     const trimmed = text.trim();
     if (trimmed.length < PROVISIONAL_MIN_CHARS) return;
@@ -412,7 +541,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     if (Date.now() - st.lastAt < PROVISIONAL_INTERVAL_MS) return;
     if (trimmed === st.lastText) return;
     requestTranslation(entryId, trimmed, sourceLang, true);
-  }, [requestTranslation, getTranslationState]);
+  }, [requestTranslation, getTranslationState, simulDirectionFor]);
 
   // Finalize current segment into an entry
   const finalizeSegment = useCallback(() => {
@@ -499,13 +628,13 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     // Fire translation (or external callback via ref for latest callback)
     if (optionsRef.current?.skipTranslation) {
       optionsRef.current.onSegmentFinalized?.(seg.entryId, originalText, seg.language);
-    } else {
+    } else if (!simulFinalize(seg.entryId, originalText, seg.language)) {
       requestFinalTranslation(seg.entryId, originalText, seg.language);
     }
 
     currentSegmentRef.current = null;
     setCurrentInterim("");
-  }, [upsertEntry, requestFinalTranslation]);
+  }, [upsertEntry, requestFinalTranslation, simulFinalize]);
 
   // Handle Soniox WebSocket messages
   const handleSonioxMessage = useCallback(
@@ -589,6 +718,8 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         seg.tokens.push(...finalTokens);
         seg.endMs =
           finalTokens[finalTokens.length - 1]?.end_ms ?? seg.endMs;
+        // Final tokens never change, so they can be fed for simultaneous translation
+        simulFeed(seg.entryId, seg.language, finalTokens.map((t) => t.text).join(""));
       }
 
       // Replace interim original tokens
@@ -629,7 +760,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         maybeTranslateProvisional(seg.entryId, originalText + interimOriginal, seg.language);
       }
     },
-    [finalizeSegment, upsertEntry, maybeTranslateProvisional]
+    [finalizeSegment, upsertEntry, maybeTranslateProvisional, simulFeed]
   );
 
   // Handle R2T2 WebSocket messages.
@@ -673,6 +804,17 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         seg.endMs = nowMs;
 
         const originalText = seg.tokens.map((t) => t.text).join("").trim();
+        // R2T2 gives no language ID; guess it from the text so far
+        if (!seg.language && configRef.current && originalText.length >= 3) {
+          seg.language = detectLanguageFromText(
+            originalText,
+            configRef.current.languageA,
+            configRef.current.languageB
+          );
+        }
+        // R2T2 output is append-only: feed each chunk for simultaneous translation
+        simulFeed(seg.entryId, seg.language, text);
+
         const sentenceEnd = /[。！？.!?]\s*$/.test(originalText);
         if (!reset && sentenceEnd && originalText.length >= R2T2_MAX_SEGMENT_CHARS) {
           finalizeSegment();
@@ -696,21 +838,13 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
           if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
           silenceTimerRef.current = setTimeout(finalizeSegment, R2T2_SILENCE_FINALIZE_MS);
 
-          // R2T2 gives no language ID; guess it from the text so far
-          if (!seg.language && configRef.current && originalText.length >= 3) {
-            seg.language = detectLanguageFromText(
-              originalText,
-              configRef.current.languageA,
-              configRef.current.languageB
-            );
-          }
           maybeTranslateProvisional(seg.entryId, originalText, seg.language);
         }
       }
 
       if (reset) finalizeSegment();
     },
-    [finalizeSegment, upsertEntry, maybeTranslateProvisional]
+    [finalizeSegment, upsertEntry, maybeTranslateProvisional, simulFeed]
   );
 
   // Release microphone and audio graph
@@ -742,6 +876,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       currentSegmentRef.current = null;
       lastFinalizedDataRef.current = null;
       translationStateRef.current.clear();
+      resetSimul();
 
       try {
         // 1. Credentials
@@ -933,7 +1068,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         wsRef.current = null;
       }
     },
-    [recordingState, handleSonioxMessage, handleR2T2Message, finalizeSegment, teardownAudio]
+    [recordingState, handleSonioxMessage, handleR2T2Message, finalizeSegment, teardownAudio, resetSimul]
   );
 
   const stop = useCallback(() => {
@@ -1003,7 +1138,8 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     currentSegmentRef.current = null;
     lastFinalizedDataRef.current = null;
     translationStateRef.current.clear();
-  }, []);
+    resetSimul();
+  }, [resetSimul]);
 
   useEffect(() => {
     return () => {

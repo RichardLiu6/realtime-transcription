@@ -54,6 +54,16 @@ Audio goes directly from browser to the STT engine — the server never touches 
 - SDK clients use `maxRetries: 1`. OpenRouter requests send `reasoning: {enabled: false}` and `provider: {sort: "latency"}`.
 - Every translation logs `[translate] model=… ms=… in=… out=… reasoning=…` to the Vercel runtime logs (reasoning > 0 means the model thought anyway).
 
+### Simultaneous translation (Youdao Confucius4-T3PO)
+
+StatusBar 翻译方式 **整句 | 同传**. 同传 translates Chinese↔English while the sentence is still being spoken; other segments (multilingual mode, other languages) keep using sentence translation.
+
+- `lib/t3po/protocol.ts`: prompts, glossary, response parsing, source splitting — ported byte-for-byte from github.com/netease-youdao/Confucius4-T3PO (`inference/prompts.py`, `glossary.py`, `translation.py`, `latency.py`). The prompt is part of the model interface; don't edit it independently.
+- `lib/t3po/engine.ts`: client-side port of upstream `TranslationEngine` (one per direction; committed history `src¦tgt§…` + buffer; empty reply = WAIT, non-empty = TRANS; forced step at sentence end / 20 units). Ops are serialized per engine and feeds arriving mid-call are merged.
+- `/api/simul` (stateless): one WAIT/TRANS step against an OpenAI-compatible server (`vllm serve netease-youdao/Confucius4-T3PO`). Forced steps send `min_tokens: 1`; `T3PO_LATENCY_MODE` low/high adds upstream's calibrated `logit_bias` on the stop tokens.
+- Only *final* ASR text is fed (Soniox final tokens / R2T2 chunks are append-only). `中文=English` terms go into T3PO's glossary block.
+- On any step failure the session switches to sentence translation (banner stays); segments with untranslated leftovers are retranslated whole.
+
 ### Two-Tier Authentication
 
 **User login** (`/login`): Email OTP → `auth_token` cookie (15-day JWT)
@@ -97,6 +107,7 @@ Central logic for the entire app:
 |-------|--------|---------|
 | `/api/soniox-token` | POST | 10-min ephemeral Soniox token |
 | `/api/r2t2-config` | GET/POST | R2T2 availability / connection details |
+| `/api/simul` | GET/POST | T3PO availability / one simultaneous-translation step |
 | `/api/usage` | POST | Record STT seconds (Soniox only) |
 | `/api/translate` | POST | LLM translation (single or multi-target; `provisional` requests skip usage tracking) |
 | `/api/summarize` | POST | Meeting summary generation |
@@ -133,6 +144,10 @@ OPENAI_API_KEY=sk-...        # GPT translations & summaries
 ANTHROPIC_API_KEY=...        # Claude translation models (optional)
 R2T2_WS_URL=wss://.../asr_stream_api_v1  # Self-hosted R2T2 (optional)
 R2T2_SECRET_KEY=...          # Must match secret_key_list in ws_server.py
+T3PO_BASE_URL=https://.../v1 # OpenAI-compatible server running Confucius4-T3PO (enables 同传)
+T3PO_API_KEY=...             # Optional bearer token (vLLM --api-key)
+T3PO_MODEL=Confucius4-T3PO   # Served model name
+T3PO_LATENCY_MODE=native     # low | native | high
 JWT_SECRET=...               # JWT signing secret
 ADMIN_PASSWORD=...           # Admin login password
 RESEND_API_KEY=...           # Email OTP delivery

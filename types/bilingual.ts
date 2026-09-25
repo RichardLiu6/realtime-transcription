@@ -92,9 +92,14 @@ export type TranslationMode = "two_way" | "one_way" | "presentation";
 // Speech-to-text engine: Soniox cloud, or self-hosted NetEase Youdao Confucius4-R2T2
 export type SttProvider = "soniox" | "r2t2";
 
+// Translation: sentence-level via /api/translate ("llm"), or simultaneous
+// (translate while speaking) via Youdao Confucius4-T3PO ("t3po", zh<->en only)
+export type TranslationEngine = "llm" | "t3po";
+
 export interface SonioxConfig {
   provider?: SttProvider; // default "soniox"
   audioProcessing?: boolean; // browser noise suppression / echo cancellation / auto gain (default off)
+  translationEngine?: TranslationEngine; // default "llm"
   languageA: string[]; // e.g. ["*"] or ["zh", "en"]
   languageB: string; // e.g. "en"
   targetLangs?: string[]; // Presentation mode: ["en", "ja", "fr"]
