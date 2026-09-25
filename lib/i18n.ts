@@ -42,7 +42,7 @@ const translations = {
 
     // Terms panel
     "context_terms": "Context Terms",
-    "add_term_placeholder": "Add term, press Enter",
+    "add_term_placeholder": "Add term (or 中文=English), press Enter",
     "terms_effect_next": "Takes effect on next recording",
     "terms_effect_start": "Takes effect when recording starts",
 
@@ -97,7 +97,7 @@ const translations = {
 
     // Terms panel
     "context_terms": "上下文术语",
-    "add_term_placeholder": "输入术语，按回车添加",
+    "add_term_placeholder": "输入术语（可写 中文=English），回车添加",
     "terms_effect_next": "下次录音时生效",
     "terms_effect_start": "开始录音时生效",
 

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOpenAI } from "@/lib/openai";
 import { getOpenRouter } from "@/lib/openrouter";
+import { getDashScope } from "@/lib/dashscope";
 import { getAnthropic } from "@/lib/anthropic";
 import { verifyToken } from "@/lib/auth";
-import { getUserModel, getDefaultModel, QWEN_DEFAULT_MODEL, OPENAI_DEFAULT_MODEL, SUPPORTED_MODELS, incrementUsage } from "@/lib/edge-config";
+import { getUserModel, getDefaultModel, QWEN_MT_DEFAULT_MODEL, QWEN_DEFAULT_MODEL, OPENAI_DEFAULT_MODEL, SUPPORTED_MODELS, incrementUsage } from "@/lib/edge-config";
 import { jwtVerify } from "jose";
 
 function getLanguageName(code: string): string {
@@ -23,11 +24,17 @@ function isOpenRouter(model: string): boolean {
   return model.startsWith("qwen/");
 }
 
-type Provider = "openai" | "anthropic" | "openrouter";
+// Qwen-MT dedicated translation models on DashScope
+function isQwenMT(model: string): boolean {
+  return model.startsWith("qwen-mt-");
+}
+
+type Provider = "openai" | "anthropic" | "openrouter" | "dashscope";
 
 function providerOf(model: string): Provider {
   if (isClaude(model)) return "anthropic";
   if (isOpenRouter(model)) return "openrouter";
+  if (isQwenMT(model)) return "dashscope";
   return "openai";
 }
 
@@ -342,6 +349,129 @@ ${SPEECH_INPUT_RULES}`;
   });
 }
 
+// --- Qwen-MT (DashScope) ---
+//
+// Qwen-MT takes exactly one user message (no system prompt, no chat
+// history); everything else goes in `translation_options`. What the chat
+// models get from the prompt is mapped onto its native features:
+//   - earlier sentences + their translations → tm_list (translation memory)
+//   - "中文=English" term pairs → terms (enforced, both directions)
+//   - the plain term list → a domains hint
+
+// Earlier sentences with their translations, sent by the client
+interface MemoryItem {
+  source: string;
+  sourceLang: string;
+  translations: Record<string, string>;
+}
+
+interface TermPair {
+  source: string;
+  target: string;
+}
+
+// "a=b" entries become pairs (usable in either direction); the rest, plus
+// both sides of each pair, form the vocabulary hint
+function splitTerms(terms: string[] | undefined): { pairs: TermPair[]; vocabulary: string[] } {
+  const pairs: TermPair[] = [];
+  const vocabulary: string[] = [];
+  for (const raw of terms ?? []) {
+    const [a, b] = raw.split("=").map((x) => x.trim());
+    if (a && b) {
+      pairs.push({ source: a, target: b }, { source: b, target: a });
+      vocabulary.push(a, b);
+    } else if (a) {
+      vocabulary.push(a);
+    }
+  }
+  return { pairs, vocabulary };
+}
+
+// Translation-memory pairs oriented source → target, from earlier sentences
+// in either direction
+function memoryPairs(memory: MemoryItem[] | undefined, src: string | undefined, tgt: string): TermPair[] {
+  const pairs: TermPair[] = [];
+  for (const m of (memory ?? []).slice(-3)) {
+    if (!m?.source || !m.translations) continue;
+    if ((!src || m.sourceLang === src) && m.translations[tgt]) {
+      pairs.push({ source: m.source, target: m.translations[tgt] });
+    } else if (src && m.sourceLang === tgt && m.translations[src]) {
+      pairs.push({ source: m.translations[src], target: m.source });
+    }
+  }
+  return pairs;
+}
+
+async function translateQwenMT(
+  model: string,
+  text: string,
+  sourceLang: string | undefined,
+  targetLang: string,
+  vocabulary: string[],
+  termPairs: TermPair[],
+  memory: MemoryItem[] | undefined,
+) {
+  let domains =
+    "Live spoken business meeting, transcribed by speech recognition in real time: " +
+    "the text may contain recognition errors or stop mid-sentence. " +
+    "Keep the conversational tone; translate only what was said.";
+  if (vocabulary.length > 0) {
+    domains += ` Terms that may appear: ${vocabulary.join(", ")}`.slice(0, 1500);
+  }
+  const tmList = memoryPairs(memory, sourceLang, targetLang);
+
+  const params: Record<string, unknown> = {
+    model,
+    messages: [{ role: "user", content: text }],
+    translation_options: {
+      source_lang: sourceLang ? getLanguageName(sourceLang) : "auto",
+      target_lang: getLanguageName(targetLang),
+      domains,
+      ...(termPairs.length > 0 ? { terms: termPairs.slice(0, 200) } : {}),
+      ...(tmList.length > 0 ? { tm_list: tmList } : {}),
+    },
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r = await getDashScope().chat.completions.create(params as any);
+  return {
+    text: r.choices[0]?.message?.content?.trim() || "",
+    inputTokens: r.usage?.prompt_tokens ?? 0,
+    outputTokens: r.usage?.completion_tokens ?? 0,
+  };
+}
+
+// Single- or multi-target via Qwen-MT: one call per target language, in
+// parallel. Same response shape as the chat-model paths.
+async function handleQwenMT(
+  req: NextRequest,
+  text: string,
+  sourceLang: string | undefined,
+  targetLangs: string[],
+  multi: boolean,
+  terms: string[] | undefined,
+  memory: MemoryItem[] | undefined,
+  model: string,
+  provisional: boolean,
+  responseModel: string,
+) {
+  const { pairs, vocabulary } = splitTerms(terms);
+  const start = Date.now();
+  const results = await Promise.all(
+    targetLangs.map((t) => translateQwenMT(model, text, sourceLang, t, vocabulary, pairs, memory))
+  );
+  const latencyMs = Date.now() - start;
+  const inputTokens = results.reduce((n, r) => n + r.inputTokens, 0);
+  const outputTokens = results.reduce((n, r) => n + r.outputTokens, 0);
+  if (!provisional) trackUsage(req, inputTokens, outputTokens);
+
+  if (multi) {
+    const translations = Object.fromEntries(targetLangs.map((t, i) => [t, results[i].text]));
+    return NextResponse.json({ translations, model: responseModel, latencyMs });
+  }
+  return NextResponse.json({ translatedText: results[0].text, model: responseModel, latencyMs });
+}
+
 // --- Provider errors & fallback ---
 
 // Status + code from an OpenAI / Anthropic SDK error
@@ -360,14 +490,16 @@ function isProviderFailure(error: unknown): boolean {
   const { status, message } = providerError(error);
   if (status === undefined) return false;
   if (status === 401 || status === 402 || status === 403 || status === 429 || status >= 500) return true;
-  // Anthropic reports an empty balance as a 400
-  return status === 400 && /credit balance/i.test(message);
+  // Anthropic reports an empty balance as a 400, DashScope an overdue
+  // account as 400 "Arrearage"
+  return status === 400 && /credit balance|arrearage/i.test(message + " " + (providerError(error).code ?? ""));
 }
 
 // Models on the other providers to try, in order, when `model` fails —
 // only providers whose key is configured
 function fallbackModelsFor(model: string): string[] {
   const candidates: [Provider, string, string | undefined][] = [
+    ["dashscope", QWEN_MT_DEFAULT_MODEL, process.env.DASHSCOPE_API_KEY],
     ["openrouter", QWEN_DEFAULT_MODEL, process.env.OPENROUTER_API_KEY],
     ["openai", OPENAI_DEFAULT_MODEL, process.env.OPENAI_API_KEY],
     ["anthropic", "claude-haiku-4-5-20251001", process.env.ANTHROPIC_API_KEY],
@@ -382,13 +514,14 @@ const PROVIDER_NAME: Record<Provider, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
   openrouter: "OpenRouter",
+  dashscope: "阿里云百炼",
 };
 
 // User-facing message; the client shows it in the error banner
 function describeFailure(error: unknown, model: string): { status: number; body: { error: string; code: string } } {
   const { status, code, message } = providerError(error);
   const provider = PROVIDER_NAME[providerOf(model)];
-  if (status === 402 || code === "insufficient_quota" || code === "credit_balance_exhausted" || /credit/i.test(message)) {
+  if (status === 402 || code === "insufficient_quota" || code === "credit_balance_exhausted" || code === "Arrearage" || /credit|arrearage/i.test(message)) {
     return { status: 402, body: { error: `翻译失败：${provider} 账户额度已用完，请充值或在后台切换翻译模型`, code: "quota" } };
   }
   if (status === 401 || status === 403) {
@@ -403,7 +536,7 @@ function describeFailure(error: unknown, model: string): { status: number; body:
 export async function POST(req: NextRequest) {
   let model: string = getDefaultModel();
   try {
-    const { text, sourceLang, targetLang, targetLangs, context, terms, model: rawRequestedModel, provisional: rawProvisional } = await req.json();
+    const { text, sourceLang, targetLang, targetLangs, context, terms, memory, model: rawRequestedModel, provisional: rawProvisional } = await req.json();
     const provisional = rawProvisional === true;
 
     // Parse composite model ID: "gpt-5-nano/low" → model "gpt-5-nano", reasoning "low".
@@ -432,7 +565,9 @@ export async function POST(req: NextRequest) {
     model = await resolveModel(req, requestedModel);
     const primary = model;
     const run = (m: string, responseModel: string) =>
-      isMulti
+      isQwenMT(m)
+        ? handleQwenMT(req, text, sourceLang, isMulti ? targetLangs : [targetLang], isMulti, terms, Array.isArray(memory) ? memory : undefined, m, provisional, responseModel)
+        : isMulti
         // Multi-target path (presentation mode)
         ? handleMultiTarget(req, text, sourceLang, targetLangs, context, terms, m, reasoningOverride, provisional)
         : handleSingleTarget(req, text, sourceLang, targetLang, context, terms, m, reasoningOverride, provisional, responseModel);

@@ -16,12 +16,15 @@ import {
 import Link from "next/link";
 
 const SUPPORTED_MODELS = [
-  { value: "", label: "默认 (Qwen3.7 Plus；未配置 OpenRouter 时为 Nano)" },
+  { value: "", label: "默认 (Qwen-MT Plus → Qwen3.7 Plus → Nano，按已配置的 Key)" },
   { value: "gpt-5-nano", label: "GPT-5 Nano" },
   { value: "gpt-5-mini", label: "GPT-5 Mini" },
   { value: "gpt-4o-mini", label: "GPT-4o Mini" },
   { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
   { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+  { value: "qwen-mt-plus", label: "Qwen-MT Plus (阿里云百炼)" },
+  { value: "qwen-mt-flash", label: "Qwen-MT Flash (阿里云百炼)" },
+  { value: "qwen-mt-lite", label: "Qwen-MT Lite (阿里云百炼)" },
   { value: "qwen/qwen3.7-plus", label: "Qwen3.7 Plus (OpenRouter)" },
   { value: "qwen/qwen3.7-max", label: "Qwen3.7 Max (OpenRouter)" },
   { value: "qwen/qwen3.8-max-0902", label: "Qwen3.8 Max (OpenRouter)" },

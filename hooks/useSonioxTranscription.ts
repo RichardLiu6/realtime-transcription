@@ -147,6 +147,20 @@ function r2t2LanguageHint(config: SonioxConfig): string {
   return "zhen";
 }
 
+// Target language of a single-target translation (two_way / one_way)
+function singleTargetFor(sourceLang: string, config: SonioxConfig): string {
+  if (config.translationMode === "two_way" && sourceLang === config.languageB) {
+    return config.languageA[0] === "*" ? "zh" : (config.languageA[0] ?? "zh");
+  }
+  return config.languageB;
+}
+
+// Terms may be written as "中文=English" pairs (used as enforced
+// translations by Qwen-MT); speech engines just get every word
+function flattenTerms(terms: string[]): string[] {
+  return Array.from(new Set(terms.flatMap((t) => t.split("=").map((x) => x.trim())).filter(Boolean)));
+}
+
 type RecordingState = "idle" | "connecting" | "recording";
 
 interface TranscriptionOptions {
@@ -279,13 +293,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       target = { targetLangs };
     } else {
       // Single-target: two_way / one_way
-      let targetLang = config.languageB;
-      if (config.translationMode === "two_way") {
-        const langA = config.languageA[0] === "*" ? "zh" : (config.languageA[0] ?? "zh");
-        if (sourceLang === config.languageB) {
-          targetLang = langA;
-        }
-      }
+      const targetLang = singleTargetFor(sourceLang, config);
       // Skip if source and target are the same
       if (sourceLang && sourceLang === targetLang) {
         st.done = true;
@@ -302,10 +310,21 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     }
 
     // Gather last 3 finalized entries as context
-    const context = Array.from(entriesRef.current.values())
+    const recent = Array.from(entriesRef.current.values())
       .filter((e) => e.isFinal && e.originalText && e.id !== entryId)
-      .slice(-3)
-      .map((e) => e.originalText);
+      .slice(-3);
+    const context = recent.map((e) => e.originalText);
+    // ...and their settled translations, as translation memory (Qwen-MT
+    // can't take conversation context, only source→target pairs)
+    const memory = recent
+      .filter((e) => !e.translationProvisional)
+      .map((e) => ({
+        source: e.originalText,
+        sourceLang: e.language,
+        translations: e.translations ??
+          (e.translatedText ? { [singleTargetFor(e.language, config)]: e.translatedText } : {}),
+      }))
+      .filter((m) => Object.keys(m.translations).length > 0);
 
     fetch("/api/translate", {
       method: "POST",
@@ -314,6 +333,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         text,
         sourceLang,
         context: context.length > 0 ? context : undefined,
+        memory: memory.length > 0 ? memory : undefined,
         terms: config.contextTerms.length > 0 ? config.contextTerms : undefined,
         ...(provisional ? { provisional: true } : {}),
         ...target,
@@ -739,7 +759,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
             use_vad: true,
             mode: "slow",
             ...(config.contextTerms.length > 0
-              ? { system_prompt: config.contextTerms.join(", ").slice(0, 4000) }
+              ? { system_prompt: flattenTerms(config.contextTerms).join(", ").slice(0, 4000) }
               : {}),
           });
         } else {
@@ -778,7 +798,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
             enable_speaker_diarization: true,
             enable_language_identification: true,
             ...(config.contextTerms.length > 0
-              ? { context: { terms: config.contextTerms } }
+              ? { context: { terms: flattenTerms(config.contextTerms) } }
               : {}),
           });
         }

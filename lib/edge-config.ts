@@ -6,6 +6,10 @@ export const SUPPORTED_MODELS = [
   "gpt-4o-mini",
   "claude-haiku-4-5-20251001",
   "claude-sonnet-4-6",
+  // Qwen-MT translation models via Alibaba Cloud Model Studio (DashScope)
+  "qwen-mt-plus",
+  "qwen-mt-flash",
+  "qwen-mt-lite",
   // Qwen via OpenRouter
   "qwen/qwen3.7-plus",
   "qwen/qwen3.7-max",
@@ -13,13 +17,16 @@ export const SUPPORTED_MODELS = [
 ] as const;
 
 export type TranslationModel = (typeof SUPPORTED_MODELS)[number];
+export const QWEN_MT_DEFAULT_MODEL: TranslationModel = "qwen-mt-plus";
 export const QWEN_DEFAULT_MODEL: TranslationModel = "qwen/qwen3.7-plus";
 export const OPENAI_DEFAULT_MODEL: TranslationModel = "gpt-5-nano";
 
-// Default for users without an admin-assigned model: Qwen3.7 Plus once
-// OpenRouter is configured, GPT-5 Nano otherwise
+// Default for users without an admin-assigned model: the first configured
+// of Qwen-MT Plus (DashScope), Qwen3.7 Plus (OpenRouter), GPT-5 Nano
 export function getDefaultModel(): TranslationModel {
-  return process.env.OPENROUTER_API_KEY ? QWEN_DEFAULT_MODEL : OPENAI_DEFAULT_MODEL;
+  if (process.env.DASHSCOPE_API_KEY) return QWEN_MT_DEFAULT_MODEL;
+  if (process.env.OPENROUTER_API_KEY) return QWEN_DEFAULT_MODEL;
+  return OPENAI_DEFAULT_MODEL;
 }
 
 export interface MonthlyUsage {
