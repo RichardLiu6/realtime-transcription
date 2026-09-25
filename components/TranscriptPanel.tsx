@@ -144,7 +144,11 @@ const EntryRow = memo(function EntryRow({
           <span className="inline-block mr-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
             {translationLabel}
           </span>
-          <span className="text-sm italic text-gray-400 leading-relaxed">
+          <span
+            className={`text-sm italic leading-relaxed ${
+              entry.translationProvisional ? "text-gray-300" : "text-gray-400"
+            }`}
+          >
             {entry.translatedText}
           </span>
           <div className="h-2" />

@@ -65,7 +65,7 @@ Central logic for the entire app:
 - Speaker change detection triggers segment finalization
 - Endpoint detection (all tokens final) auto-finalizes segments
 - Language detection: CJK character ratio >20% → detected language
-- Translation queue (FIFO) for pending entries
+- Provisional translation: while a segment is still being spoken, re-translates the partial text at most once per second (`provisional: true`, shown grey); the final translation replaces it, or the provisional result is promoted when it already covers the final text
 - Auto-merge heuristic: short same-language segments adopt previous speaker
 - stop() sends end-of-audio and drains trailing results before closing (3 s timeout)
 
@@ -73,7 +73,12 @@ Central logic for the entire app:
 
 - `BilingualEntry`: id, speaker, speakerLabel, language, originalText, translatedText, interimOriginal/Translated, isFinal, startMs, endMs, timestamp
 - `SonioxToken`: text, is_final, speaker, start_ms, end_ms, translation_status ("none"|"original"|"translation"), language
-- `SonioxConfig`: languageA, languageB, contextTerms, translationMode ("two_way"|"one_way")
+- `SonioxConfig`: provider, languageA, languageB, targetLangs, contextTerms, translationMode ("two_way"|"one_way"|"presentation")
+
+### Translation modes
+
+- **two_way / one_way**: one target language per sentence, flowing transcript view.
+- **presentation** (UI label "多语言 / Multilingual"): `targetLangs` are the meeting languages, one table column each. Each sentence is translated into every column language except the one spoken; that column shows the original. Soniox `language_hints` = source languages ∪ `targetLangs`. An extra 原文 column appears only if someone speaks a language without a column.
 
 ### API Routes
 
@@ -82,7 +87,7 @@ Central logic for the entire app:
 | `/api/soniox-token` | POST | 10-min ephemeral Soniox token |
 | `/api/r2t2-config` | GET/POST | R2T2 availability / connection details |
 | `/api/usage` | POST | Record STT seconds (Soniox only) |
-| `/api/translate` | POST | LLM translation (single or multi-target) |
+| `/api/translate` | POST | LLM translation (single or multi-target; `provisional` requests skip usage tracking) |
 | `/api/summarize` | POST | Meeting summary generation |
 | `/api/auth/send-code` | POST | Email OTP |
 | `/api/auth/verify-code` | POST | Verify OTP, issue JWT |

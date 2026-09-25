@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { BilingualEntry, SpeakerInfo } from "@/types/bilingual";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
 
@@ -16,34 +16,124 @@ function getLangName(code: string): string {
   return SONIOX_LANGUAGES.find((l) => l.code === code)?.name ?? code.toUpperCase();
 }
 
+const Cursor = () => (
+  <span className="blink-cursor ml-0.5 inline-block h-4 w-0.5 bg-gray-400 align-text-bottom" />
+);
+
+// The spoken text, as it appears in its own language column (or in the
+// fallback 原文 column)
+function OriginalText({ entry }: { entry: BilingualEntry }) {
+  if (entry.isFinal) return <span>{entry.originalText}</span>;
+  return (
+    <>
+      {entry.originalText && <span className="text-foreground/80">{entry.originalText}</span>}
+      {entry.interimOriginal && (
+        <span className="text-gray-400 italic">{entry.interimOriginal}</span>
+      )}
+      <Cursor />
+    </>
+  );
+}
+
+interface RowProps {
+  entry: BilingualEntry;
+  index: number;
+  targetLangs: string[];
+  showOriginalColumn: boolean;
+}
+
+// Memoized: while someone is speaking only the live row re-renders
+const Row = memo(function Row({ entry, index, targetLangs, showOriginalColumn }: RowProps) {
+  const sourceInColumns = targetLangs.includes(entry.language);
+
+  return (
+    <tr className="align-top">
+      <td className="px-3 py-2 text-muted-foreground">
+        <div>{index + 1}</div>
+        <span className="mt-1 inline-block px-1.5 py-0.5 bg-gray-100 rounded-full text-[10px] text-gray-500">
+          {entry.language?.toUpperCase() || "?"}
+        </span>
+      </td>
+      {showOriginalColumn && (
+        <td className="px-3 py-2">
+          {!sourceInColumns && <OriginalText entry={entry} />}
+        </td>
+      )}
+      {targetLangs.map((lang) => {
+        // The column in the spoken language shows the original, so every
+        // column reads as a complete transcript in that language
+        if (lang === entry.language) {
+          return (
+            <td key={lang} className="px-3 py-2 bg-blue-50/40">
+              <OriginalText entry={entry} />
+            </td>
+          );
+        }
+        const text = entry.translations?.[lang];
+        return (
+          <td key={lang} className="px-3 py-2">
+            {text ? (
+              <span
+                className={
+                  entry.translationProvisional ? "text-gray-400 italic" : undefined
+                }
+              >
+                {text}
+              </span>
+            ) : entry.isFinal ? (
+              <span className="text-gray-300 animate-pulse">翻译中...</span>
+            ) : null}
+          </td>
+        );
+      })}
+    </tr>
+  );
+});
+
 function PresentationPanel({
   entries,
-  currentInterim,
   isRecording,
   targetLangs,
 }: PresentationPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
 
-  // Auto-scroll (instant, once per frame — a smooth scroll restarted on every
-  // update stutters)
   useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      setIsAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 60);
+    };
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, [entries.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Follow new text (instant, once per frame — a smooth scroll restarted on
+  // every update stutters)
+  useEffect(() => {
+    if (!isAtBottom) return;
     const el = scrollRef.current;
     if (!el) return;
     const frame = requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight;
     });
     return () => cancelAnimationFrame(frame);
-  }, [entries, currentInterim]);
+  }, [entries, isAtBottom]);
 
-  const finalEntries = entries.filter((e) => e.isFinal);
+  // Rows with visible content (live rows appear once text arrives)
+  const rows = entries.filter((e) => e.isFinal || e.originalText || e.interimOriginal);
 
-  if (finalEntries.length === 0) {
+  if (rows.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-        {isRecording ? "聆听中..." : "选择目标语言并开始录音"}
+        {isRecording ? "聆听中..." : "选择会议语言并开始录音"}
       </div>
     );
   }
+
+  // Extra column only needed when someone speaks a language that has no
+  // column of its own (or the language is unknown)
+  const showOriginalColumn = rows.some((e) => !targetLangs.includes(e.language));
 
   return (
     <div ref={scrollRef} className="flex-1 overflow-auto">
@@ -51,9 +141,11 @@ function PresentationPanel({
         <thead className="sticky top-0 bg-background border-b border-border z-10">
           <tr>
             <th className="text-left px-3 py-2 font-medium text-muted-foreground w-8">#</th>
-            <th className="text-left px-3 py-2 font-medium text-muted-foreground min-w-[200px]">
-              原文
-            </th>
+            {showOriginalColumn && (
+              <th className="text-left px-3 py-2 font-medium text-muted-foreground min-w-[200px]">
+                原文
+              </th>
+            )}
             {targetLangs.map((lang) => (
               <th
                 key={lang}
@@ -65,39 +157,17 @@ function PresentationPanel({
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
-          {finalEntries.map((entry, idx) => (
-            <tr key={entry.id} className="align-top">
-              <td className="px-3 py-2 text-muted-foreground">{idx + 1}</td>
-              <td className="px-3 py-2">
-                <span className="inline-block mr-1 px-1.5 py-0.5 bg-gray-100 rounded-full text-xs text-gray-500">
-                  {entry.language?.toUpperCase() || "?"}
-                </span>
-                <span>{entry.originalText}</span>
-              </td>
-              {targetLangs.map((lang) => {
-                const text = entry.translations?.[lang];
-                return (
-                  <td key={lang} className="px-3 py-2">
-                    {text ? (
-                      <span>{text}</span>
-                    ) : (
-                      <span className="text-gray-300 animate-pulse">翻译中...</span>
-                    )}
-                  </td>
-                );
-              })}
-            </tr>
+          {rows.map((entry, idx) => (
+            <Row
+              key={entry.id}
+              entry={entry}
+              index={idx}
+              targetLangs={targetLangs}
+              showOriginalColumn={showOriginalColumn}
+            />
           ))}
         </tbody>
       </table>
-
-      {/* Interim text */}
-      {currentInterim && (
-        <div className="px-3 py-2 text-gray-400 italic text-sm">
-          {currentInterim}
-          <span className="ml-0.5 inline-block h-4 w-0.5 bg-gray-400 align-text-bottom animate-pulse" />
-        </div>
-      )}
     </div>
   );
 }

@@ -53,6 +53,9 @@ async function resolveModel(req: NextRequest, requestedModel?: string): Promise<
   return DEFAULT_MODEL;
 }
 
+// Input comes from live speech recognition, often mid-sentence
+const SPEECH_INPUT_RULES = `- The input is live speech recognition output: it may contain recognition errors (use context to infer the intended words) and may be an unfinished sentence — translate what was said so far, do not complete or guess the rest`;
+
 // Track usage asynchronously (fire-and-forget)
 function trackUsage(req: NextRequest, inputTokens: number, outputTokens: number) {
   const authToken = req.cookies.get("auth_token")?.value;
@@ -95,6 +98,7 @@ async function handleMultiTarget(
   terms: string[] | undefined,
   model: string,
   reasoningOverride: string | undefined,
+  provisional: boolean,
 ) {
   const sourceName = sourceLang ? getLanguageName(sourceLang) : "source language";
   const targetNames = targetLangs.map((l) => `${l} (${getLanguageName(l)})`).join(", ");
@@ -107,7 +111,8 @@ Rules:
 - Output a JSON object with one key per target language code
 - Keep the conversational/spoken tone — do not formalize
 - Preserve the speaker's intent, including hedging, filler, and emphasis
-- Keep proper nouns, brand names, and technical terms as-is unless a translation is standard`;
+- Keep proper nouns, brand names, and technical terms as-is unless a translation is standard
+${SPEECH_INPUT_RULES}`;
 
   if (Array.isArray(terms) && terms.length > 0) {
     systemPrompt += `\n\nTerminology — always use these translations when applicable:\n${terms.join(", ")}`;
@@ -206,7 +211,10 @@ Rules:
   }
 
   const latencyMs = Date.now() - start;
-  trackUsage(req, inputTokens, outputTokens);
+  // Provisional (partial-sentence) requests are not recorded: usage lives in
+  // Edge Config, which is rewritten wholesale per call and can't take the
+  // extra write rate. See incrementUsage in lib/edge-config.ts.
+  if (!provisional) trackUsage(req, inputTokens, outputTokens);
 
   return NextResponse.json({ translations, model, latencyMs });
 }
@@ -215,7 +223,8 @@ Rules:
 
 export async function POST(req: NextRequest) {
   try {
-    const { text, sourceLang, targetLang, targetLangs, context, terms, model: rawRequestedModel } = await req.json();
+    const { text, sourceLang, targetLang, targetLangs, context, terms, model: rawRequestedModel, provisional: rawProvisional } = await req.json();
+    const provisional = rawProvisional === true;
 
     // Parse composite model ID: "gpt-5-nano/low" → model "gpt-5-nano", reasoning "low"
     let requestedModel = rawRequestedModel;
@@ -236,7 +245,7 @@ export async function POST(req: NextRequest) {
 
     // Multi-target path (presentation mode)
     if (Array.isArray(targetLangs) && targetLangs.length > 0) {
-      return handleMultiTarget(req, text, sourceLang, targetLangs, context, terms, model, reasoningOverride);
+      return handleMultiTarget(req, text, sourceLang, targetLangs, context, terms, model, reasoningOverride, provisional);
     }
 
     // Single-target path (existing)
@@ -253,7 +262,8 @@ Rules:
 - Output ONLY the translation, nothing else
 - Keep the conversational/spoken tone — do not formalize
 - Preserve the speaker's intent, including hedging, filler, and emphasis
-- Keep proper nouns, brand names, and technical terms as-is unless a translation is standard`;
+- Keep proper nouns, brand names, and technical terms as-is unless a translation is standard
+${SPEECH_INPUT_RULES}`;
 
     if (Array.isArray(terms) && terms.length > 0) {
       systemPrompt += `\n\nTerminology — always use these translations when applicable:\n${terms.join(", ")}`;
@@ -309,7 +319,7 @@ Rules:
     }
 
     const latencyMs = Date.now() - start;
-    trackUsage(req, inputTokens, outputTokens);
+    if (!provisional) trackUsage(req, inputTokens, outputTokens);
 
     return NextResponse.json({
       translatedText,

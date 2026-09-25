@@ -20,6 +20,10 @@ const R2T2_EOS = "YOUDAO_ONETIME_ASR_STREAM_EOS";
 const R2T2_SILENCE_FINALIZE_MS = 2500;
 // Finalize long R2T2 segments at sentence boundaries so translation keeps up
 const R2T2_MAX_SEGMENT_CHARS = 120;
+// Provisional (still-being-spoken) translation: at most one request per
+// segment per interval, once the text has at least this many characters
+const PROVISIONAL_INTERVAL_MS = 1000;
+const PROVISIONAL_MIN_CHARS = 4;
 // How long stop() waits for the engine to flush trailing text
 const DRAIN_TIMEOUT_MS = 3000;
 
@@ -205,15 +209,94 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
   // Derive array from Map for external consumers
   const entriesArray = useMemo(() => Array.from(entries.values()), [entries]);
 
-  // Upsert entry into Map (O(1) lookup)
+  // Upsert entry into Map (O(1) lookup). Transcript updates never carry
+  // translations, so keep whatever translation the entry already shows —
+  // otherwise the provisional translation would blink out on every token.
   const upsertEntry = useCallback((entry: BilingualEntry) => {
-    setEntries((prev) => new Map(prev).set(entry.id, entry));
+    setEntries((prev) => {
+      const old = prev.get(entry.id);
+      return new Map(prev).set(
+        entry.id,
+        old
+          ? {
+              ...entry,
+              translatedText: entry.translatedText || old.translatedText,
+              translations: entry.translations ?? old.translations,
+              translationProvisional: old.translationProvisional,
+            }
+          : entry
+      );
+    });
   }, []);
 
-  // Request GPT translation for a finalized entry
-  const requestTranslation = useCallback((entryId: string, text: string, sourceLang: string) => {
+  // Per-entry translation bookkeeping (provisional throttling + ordering)
+  const translationStateRef = useRef(
+    new Map<string, {
+      inflight: boolean;     // a provisional request is outstanding
+      inflightText: string;
+      lastAt: number;        // when the last provisional request was sent
+      lastText: string;      // source text of the last provisional request
+      shownText: string;     // source text of the translation on screen
+      finalText: string | null; // set once the segment is finalized
+      done: boolean;         // final translation applied
+    }>()
+  );
+
+  const getTranslationState = useCallback((entryId: string) => {
+    let st = translationStateRef.current.get(entryId);
+    if (!st) {
+      st = { inflight: false, inflightText: "", lastAt: 0, lastText: "", shownText: "", finalText: null, done: false };
+      translationStateRef.current.set(entryId, st);
+    }
+    return st;
+  }, []);
+
+  // Translate an entry. provisional = text is still being spoken; the result
+  // is shown (grey) until the final translation replaces it.
+  const requestTranslation = useCallback((
+    entryId: string,
+    text: string,
+    sourceLang: string,
+    provisional = false,
+  ) => {
     const config = configRef.current;
     if (!config || !text) return;
+    const st = getTranslationState(entryId);
+
+    // Build request target(s)
+    let target: { targetLangs: string[] } | { targetLang: string };
+    if (config.translationMode === "presentation" && config.targetLangs && config.targetLangs.length > 0) {
+      // Translate into every selected language except the one being spoken;
+      // that column shows the original
+      const targetLangs = config.targetLangs.filter((l) => l !== sourceLang);
+      if (targetLangs.length === 0) {
+        st.done = true;
+        return;
+      }
+      target = { targetLangs };
+    } else {
+      // Single-target: two_way / one_way
+      let targetLang = config.languageB;
+      if (config.translationMode === "two_way") {
+        const langA = config.languageA[0] === "*" ? "zh" : (config.languageA[0] ?? "zh");
+        if (sourceLang === config.languageB) {
+          targetLang = langA;
+        }
+      }
+      // Skip if source and target are the same
+      if (sourceLang && sourceLang === targetLang) {
+        st.done = true;
+        return;
+      }
+      target = { targetLang };
+    }
+
+    if (provisional) {
+      st.inflight = true;
+      st.inflightText = text;
+      st.lastAt = Date.now();
+      st.lastText = text;
+    }
 
     // Gather last 3 finalized entries as context
     const context = Array.from(entriesRef.current.values())
@@ -221,69 +304,75 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       .slice(-3)
       .map((e) => e.originalText);
 
-    const commonBody = {
-      text,
-      sourceLang,
-      context: context.length > 0 ? context : undefined,
-      terms: config.contextTerms.length > 0 ? config.contextTerms : undefined,
-    };
-
-    // Presentation mode: multi-target with targetLangs
-    if (config.translationMode === "presentation" && config.targetLangs && config.targetLangs.length > 0) {
-      fetch("/api/translate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...commonBody, targetLangs: config.targetLangs }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.translations) {
-            setEntries((prev) => {
-              const existing = prev.get(entryId);
-              if (!existing) return prev;
-              return new Map(prev).set(entryId, {
-                ...existing,
-                translations: data.translations,
-              });
-            });
-          }
-        })
-        .catch((err) => console.error("[Translation] Multi-target failed:", err));
-      return;
-    }
-
-    // Single-target: two_way / one_way
-    let targetLang = config.languageB;
-    if (config.translationMode === "two_way") {
-      const langA = config.languageA[0] === "*" ? "zh" : (config.languageA[0] ?? "zh");
-      if (sourceLang === config.languageB) {
-        targetLang = langA;
-      }
-    }
-
-    // Skip if source and target are the same
-    if (sourceLang && sourceLang === targetLang) return;
-
     fetch("/api/translate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...commonBody, targetLang }),
+      body: JSON.stringify({
+        text,
+        sourceLang,
+        context: context.length > 0 ? context : undefined,
+        terms: config.contextTerms.length > 0 ? config.contextTerms : undefined,
+        ...(provisional ? { provisional: true } : {}),
+        ...target,
+      }),
     })
       .then((res) => res.json())
       .then((data) => {
-        if (data.translatedText) {
-          setEntries((prev) => {
-            const existing = prev.get(entryId);
-            if (!existing) return prev;
-            return new Map(prev).set(entryId, {
-              ...existing,
-              translatedText: data.translatedText,
-            });
+        if (provisional) st.inflight = false;
+        if (st.done) return; // a final translation already landed
+        // A provisional result for exactly the finalized text counts as final
+        const isFinal = !provisional || st.finalText === text;
+        if (!isFinal && st.finalText !== null) return; // stale partial
+        if (!data.translations && !data.translatedText) return;
+        if (isFinal) st.done = true;
+        st.shownText = text;
+        setEntries((prev) => {
+          const existing = prev.get(entryId);
+          if (!existing) return prev;
+          return new Map(prev).set(entryId, {
+            ...existing,
+            ...(data.translations ? { translations: data.translations } : {}),
+            ...(data.translatedText ? { translatedText: data.translatedText } : {}),
+            translationProvisional: !isFinal,
           });
-        }
+        });
       })
-      .catch((err) => console.error("[Translation] Failed:", err));
-  }, []);
+      .catch((err) => {
+        if (provisional) st.inflight = false;
+        console.error("[Translation] Failed:", err);
+      });
+  }, [getTranslationState]);
+
+  // Final translation for a finalized segment — reuses the provisional result
+  // when it already covers exactly this text
+  const requestFinalTranslation = useCallback((entryId: string, text: string, sourceLang: string) => {
+    const st = getTranslationState(entryId);
+    st.finalText = text;
+    if (st.shownText === text) {
+      st.done = true;
+      setEntries((prev) => {
+        const existing = prev.get(entryId);
+        if (!existing || !existing.translationProvisional) return prev;
+        return new Map(prev).set(entryId, { ...existing, translationProvisional: false });
+      });
+      return;
+    }
+    if (st.inflight && st.inflightText === text) return; // its response will count as final
+    requestTranslation(entryId, text, sourceLang);
+  }, [requestTranslation, getTranslationState]);
+
+  // Throttled provisional translation while a segment is still being spoken
+  const maybeTranslateProvisional = useCallback((entryId: string, text: string, sourceLang: string) => {
+    if (optionsRef.current?.skipTranslation) return;
+    if (!sourceLang) return; // targets depend on the source language
+    const trimmed = text.trim();
+    if (trimmed.length < PROVISIONAL_MIN_CHARS) return;
+    const st = getTranslationState(entryId);
+    if (st.inflight || st.finalText !== null) return;
+    if (Date.now() - st.lastAt < PROVISIONAL_INTERVAL_MS) return;
+    if (trimmed === st.lastText) return;
+    requestTranslation(entryId, trimmed, sourceLang, true);
+  }, [requestTranslation, getTranslationState]);
 
   // Finalize current segment into an entry
   const finalizeSegment = useCallback(() => {
@@ -371,12 +460,12 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     if (optionsRef.current?.skipTranslation) {
       optionsRef.current.onSegmentFinalized?.(seg.entryId, originalText, seg.language);
     } else {
-      requestTranslation(seg.entryId, originalText, seg.language);
+      requestFinalTranslation(seg.entryId, originalText, seg.language);
     }
 
     currentSegmentRef.current = null;
     setCurrentInterim("");
-  }, [upsertEntry, requestTranslation]);
+  }, [upsertEntry, requestFinalTranslation]);
 
   // Handle Soniox WebSocket messages
   const handleSonioxMessage = useCallback(
@@ -473,11 +562,13 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         // Finalize: create the entry
         finalizeSegment();
       } else {
-        // Update interim display in entries list
+        // Update interim display in entries list. Only trim the start: the
+        // interim part is appended right after, and trimming the end glued
+        // words together ("Let's" + "review" → "Let'sreview").
         const originalText = seg.tokens
           .map((t) => t.text)
           .join("")
-          .trim();
+          .trimStart();
         const interimOriginal = seg.interimTokens
           .map((t) => t.text)
           .join("");
@@ -495,9 +586,10 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
           endMs: seg.endMs,
           timestamp: new Date(),
         });
+        maybeTranslateProvisional(seg.entryId, originalText + interimOriginal, seg.language);
       }
     },
-    [finalizeSegment, upsertEntry]
+    [finalizeSegment, upsertEntry, maybeTranslateProvisional]
   );
 
   // Handle R2T2 WebSocket messages.
@@ -563,12 +655,22 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
 
           if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
           silenceTimerRef.current = setTimeout(finalizeSegment, R2T2_SILENCE_FINALIZE_MS);
+
+          // R2T2 gives no language ID; guess it from the text so far
+          if (!seg.language && configRef.current && originalText.length >= 3) {
+            seg.language = detectLanguageFromText(
+              originalText,
+              configRef.current.languageA,
+              configRef.current.languageB
+            );
+          }
+          maybeTranslateProvisional(seg.entryId, originalText, seg.language);
         }
       }
 
       if (reset) finalizeSegment();
     },
-    [finalizeSegment, upsertEntry]
+    [finalizeSegment, upsertEntry, maybeTranslateProvisional]
   );
 
   // Release microphone and audio graph
@@ -599,6 +701,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       configRef.current = config;
       currentSegmentRef.current = null;
       lastFinalizedDataRef.current = null;
+      translationStateRef.current.clear();
 
       try {
         // 1. Credentials
@@ -629,7 +732,12 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
 
           // Build language_hints for STT quality (no translation config)
           let languageHints: string[];
-          if (config.translationMode === "one_way" || config.translationMode === "presentation") {
+          if (config.translationMode === "presentation") {
+            // Meeting languages = the selected source languages plus every
+            // column language (e.g. zh/en/es spoken interchangeably)
+            const sources = config.languageA.filter((l) => l !== "*");
+            languageHints = Array.from(new Set([...sources, ...(config.targetLangs ?? [])]));
+          } else if (config.translationMode === "one_way") {
             const isAny = config.languageA.length === 1 && config.languageA[0] === "*";
             languageHints = isAny ? [] : [...config.languageA];
           } else {
@@ -847,6 +955,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     entryCounterRef.current = 0;
     currentSegmentRef.current = null;
     lastFinalizedDataRef.current = null;
+    translationStateRef.current.clear();
   }, []);
 
   useEffect(() => {

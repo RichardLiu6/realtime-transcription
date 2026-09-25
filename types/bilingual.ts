@@ -61,6 +61,7 @@ export interface BilingualEntry {
   originalText: string;
   translatedText: string;
   translations?: Record<string, string>; // Presentation mode: { en: "...", ja: "..." }
+  translationProvisional?: boolean; // true while the translation is from partial (still-being-spoken) text
   interimOriginal?: string;
   isFinal: boolean;
   startMs: number;
