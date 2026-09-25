@@ -20,6 +20,11 @@ export const MODEL_POOL = [
   { id: "openai/gpt-6-luna", label: "GPT-6 Luna", price: "0.10 / 0.50" },
   { id: "openai/gpt-4.1-nano", label: "GPT-4.1 Nano", price: "0.10 / 0.40" },
   { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash", price: "0.049 / 0.098" },
+  { id: "qwen/qwen3.7-flash", label: "Qwen3.7 Flash", price: "0.03 / 0.13" },
+  { id: "bytedance-seed/seed-2.0-mini", label: "Seed 2.0 Mini（字节）", price: "0.10 / 0.40" },
+  { id: "xiaomi/mimo-v2.6-flash", label: "MiMo V2.6 Flash（小米）", price: "0.14 / 0.28" },
+  // Dedicated translation model: own prompt templates, one call per target
+  { id: "tencent/hy-mt2-30b-a3b", label: "Hy-MT2 30B（腾讯翻译模型）", price: "0.074 / 0.295" },
   { id: "qwen-mt-flash", label: "Qwen-MT Flash（阿里云百炼）", price: "0.16 / 0.49" },
   { id: "qwen-mt-lite", label: "Qwen-MT Lite（阿里云百炼）", price: "0.12 / 0.36" },
 ] as const satisfies readonly PoolModel[];

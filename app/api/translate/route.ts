@@ -20,6 +20,11 @@ function isQwenMT(model: string): boolean {
   return model.startsWith("qwen-mt-");
 }
 
+// Tencent Hy-MT dedicated translation models (via OpenRouter)
+function isHyMT(model: string): boolean {
+  return model.startsWith("tencent/hy-mt");
+}
+
 type Provider = "openrouter" | "dashscope";
 
 // Everything but Qwen-MT goes through OpenRouter ("vendor/model" IDs)
@@ -414,34 +419,22 @@ async function translateQwenMT(
   };
 }
 
-// Single- or multi-target via Qwen-MT: one call per target language, in
-// parallel. Same response shape as the chat-model paths.
-async function handleQwenMT(
+type PerTargetFn = (targetLang: string) => Promise<{ text: string; inputTokens: number; outputTokens: number }>;
+
+// Single- or multi-target via a dedicated translation model (Qwen-MT,
+// Hy-MT): one call per target language, in parallel. Same response shape as
+// the chat-model paths.
+async function handlePerTarget(
   req: NextRequest,
-  text: string,
-  sourceLang: string | undefined,
   targetLangs: string[],
   multi: boolean,
-  terms: string[] | undefined,
-  memory: MemoryItem[] | undefined,
   model: string,
   provisional: boolean,
   responseModel: string,
-  continuation?: Continuation,
+  translateOne: PerTargetFn,
 ) {
-  const { pairs, vocabulary } = splitTerms(terms);
-  // Qwen-MT can't take instructions: give it the sentence so far as a
-  // translation-memory pair so the next part stays consistent with it
-  if (continuation && sourceLang) {
-    memory = [
-      ...(memory ?? []),
-      { source: continuation.sourceSoFar, sourceLang, translations: continuation.translationsSoFar },
-    ];
-  }
   const start = Date.now();
-  const results = await Promise.all(
-    targetLangs.map((t) => translateQwenMT(model, text, sourceLang, t, vocabulary, pairs, memory))
-  );
+  const results = await Promise.all(targetLangs.map(translateOne));
   const latencyMs = Date.now() - start;
   const inputTokens = results.reduce((n, r) => n + r.inputTokens, 0);
   const outputTokens = results.reduce((n, r) => n + r.outputTokens, 0);
@@ -453,6 +446,126 @@ async function handleQwenMT(
     return NextResponse.json({ translations, model: responseModel, latencyMs });
   }
   return NextResponse.json({ translatedText: results[0].text, model: responseModel, latencyMs });
+}
+
+// Qwen-MT can't take instructions: the sentence so far (clause mode) goes in
+// as a translation-memory pair so the next part stays consistent with it
+function qwenMTTranslator(
+  model: string,
+  text: string,
+  sourceLang: string | undefined,
+  terms: string[] | undefined,
+  memory: MemoryItem[] | undefined,
+  continuation: Continuation | undefined,
+): PerTargetFn {
+  const { pairs, vocabulary } = splitTerms(terms);
+  if (continuation && sourceLang) {
+    memory = [
+      ...(memory ?? []),
+      { source: continuation.sourceSoFar, sourceLang, translations: continuation.translationsSoFar },
+    ];
+  }
+  return (t) => translateQwenMT(model, text, sourceLang, t, vocabulary, pairs, memory);
+}
+
+// --- Hy-MT (Tencent, via OpenRouter) ---
+//
+// Hy-MT has no system prompt and is trained on fixed instruction templates
+// (huggingface.co/tencent/Hy-MT2-30B-A3B): one user message per target
+// language, Chinese template + Chinese language names when Chinese is
+// involved, English otherwise. Mapped onto them:
+//   - "中文=English" term pairs found in the text → the terminology template
+//   - earlier sentences + their translations → the background template
+//   - clause mode's sentence so far → the personalization template
+
+function hyMTLanguageName(code: string, zh: boolean): string {
+  try {
+    return new Intl.DisplayNames([zh ? "zh" : "en"], { type: "language" }).of(code) || code;
+  } catch {
+    return code;
+  }
+}
+
+function hyMTPrompt(
+  text: string,
+  sourceLang: string | undefined,
+  targetLang: string,
+  termPairs: TermPair[],
+  memory: MemoryItem[] | undefined,
+  continuation: Continuation | undefined,
+): string {
+  const zh = sourceLang === "zh" || targetLang === "zh" || /[\u4e00-\u9fff]/.test(text);
+  const lang = hyMTLanguageName(targetLang, zh);
+  const lower = text.toLowerCase();
+  const terms = termPairs.filter((p) => lower.includes(p.source.toLowerCase())).slice(0, 20);
+  const history = memoryPairs(memory, sourceLang, targetLang);
+
+  if (continuation) {
+    const soFar = continuation.translationsSoFar[targetLang] ?? "";
+    const tasks = zh
+      ? [
+          `【待翻译文本】是一句话的后半部分。前半部分「${continuation.sourceSoFar}」已经译为「${soFar}」，只翻译【待翻译文本】，使译文能直接接在已有译文后面，不要重复或修改前半部分`,
+          ...(terms.length > 0 ? [`术语：${terms.map((p) => `${p.source} 翻译成 ${p.target}`).join("；")}`] : []),
+          `将【待翻译文本】翻译为${lang}，只输出译文`,
+        ]
+      : [
+          `The [Source Text] is the rest of a sentence. Its beginning "${continuation.sourceSoFar}" is already translated as "${soFar}". Translate only the [Source Text] so that it continues that translation directly; do not repeat or change the beginning`,
+          ...(terms.length > 0 ? [`Terminology: ${terms.map((p) => `${p.source} translates to ${p.target}`).join("; ")}`] : []),
+          `Translate the [Source Text] into ${lang} and output only the translation`,
+        ];
+    return zh
+      ? `【待翻译文本】\n${text}\n\n【翻译任务】\n${tasks.map((t, i) => `${i + 1}、${t}`).join("\n")}`
+      : `[Source Text]\n${text}\n\n[Translation Tasks]\n${tasks.map((t, i) => `${i + 1}. ${t}`).join("\n")}`;
+  }
+
+  const termBlock =
+    terms.length === 0
+      ? ""
+      : zh
+      ? `参考下面的翻译：\n${terms.map((p) => `${p.source} 翻译成 ${p.target}`).join("\n")}\n`
+      : `Reference the following translations:\n${terms.map((p) => `${p.source} translates to ${p.target}`).join("\n")}\n\n`;
+
+  if (history.length > 0) {
+    const background = history
+      .map((p) => (zh ? `原文：${p.source}\n译文：${p.target}` : `Source: ${p.source}\nTranslation: ${p.target}`))
+      .join("\n");
+    return zh
+      ? `【背景信息】\n${background}\n\n${termBlock}请结合背景信息将以下文本翻译为${lang}，注意只需要输出翻译后的结果，不要额外解释。\n\n【待翻译文本】\n${text}`
+      : `[Background Information]\n${background}\n\n${termBlock}Please translate the following text into ${lang}, taking the provided background information into consideration. Only output the translated result without any additional explanation.\n\n[Source Text]\n${text}`;
+  }
+
+  return zh
+    ? `${termBlock}将以下文本翻译为${lang}，注意只需要输出翻译后的结果，不要额外解释：\n\n${text}`
+    : `${termBlock}Translate the following text into ${lang}. Note that you should only output the translated result without any additional explanation:\n\n${text}`;
+}
+
+function hyMTTranslator(
+  model: string,
+  text: string,
+  sourceLang: string | undefined,
+  terms: string[] | undefined,
+  memory: MemoryItem[] | undefined,
+  continuation: Continuation | undefined,
+): PerTargetFn {
+  const { pairs } = splitTerms(terms);
+  return async (targetLang) => {
+    const params: Record<string, unknown> = {
+      model,
+      messages: [{ role: "user", content: hyMTPrompt(text, sourceLang, targetLang, pairs, memory, continuation) }],
+      // Recommended sampling for Hy-MT2-30B-A3B
+      temperature: 0.7,
+      top_p: 1.0,
+      max_tokens: 1000,
+    };
+    applyProviderParams(params);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = await getOpenRouter().chat.completions.create(params as any);
+    return {
+      text: r.choices[0]?.message?.content?.trim() || "",
+      inputTokens: r.usage?.prompt_tokens ?? 0,
+      outputTokens: r.usage?.completion_tokens ?? 0,
+    };
+  };
 }
 
 // --- Provider errors & fallback ---
@@ -556,13 +669,19 @@ export async function POST(req: NextRequest) {
 
     model = await resolveModel(req, rawRequestedModel);
     const primary = model;
-    const run = (m: string, responseModel: string) =>
-      isQwenMT(m)
-        ? handleQwenMT(req, text, sourceLang, isMulti ? targetLangs : [targetLang], isMulti, terms, Array.isArray(memory) ? memory : undefined, m, provisional, responseModel, continuation)
-        : isMulti
+    const memoryItems = Array.isArray(memory) ? (memory as MemoryItem[]) : undefined;
+    const run = (m: string, responseModel: string) => {
+      const targets: string[] = isMulti ? targetLangs : [targetLang];
+      // Dedicated translation models: one call per target language
+      if (isQwenMT(m) || isHyMT(m)) {
+        const translator = (isQwenMT(m) ? qwenMTTranslator : hyMTTranslator)(m, text, sourceLang, terms, memoryItems, continuation);
+        return handlePerTarget(req, targets, isMulti, m, provisional, responseModel, translator);
+      }
+      return isMulti
         // Multi-target path (presentation mode)
         ? handleMultiTarget(req, text, sourceLang, targetLangs, context, terms, m, provisional, continuation)
         : handleSingleTarget(req, text, sourceLang, targetLang, context, terms, m, provisional, responseModel, continuation);
+    };
 
     try {
       return await run(primary, rawRequestedModel || primary);
