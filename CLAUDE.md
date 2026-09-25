@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ABL-translate: Web-based real-time bilingual transcription for meetings. Browser captures audio via AudioWorklet, streams to a speech engine over WebSocket — Soniox (cloud, speaker diarization) or self-hosted NetEase Youdao Confucius4-R2T2 — then translates via a per-user model (default: Qwen-MT Plus on Alibaba Cloud Model Studio if `DASHSCOPE_API_KEY` is set, else Qwen3.8 Flash via OpenRouter if `OPENROUTER_API_KEY` is set, else gpt-5-nano). Main use case: Chinese↔English. Supports 54 languages, two-way/one-way translation modes.
+ABL-translate: Web-based real-time bilingual transcription for meetings. Browser captures audio via AudioWorklet, streams to a speech engine over WebSocket — Soniox (cloud, speaker diarization) or self-hosted NetEase Youdao Confucius4-R2T2 — then translates via a per-user model from a pool capped at $0.5 per million tokens (default: Qwen3.8 Flash via OpenRouter; Qwen-MT Flash on Alibaba Cloud Model Studio if `DASHSCOPE_API_KEY` is set). Main use case: Chinese↔English. Supports 54 languages, two-way/one-way translation modes.
 
 - **Live**: https://realtime-transcription-murex.vercel.app
 - **GitHub**: https://github.com/RichardLiu6/realtime-transcription
@@ -21,7 +21,7 @@ npm run lint     # ESLint
 
 ## Tech Stack
 
-Next.js 16.3 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4 + shadcn/ui (Radix). Soniox stt-rt-v5 or Confucius4-R2T2 for real-time STT. Qwen-MT (DashScope) / OpenRouter (Qwen) / OpenAI / Anthropic models for translation (per-user, configured in admin), GPT for summary. Vercel Edge Config for user database. jose for JWT. Resend for email OTP. Transcript rows are memoized (no virtualization).
+Next.js 16.3 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4 + shadcn/ui (Radix). Soniox stt-rt-v5 or Confucius4-R2T2 for real-time STT. Translation and summary via OpenRouter (Qwen / Gemini / GPT / DeepSeek) or Qwen-MT on DashScope (per-user, configured in admin). Vercel Edge Config for user database. jose for JWT. Resend for email OTP. Transcript rows are memoized (no virtualization).
 
 ## Architecture
 
@@ -33,7 +33,7 @@ Browser AudioWorklet (16kHz PCM16, batched 100 ms / 160 ms frames)
              or R2T2 ws_server.py /asr_stream_api_v1        [provider "r2t2"]
   ← Soniox tokens / R2T2 incremental text + VAD `reset`
   → useSonioxTranscription hook builds BilingualEntry[]
-  → POST /api/translate → translation (Qwen-MT / Qwen via OpenRouter / GPT / Claude)
+  → POST /api/translate → translation (OpenRouter pool / Qwen-MT)
   → TranscriptPanel (memoized rows)
 ```
 
@@ -46,12 +46,14 @@ Audio goes directly from browser to the STT engine — the server never touches 
 
 ### Translation providers (`app/api/translate/route.ts`)
 
-- Model ID picks the provider: `qwen-mt-*` → DashScope (`lib/dashscope.ts`), `qwen/*` → OpenRouter (`lib/openrouter.ts`), `claude-*` → Anthropic, else OpenAI. Composite `model/effort` IDs (compare page) only split on a known effort suffix, since OpenRouter IDs contain `/`.
+- **Model pool** (`lib/models.ts`, shared by the route, admin and compare pages): every model ≤ $0.5 per million tokens, input and output. Qwen3.8 Flash (default), Gemini 2.5 Flash-Lite, Qwen3 235B Instruct (open weights, several hosts), GPT-4.1 Nano, DeepSeek V4 Flash — all via OpenRouter — plus Qwen-MT Flash / Lite on DashScope. A user assigned a model that left the pool gets the default. Prices come from OpenRouter list prices; re-check when changing the pool.
+- Model ID picks the provider: `qwen-mt-*` → DashScope (`lib/dashscope.ts`), anything else (`vendor/model`) → OpenRouter (`lib/openrouter.ts`). No direct OpenAI / Anthropic calls.
 - **Qwen-MT** accepts one user message only (no system prompt, no history); config goes in `translation_options`. Mapping: earlier sentences + translations (client `memory`) → `tm_list`; `中文=English` term pairs → `terms` (both directions); plain terms + an ASR note → `domains`. Multi-target = one call per target language, in parallel.
-- Chat models (GPT/Claude/Qwen3.7) get terms and previous sentences in the prompt.
+- Chat models get terms and previous sentences in the prompt; multi-target asks for a JSON object per language (`json_schema`, fence-tolerant parse).
 - Terms are comma-separated; `a=b` entries are pairs. Speech engines receive the flattened word list.
-- On a provider failure (401/402/403/429/5xx, empty balance, DashScope `Arrearage`) the route first tries another model on the same provider (Qwen3.8 Flash → Qwen3.7 Plus, Qwen-MT Plus → Flash: an OpenRouter 429 is usually one upstream model rate-limited), then the other configured providers in order Qwen-MT → Qwen via OpenRouter → GPT-5 Nano → Claude Haiku. A provider that reports no credits / bad key is skipped as a fallback for 10 min (per server instance). Explicit model requests (compare page) are never substituted. The Chinese error message the client shows in the banner names the default model's failure first, then the backup's ("Qwen3.8 Flash — OpenRouter 限流；备用 GPT-5 Nano 也失败（OpenAI 账户额度已用完）").
-- SDK clients use `maxRetries: 1`. OpenRouter requests send `reasoning: {enabled: false}` and `provider: {sort: "latency"}`.
+- **Fallback** (`FALLBACK_CHAIN`): on 401/402/403/404/429/5xx, a network error/timeout, or DashScope `Arrearage`, the route tries Qwen-MT Flash → Qwen-MT Lite → Qwen3.8 Flash → Gemini Flash-Lite → Qwen3 235B → GPT-4.1 Nano, skipping the failed model and providers without a key; an account failure (no credits / bad key) skips that provider's remaining models. Different vendors follow the default, so one upstream's rate limit (Qwen3.8 Flash is served by Alibaba only) doesn't stop translation. Explicit model requests (compare page) are never substituted. The Chinese banner message names the default model's failure first, then the last backup's.
+- SDK clients use `maxRetries: 0` (the fallback chain retries on another model instead) and a 15 s timeout. OpenRouter requests send `reasoning: {enabled: false}` and `provider: {sort: "latency"}`.
+- `/api/summarize` uses Qwen3.8 Flash, falling back to Gemini Flash-Lite.
 - Every translation logs `[translate] model=… ms=… in=… out=… reasoning=…` to the Vercel runtime logs (reasoning > 0 means the model thought anyway).
 
 ### Streaming translation (translate while the sentence is spoken)
@@ -144,11 +146,9 @@ Central logic for the entire app:
 
 ```bash
 SONIOX_API_KEY=...           # Soniox STT API key
-DASHSCOPE_API_KEY=sk-...     # Alibaba Cloud Model Studio — Qwen-MT (default translator when set)
+DASHSCOPE_API_KEY=sk-...     # Alibaba Cloud Model Studio — Qwen-MT Flash (default translator when set)
 DASHSCOPE_BASE_URL=...       # Optional; default intl endpoint, use https://dashscope.aliyuncs.com/compatible-mode/v1 for a China-region key
-OPENROUTER_API_KEY=sk-or-... # Qwen3.x via OpenRouter
-OPENAI_API_KEY=sk-...        # GPT translations & summaries
-ANTHROPIC_API_KEY=...        # Claude translation models (optional)
+OPENROUTER_API_KEY=sk-or-... # Translation pool + summaries (required unless DashScope-only)
 R2T2_WS_URL=wss://.../asr_stream_api_v1  # Self-hosted R2T2 (optional)
 R2T2_SECRET_KEY=...          # Must match secret_key_list in ws_server.py
 T3PO_BASE_URL=https://.../v1 # OpenAI-compatible server running Confucius4-T3PO (enables 同传)

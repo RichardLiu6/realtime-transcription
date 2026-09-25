@@ -8,23 +8,9 @@ import { ArrowLeft, Mic, Square } from "lucide-react";
 import Link from "next/link";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import type { TranslationMode } from "@/types/bilingual";
+import { MODEL_POOL } from "@/lib/models";
 
-const COMPARE_MODELS = [
-  { id: "gpt-5-nano/minimal", label: "Nano (minimal)" },
-  { id: "gpt-5-nano/low", label: "Nano (low)" },
-  { id: "gpt-5-nano/medium", label: "Nano (medium)" },
-  { id: "gpt-5-mini", label: "GPT-5 Mini" },
-  { id: "gpt-4o-mini", label: "GPT-4o Mini" },
-  { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
-  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
-  { id: "qwen-mt-plus", label: "Qwen-MT Plus" },
-  { id: "qwen-mt-flash", label: "Qwen-MT Flash" },
-  { id: "qwen-mt-lite", label: "Qwen-MT Lite" },
-  { id: "qwen/qwen3.8-flash", label: "Qwen3.8 Flash" },
-  { id: "qwen/qwen3.7-plus", label: "Qwen3.7 Plus" },
-  { id: "qwen/qwen3.7-max", label: "Qwen3.7 Max" },
-  { id: "qwen/qwen3.8-max-0902", label: "Qwen3.8 Max" },
-];
+const COMPARE_MODELS = MODEL_POOL.map((m) => ({ id: m.id, label: m.label }));
 
 interface ModelResult {
   model: string;
@@ -42,7 +28,7 @@ interface CompareRow {
 
 export default function ComparePage() {
   const [selectedModels, setSelectedModels] = useState<Set<string>>(
-    new Set(["qwen/qwen3.8-flash", "qwen/qwen3.7-plus"])
+    new Set(["qwen/qwen3.8-flash", "google/gemini-2.5-flash-lite"])
   );
   const [languageA, setLanguageA] = useState("*");
   const [languageB, setLanguageB] = useState("en");

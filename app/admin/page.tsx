@@ -14,21 +14,12 @@ import {
   GitCompareArrows,
 } from "lucide-react";
 import Link from "next/link";
+import { MODEL_POOL } from "@/lib/models";
 
+// Pool: every model ≤ $0.5 per million tokens (input and output)
 const SUPPORTED_MODELS = [
-  { value: "", label: "默认 (Qwen-MT Plus → Qwen3.8 Flash → Nano，按已配置的 Key)" },
-  { value: "gpt-5-nano", label: "GPT-5 Nano" },
-  { value: "gpt-5-mini", label: "GPT-5 Mini" },
-  { value: "gpt-4o-mini", label: "GPT-4o Mini" },
-  { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
-  { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
-  { value: "qwen-mt-plus", label: "Qwen-MT Plus (阿里云百炼)" },
-  { value: "qwen-mt-flash", label: "Qwen-MT Flash (阿里云百炼)" },
-  { value: "qwen-mt-lite", label: "Qwen-MT Lite (阿里云百炼)" },
-  { value: "qwen/qwen3.8-flash", label: "Qwen3.8 Flash (OpenRouter，快)" },
-  { value: "qwen/qwen3.7-plus", label: "Qwen3.7 Plus (OpenRouter)" },
-  { value: "qwen/qwen3.7-max", label: "Qwen3.7 Max (OpenRouter)" },
-  { value: "qwen/qwen3.8-max-0902", label: "Qwen3.8 Max (OpenRouter)" },
+  { value: "", label: "默认（Qwen3.8 Flash；配了百炼 Key 则 Qwen-MT Flash）" },
+  ...MODEL_POOL.map((m) => ({ value: m.id, label: `${m.label} · $${m.price}/M` })),
 ];
 
 interface MonthlyUsage {

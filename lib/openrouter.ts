@@ -11,8 +11,12 @@ export function getOpenRouter(): OpenAI {
     _client = new OpenAI({
       apiKey: process.env.OPENROUTER_API_KEY,
       baseURL: process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
-      // One retry at most (see lib/openai.ts)
-      maxRetries: 1,
+      // No SDK retries: a rate-limited or failing model is retried on the
+      // next model of the fallback chain (app/api/translate/route.ts), which
+      // is faster than waiting out the SDK's backoff on the same model
+      maxRetries: 0,
+      // A hung request must not stall the transcript
+      timeout: 15_000,
       defaultHeaders: {
         "HTTP-Referer": "https://realtime-transcription-murex.vercel.app",
         "X-Title": "ABL-translate",

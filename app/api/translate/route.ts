@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOpenAI } from "@/lib/openai";
 import { getOpenRouter } from "@/lib/openrouter";
 import { getDashScope } from "@/lib/dashscope";
-import { getAnthropic } from "@/lib/anthropic";
 import { verifyToken } from "@/lib/auth";
-import { getUserModel, getDefaultModel, QWEN_MT_DEFAULT_MODEL, QWEN_DEFAULT_MODEL, QWEN_BACKUP_MODEL, OPENAI_DEFAULT_MODEL, SUPPORTED_MODELS, incrementUsage } from "@/lib/edge-config";
+import { getUserModel, getDefaultModel, incrementUsage } from "@/lib/edge-config";
+import { FALLBACK_CHAIN, isSupportedModel, modelLabel } from "@/lib/models";
 import { jwtVerify } from "jose";
 
 function getLanguageName(code: string): string {
@@ -15,44 +14,32 @@ function getLanguageName(code: string): string {
   }
 }
 
-function isClaude(model: string): boolean {
-  return model.startsWith("claude-");
-}
-
-// OpenRouter model IDs are vendor-prefixed ("qwen/qwen3.7-plus")
-function isOpenRouter(model: string): boolean {
-  return model.startsWith("qwen/");
-}
 
 // Qwen-MT dedicated translation models on DashScope
 function isQwenMT(model: string): boolean {
   return model.startsWith("qwen-mt-");
 }
 
-type Provider = "openai" | "anthropic" | "openrouter" | "dashscope";
+type Provider = "openrouter" | "dashscope";
 
+// Everything but Qwen-MT goes through OpenRouter ("vendor/model" IDs)
 function providerOf(model: string): Provider {
-  if (isClaude(model)) return "anthropic";
-  if (isOpenRouter(model)) return "openrouter";
-  if (isQwenMT(model)) return "dashscope";
-  return "openai";
+  return isQwenMT(model) ? "dashscope" : "openrouter";
 }
 
-// OpenAI-compatible client for GPT and OpenRouter models
-function chatClient(model: string) {
-  return isOpenRouter(model) ? getOpenRouter() : getOpenAI();
-}
+const PROVIDER_KEY: Record<Provider, string> = {
+  openrouter: "OPENROUTER_API_KEY",
+  dashscope: "DASHSCOPE_API_KEY",
+};
 
 // OpenRouter tuning for live translation:
-// - Qwen3.x models may think before answering, which is pure latency here;
-//   OpenRouter ignores the field for models that don't reason
+// - reasoning models (Qwen3.x, DeepSeek) may think before answering, which
+//   is pure latency here; OpenRouter ignores the field for models that don't
 // - by default OpenRouter load-balances toward the cheapest provider;
-//   sort by latency instead
-function applyProviderParams(model: string, params: Record<string, unknown>) {
-  if (isOpenRouter(model)) {
-    params.reasoning = { enabled: false };
-    params.provider = { sort: "latency" };
-  }
+//   sort by latency instead (it still falls back to the next provider)
+function applyProviderParams(params: Record<string, unknown>) {
+  params.reasoning = { enabled: false };
+  params.provider = { sort: "latency" };
 }
 
 // One line per translation in the Vercel logs, to see where time goes.
@@ -80,10 +67,6 @@ function parseJsonObject(raw: string): Record<string, string> {
   }
 }
 
-const REASONING_MODELS = new Set(["gpt-5-mini", "gpt-5-nano"]);
-const NO_TEMPERATURE_MODELS = new Set(["gpt-5-mini", "gpt-5-nano"]);
-const NEW_API_MODELS = new Set(["gpt-5-mini", "gpt-5-nano", "gpt-5.2"]);
-
 async function isAdmin(req: NextRequest): Promise<boolean> {
   const adminToken = req.cookies.get("admin_token")?.value;
   if (!adminToken) return false;
@@ -98,7 +81,7 @@ async function isAdmin(req: NextRequest): Promise<boolean> {
 
 async function resolveModel(req: NextRequest, requestedModel?: string): Promise<string> {
   // Admin can override model (for compare page)
-  if (requestedModel && (SUPPORTED_MODELS as readonly string[]).includes(requestedModel)) {
+  if (isSupportedModel(requestedModel)) {
     if (await isAdmin(req)) {
       return requestedModel;
     }
@@ -212,7 +195,6 @@ async function handleMultiTarget(
   context: string[] | undefined,
   terms: string[] | undefined,
   model: string,
-  reasoningOverride: string | undefined,
   provisional: boolean,
   continuation?: Continuation,
 ) {
@@ -242,102 +224,39 @@ ${SPEECH_INPUT_RULES}`;
 
   const contextMsgs = buildContextMessages(context);
   const start = Date.now();
-  let translations: Record<string, string> = {};
-  let inputTokens = 0;
-  let outputTokens = 0;
-  // OpenAI-compatible usage (incl. reasoning tokens), for logTiming
-  let chatUsage: Parameters<typeof logTiming>[2];
-
-  if (isClaude(model)) {
-    // Claude: use tool_use for structured output
-    const toolSchema = {
-      type: "object" as const,
-      properties: Object.fromEntries(
-        targetLangs.map((l) => [l, { type: "string" as const, description: `Translation in ${getLanguageName(l)}` }])
-      ),
-      required: targetLangs,
-    };
-
-    const anthropicMessages = [
-      ...contextMsgs,
-      { role: "user" as const, content: userContent },
-    ];
-
-    const r = await getAnthropic().messages.create({
-      model,
-      max_tokens: Math.min(200 * targetLangs.length, 4000),
-      temperature: 0.3,
-      system: systemPrompt,
-      messages: anthropicMessages,
-      tools: [{
-        name: "output_translations",
-        description: "Output translations for each target language",
-        input_schema: toolSchema,
-      }],
-      tool_choice: { type: "tool" as const, name: "output_translations" },
-    });
-
-    const toolBlock = r.content.find((b) => b.type === "tool_use");
-    if (toolBlock && toolBlock.type === "tool_use") {
-      translations = toolBlock.input as Record<string, string>;
-    }
-    inputTokens = r.usage?.input_tokens ?? 0;
-    outputTokens = r.usage?.output_tokens ?? 0;
-  } else {
-    // OpenAI: use json_schema structured output
-    const schema = {
-      type: "object",
-      properties: Object.fromEntries(
-        targetLangs.map((l) => [l, { type: "string" }])
-      ),
-      required: targetLangs,
-      additionalProperties: false,
-    };
-
-    const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+  // JSON object keyed by language (fence-tolerant parse below)
+  const schema = {
+    type: "object",
+    properties: Object.fromEntries(targetLangs.map((l) => [l, { type: "string" }])),
+    required: targetLangs,
+    additionalProperties: false,
+  };
+  const params: Record<string, unknown> = {
+    model,
+    messages: [
       { role: "system", content: systemPrompt },
       ...contextMsgs,
       { role: "user", content: userContent },
-    ];
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: { name: "multi_translation", schema, strict: true },
+    },
+    temperature: 0.3,
+    max_tokens: Math.min(200 * targetLangs.length, 4000),
+  };
+  applyProviderParams(params);
 
-    const params: Record<string, unknown> = {
-      model,
-      messages,
-      response_format: {
-        type: "json_schema",
-        json_schema: { name: "multi_translation", schema, strict: true },
-      },
-    };
-
-    if (!NO_TEMPERATURE_MODELS.has(model)) {
-      params.temperature = 0.3;
-    }
-    const tokenLimit = Math.min(200 * targetLangs.length, 4000);
-    if (NEW_API_MODELS.has(model)) {
-      params.max_completion_tokens = tokenLimit;
-    } else {
-      params.max_tokens = tokenLimit;
-    }
-    if (REASONING_MODELS.has(model)) {
-      params.reasoning_effort = reasoningOverride || "minimal";
-    }
-    applyProviderParams(model, params);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const r = await chatClient(model).chat.completions.create(params as any);
-    chatUsage = r.usage;
-    const raw = r.choices[0]?.message?.content?.trim() || "{}";
-    translations = parseJsonObject(raw);
-    inputTokens = r.usage?.prompt_tokens ?? 0;
-    outputTokens = r.usage?.completion_tokens ?? 0;
-  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r = await getOpenRouter().chat.completions.create(params as any);
+  const translations = parseJsonObject(r.choices[0]?.message?.content?.trim() || "{}");
 
   const latencyMs = Date.now() - start;
-  logTiming(model, latencyMs, chatUsage ?? { prompt_tokens: inputTokens, completion_tokens: outputTokens }, provisional);
+  logTiming(model, latencyMs, r.usage, provisional);
   // Provisional (partial-sentence) requests are not recorded: usage lives in
   // Edge Config, which is rewritten wholesale per call and can't take the
   // extra write rate. See incrementUsage in lib/edge-config.ts.
-  if (!provisional) trackUsage(req, inputTokens, outputTokens);
+  if (!provisional) trackUsage(req, r.usage?.prompt_tokens ?? 0, r.usage?.completion_tokens ?? 0);
 
   return NextResponse.json({ translations, model, latencyMs });
 }
@@ -352,7 +271,6 @@ async function handleSingleTarget(
   context: string[] | undefined,
   terms: string[] | undefined,
   model: string,
-  reasoningOverride: string | undefined,
   provisional: boolean,
   responseModel: string,
   continuation?: Continuation,
@@ -384,54 +302,16 @@ ${SPEECH_INPUT_RULES}`;
   ];
 
   const start = Date.now();
-  let translatedText: string;
-  let inputTokens = 0;
-  let outputTokens = 0;
-  // OpenAI-compatible usage (incl. reasoning tokens), for logTiming
-  let chatUsage: Parameters<typeof logTiming>[2];
+  const params: Record<string, unknown> = { model, messages, temperature: 0.3, max_tokens: 1000 };
+  applyProviderParams(params);
 
-  if (isClaude(model)) {
-    const anthropicMessages = messages
-      .filter((m) => m.role !== "system")
-      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
-
-    const r = await getAnthropic().messages.create({
-      model,
-      max_tokens: 1000,
-      temperature: 0.3,
-      system: systemPrompt,
-      messages: anthropicMessages,
-    });
-    translatedText = r.content[0].type === "text" ? r.content[0].text.trim() : "";
-    inputTokens = r.usage?.input_tokens ?? 0;
-    outputTokens = r.usage?.output_tokens ?? 0;
-  } else {
-    const params: Record<string, unknown> = { model, messages };
-
-    if (!NO_TEMPERATURE_MODELS.has(model)) {
-      params.temperature = 0.3;
-    }
-    if (NEW_API_MODELS.has(model)) {
-      params.max_completion_tokens = 1000;
-    } else {
-      params.max_tokens = 1000;
-    }
-    if (REASONING_MODELS.has(model)) {
-      params.reasoning_effort = reasoningOverride || "minimal";
-    }
-    applyProviderParams(model, params);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const r = await chatClient(model).chat.completions.create(params as any);
-    chatUsage = r.usage;
-    translatedText = r.choices[0]?.message?.content?.trim() || "";
-    inputTokens = r.usage?.prompt_tokens ?? 0;
-    outputTokens = r.usage?.completion_tokens ?? 0;
-  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r = await getOpenRouter().chat.completions.create(params as any);
+  const translatedText = r.choices[0]?.message?.content?.trim() || "";
 
   const latencyMs = Date.now() - start;
-  logTiming(model, latencyMs, chatUsage ?? { prompt_tokens: inputTokens, completion_tokens: outputTokens }, provisional);
-  if (!provisional) trackUsage(req, inputTokens, outputTokens);
+  logTiming(model, latencyMs, r.usage, provisional);
+  if (!provisional) trackUsage(req, r.usage?.prompt_tokens ?? 0, r.usage?.completion_tokens ?? 0);
 
   return NextResponse.json({
     translatedText,
@@ -577,7 +457,7 @@ async function handleQwenMT(
 
 // --- Provider errors & fallback ---
 
-// Status + code from an OpenAI / Anthropic SDK error
+// Status + code from an OpenAI-SDK error (OpenRouter / DashScope)
 function providerError(error: unknown): { status?: number; code?: string; message: string } {
   const e = error as { status?: number; code?: string; error?: { type?: string; error?: { type?: string } }; message?: string };
   return {
@@ -587,109 +467,70 @@ function providerError(error: unknown): { status?: number; code?: string; messag
   };
 }
 
-// Out of credits / invalid key / rate limited / provider down: worth retrying
-// on the other provider. Bad requests (our fault) are not.
+// Out of credits / invalid key / rate limited / model unavailable / provider
+// down: worth trying another model. Other bad requests (our fault) are not.
 function isProviderFailure(error: unknown): boolean {
-  const { status, message } = providerError(error);
-  if (status === undefined) return false;
-  if (status === 401 || status === 402 || status === 403 || status === 429 || status >= 500) return true;
-  // Anthropic reports an empty balance as a 400, DashScope an overdue
-  // account as 400 "Arrearage"
-  return status === 400 && /credit balance|arrearage/i.test(message + " " + (providerError(error).code ?? ""));
+  const { status, code, message } = providerError(error);
+  // Network error or timeout (OpenAI SDK APIConnectionError / APIConnectionTimeoutError)
+  if (status === undefined) return /Connection/.test((error as Error)?.constructor?.name ?? "");
+  if (status === 401 || status === 402 || status === 403 || status === 404 || status === 429 || status >= 500) return true;
+  // DashScope reports an overdue account as 400 "Arrearage"
+  return status === 400 && /arrearage/i.test(message + " " + (code ?? ""));
 }
 
-// A provider that answered "out of credits" / "bad key" won't recover within
-// a meeting: skip it as a fallback for a while instead of paying a wasted
-// round trip on every sentence (per server instance, best effort)
-const DEAD_PROVIDER_MS = 10 * 60 * 1000;
-const deadUntil = new Map<Provider, number>();
-
+// Out of credits / bad key: the whole provider is unusable, not one model
 function isAccountFailure(error: unknown): boolean {
   const { status, code, message } = providerError(error);
   if (status === 401 || status === 402 || status === 403) return true;
-  return code === "insufficient_quota" || code === "credit_balance_exhausted" || code === "Arrearage" ||
-    (status !== 429 && /credit|arrearage/i.test(message)) || /no credits remaining/i.test(message);
+  return code === "Arrearage" || /arrearage|insufficient credits/i.test(message);
 }
 
-function markFailure(model: string, error: unknown) {
-  if (isAccountFailure(error)) deadUntil.set(providerOf(model), Date.now() + DEAD_PROVIDER_MS);
-}
-
-// Models to try, in order, when `model` fails: first another model on the
-// same provider (an OpenRouter 429 is usually one upstream model being rate
-// limited, not the account), then the other providers — only providers whose
-// key is configured and that haven't just reported an account problem
+// Models to try, in order, when `model` fails: the fallback chain minus the
+// failed model and providers without a key
 function fallbackModelsFor(model: string): string[] {
-  const candidates: [Provider, string, string | undefined][] = [
-    ["dashscope", QWEN_MT_DEFAULT_MODEL, process.env.DASHSCOPE_API_KEY],
-    ["dashscope", "qwen-mt-flash", process.env.DASHSCOPE_API_KEY],
-    ["openrouter", QWEN_DEFAULT_MODEL, process.env.OPENROUTER_API_KEY],
-    ["openrouter", QWEN_BACKUP_MODEL, process.env.OPENROUTER_API_KEY],
-    ["openai", OPENAI_DEFAULT_MODEL, process.env.OPENAI_API_KEY],
-    ["anthropic", "claude-haiku-4-5-20251001", process.env.ANTHROPIC_API_KEY],
-  ];
-  const primary = providerOf(model);
-  const now = Date.now();
-  const usable = candidates.filter(
-    ([provider, m, key]) => m !== model && !!key && (provider === primary || (deadUntil.get(provider) ?? 0) <= now)
-  );
-  // Same provider first, then the rest in order
-  return [
-    ...usable.filter(([p]) => p === primary),
-    ...usable.filter(([p]) => p !== primary),
-  ].map(([, m]) => m);
+  return FALLBACK_CHAIN.filter((m) => m !== model && !!process.env[PROVIDER_KEY[providerOf(m)]]);
 }
 
 const PROVIDER_NAME: Record<Provider, string> = {
-  openai: "OpenAI",
-  anthropic: "Anthropic",
   openrouter: "OpenRouter",
   dashscope: "阿里云百炼",
-};
-
-const MODEL_NAME: Record<string, string> = {
-  "qwen/qwen3.8-flash": "Qwen3.8 Flash",
-  "qwen/qwen3.7-plus": "Qwen3.7 Plus",
-  "qwen-mt-plus": "Qwen-MT Plus",
-  "qwen-mt-flash": "Qwen-MT Flash",
-  "gpt-5-nano": "GPT-5 Nano",
-  "claude-haiku-4-5-20251001": "Claude Haiku",
 };
 
 // Why one model failed, in a few words
 function failureReason(error: unknown, model: string): { status: number; code: string; reason: string } {
   const { status, code, message } = providerError(error);
   const provider = PROVIDER_NAME[providerOf(model)];
-  if (status === 429 && !/no credits remaining|insufficient_quota/i.test(message + " " + (code ?? ""))) {
-    return { status: 429, code: "rate_limit", reason: `${provider} 限流（请求过于频繁）` };
+  if (status === 429) {
+    return { status: 429, code: "rate_limit", reason: "限流（请求过于频繁）" };
   }
-  if (status === 402 || code === "insufficient_quota" || code === "credit_balance_exhausted" || code === "Arrearage" || /credit|arrearage/i.test(message)) {
+  if (status === 402 || code === "Arrearage" || /arrearage|insufficient credits/i.test(message)) {
     return { status: 402, code: "quota", reason: `${provider} 账户额度已用完` };
   }
   if (status === 401 || status === 403) {
     return { status: 502, code: "auth", reason: `${provider} API Key 无效或无权限` };
   }
+  if (status === 404) {
+    return { status: 502, code: "error", reason: "模型暂不可用" };
+  }
   if (status !== undefined && status >= 500) {
-    return { status: 502, code: "error", reason: `${provider} 服务暂时不可用` };
+    return { status: 502, code: "error", reason: "服务暂时不可用" };
   }
   return { status: 500, code: "error", reason: "翻译服务出错" };
 }
 
 // User-facing message; the client shows it in the error banner. Names the
-// model that was actually configured — a failing backup (e.g. an empty
-// OpenAI account) must not hide why the default model failed.
+// configured model first — a failing backup must not hide why it failed.
 function describeFailure(
   primary: { error: unknown; model: string },
   fallback?: { error: unknown; model: string },
 ): { status: number; body: { error: string; code: string } } {
   const first = failureReason(primary.error, primary.model);
-  const name = MODEL_NAME[primary.model] ?? primary.model;
-  let text = `翻译失败：${name} — ${first.reason}`;
+  let text = `翻译失败：${modelLabel(primary.model)} — ${first.reason}`;
   if (fallback) {
     const second = failureReason(fallback.error, fallback.model);
-    text += `；备用 ${MODEL_NAME[fallback.model] ?? fallback.model} 也失败（${second.reason}）`;
+    text += `；备用 ${modelLabel(fallback.model)} 也失败（${second.reason}）`;
   } else if (first.code === "quota") {
-    text += "，请充值或在后台切换翻译模型";
+    text += "，请充值";
   }
   return { status: first.status, body: { error: text, code: first.code } };
 }
@@ -704,20 +545,6 @@ export async function POST(req: NextRequest) {
     );
     const provisional = rawProvisional === true;
 
-    // Parse composite model ID: "gpt-5-nano/low" → model "gpt-5-nano", reasoning "low".
-    // Only a known effort suffix counts: OpenRouter IDs contain "/" too
-    // ("qwen/qwen3.7-plus").
-    let requestedModel = rawRequestedModel;
-    let reasoningOverride: string | undefined;
-    if (typeof rawRequestedModel === "string") {
-      const slash = rawRequestedModel.lastIndexOf("/");
-      const effort = rawRequestedModel.slice(slash + 1);
-      if (slash > 0 && ["minimal", "low", "medium", "high"].includes(effort)) {
-        requestedModel = rawRequestedModel.slice(0, slash);
-        reasoningOverride = effort;
-      }
-    }
-
     if (!text || typeof text !== "string") {
       return NextResponse.json({ error: "Missing text" }, { status: 400 });
     }
@@ -727,30 +554,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing targetLang" }, { status: 400 });
     }
 
-    model = await resolveModel(req, requestedModel);
+    model = await resolveModel(req, rawRequestedModel);
     const primary = model;
     const run = (m: string, responseModel: string) =>
       isQwenMT(m)
         ? handleQwenMT(req, text, sourceLang, isMulti ? targetLangs : [targetLang], isMulti, terms, Array.isArray(memory) ? memory : undefined, m, provisional, responseModel, continuation)
         : isMulti
         // Multi-target path (presentation mode)
-        ? handleMultiTarget(req, text, sourceLang, targetLangs, context, terms, m, reasoningOverride, provisional, continuation)
-        : handleSingleTarget(req, text, sourceLang, targetLang, context, terms, m, reasoningOverride, provisional, responseModel, continuation);
+        ? handleMultiTarget(req, text, sourceLang, targetLangs, context, terms, m, provisional, continuation)
+        : handleSingleTarget(req, text, sourceLang, targetLang, context, terms, m, provisional, responseModel, continuation);
 
     try {
       return await run(primary, rawRequestedModel || primary);
     } catch (error) {
       // The compare page asks for a specific model — don't substitute there
       if (rawRequestedModel || !isProviderFailure(error)) throw error;
-      markFailure(primary, error);
+      // Out of credits / bad key: the provider's other models fail too
+      const deadProviders = new Set<Provider>();
+      if (isAccountFailure(error)) deadProviders.add(providerOf(primary));
       let lastError = error;
       let lastModel = primary;
       for (const fallback of fallbackModelsFor(primary)) {
+        if (deadProviders.has(providerOf(fallback))) continue;
         console.error(`Translation with ${lastModel} failed, falling back to ${fallback}:`, providerError(lastError).message);
         try {
           return await run(fallback, fallback);
         } catch (e) {
-          markFailure(fallback, e);
+          if (isAccountFailure(e)) deadProviders.add(providerOf(fallback));
           lastError = e;
           lastModel = fallback;
           if (!isProviderFailure(e)) break;

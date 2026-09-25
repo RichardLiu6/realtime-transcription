@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOpenAI } from "@/lib/openai";
+import { getOpenRouter } from "@/lib/openrouter";
+
+// Via OpenRouter, from the same ≤ $0.5 / M pool as translation; the second
+// model (another vendor) covers a rate-limited first
+const SUMMARY_MODELS = ["qwen/qwen3.8-flash", "google/gemini-2.5-flash-lite"];
 
 interface TranscriptEntry {
   text: string;
@@ -38,17 +42,28 @@ export async function POST(req: NextRequest) {
       })
       .join("\n");
 
-    const completion = await getOpenAI().chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: formattedTranscript },
-      ],
-      temperature: 0.5,
-      max_tokens: 2000,
-    });
+    let completion;
+    for (const [i, model] of SUMMARY_MODELS.entries()) {
+      try {
+        completion = await getOpenRouter().chat.completions.create({
+          model,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: formattedTranscript },
+          ],
+          temperature: 0.5,
+          max_tokens: 2000,
+          // @ts-expect-error OpenRouter extension: skip thinking
+          reasoning: { enabled: false },
+        });
+        break;
+      } catch (error) {
+        if (i === SUMMARY_MODELS.length - 1) throw error;
+        console.error(`Summary with ${model} failed, falling back:`, error instanceof Error ? error.message : error);
+      }
+    }
 
-    const summary = completion.choices[0]?.message?.content?.trim() || "";
+    const summary = completion?.choices[0]?.message?.content?.trim() || "";
 
     return NextResponse.json({ summary });
   } catch (error) {

@@ -1,37 +1,13 @@
 import { createClient, type EdgeConfigClient } from "@vercel/edge-config";
+import { isSupportedModel, QWEN_MT_DEFAULT_MODEL, OPENROUTER_DEFAULT_MODEL, type TranslationModel } from "@/lib/models";
 
-export const SUPPORTED_MODELS = [
-  "gpt-5-nano",
-  "gpt-5-mini",
-  "gpt-4o-mini",
-  "claude-haiku-4-5-20251001",
-  "claude-sonnet-4-6",
-  // Qwen-MT translation models via Alibaba Cloud Model Studio (DashScope)
-  "qwen-mt-plus",
-  "qwen-mt-flash",
-  "qwen-mt-lite",
-  // Qwen via OpenRouter
-  "qwen/qwen3.8-flash",
-  "qwen/qwen3.7-plus",
-  "qwen/qwen3.7-max",
-  "qwen/qwen3.8-max-0902",
-] as const;
+export { SUPPORTED_MODELS, type TranslationModel } from "@/lib/models";
 
-export type TranslationModel = (typeof SUPPORTED_MODELS)[number];
-export const QWEN_MT_DEFAULT_MODEL: TranslationModel = "qwen-mt-plus";
-// Flash over Plus: live translation is latency-bound, and short sentences
-// don't need the bigger model
-export const QWEN_DEFAULT_MODEL: TranslationModel = "qwen/qwen3.8-flash";
-// Tried when the default is rate limited upstream (separate per-model limits)
-export const QWEN_BACKUP_MODEL: TranslationModel = "qwen/qwen3.7-plus";
-export const OPENAI_DEFAULT_MODEL: TranslationModel = "gpt-5-nano";
-
-// Default for users without an admin-assigned model: the first configured
-// of Qwen-MT Plus (DashScope), Qwen3.8 Flash (OpenRouter), GPT-5 Nano
+// Default for users without an admin-assigned model: Qwen-MT Flash when a
+// DashScope key is set, else Qwen3.8 Flash via OpenRouter
 export function getDefaultModel(): TranslationModel {
   if (process.env.DASHSCOPE_API_KEY) return QWEN_MT_DEFAULT_MODEL;
-  if (process.env.OPENROUTER_API_KEY) return QWEN_DEFAULT_MODEL;
-  return OPENAI_DEFAULT_MODEL;
+  return OPENROUTER_DEFAULT_MODEL;
 }
 
 export interface MonthlyUsage {
@@ -76,7 +52,9 @@ export async function getUserByEmail(
 
 export async function getUserModel(email: string): Promise<string> {
   const user = await getUserByEmail(email);
-  return user?.model || getDefaultModel();
+  // A model dropped from the pool (e.g. an old GPT/Claude assignment) falls
+  // back to the default
+  return isSupportedModel(user?.model) ? user.model : getDefaultModel();
 }
 
 // --- Meeting codes ---
