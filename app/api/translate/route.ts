@@ -4,7 +4,7 @@ import { getOpenRouter } from "@/lib/openrouter";
 import { getDashScope } from "@/lib/dashscope";
 import { getAnthropic } from "@/lib/anthropic";
 import { verifyToken } from "@/lib/auth";
-import { getUserModel, getDefaultModel, QWEN_MT_DEFAULT_MODEL, QWEN_DEFAULT_MODEL, OPENAI_DEFAULT_MODEL, SUPPORTED_MODELS, incrementUsage } from "@/lib/edge-config";
+import { getUserModel, getDefaultModel, QWEN_MT_DEFAULT_MODEL, QWEN_DEFAULT_MODEL, QWEN_BACKUP_MODEL, OPENAI_DEFAULT_MODEL, SUPPORTED_MODELS, incrementUsage } from "@/lib/edge-config";
 import { jwtVerify } from "jose";
 
 function getLanguageName(code: string): string {
@@ -598,19 +598,46 @@ function isProviderFailure(error: unknown): boolean {
   return status === 400 && /credit balance|arrearage/i.test(message + " " + (providerError(error).code ?? ""));
 }
 
-// Models on the other providers to try, in order, when `model` fails —
-// only providers whose key is configured
+// A provider that answered "out of credits" / "bad key" won't recover within
+// a meeting: skip it as a fallback for a while instead of paying a wasted
+// round trip on every sentence (per server instance, best effort)
+const DEAD_PROVIDER_MS = 10 * 60 * 1000;
+const deadUntil = new Map<Provider, number>();
+
+function isAccountFailure(error: unknown): boolean {
+  const { status, code, message } = providerError(error);
+  if (status === 401 || status === 402 || status === 403) return true;
+  return code === "insufficient_quota" || code === "credit_balance_exhausted" || code === "Arrearage" ||
+    (status !== 429 && /credit|arrearage/i.test(message)) || /no credits remaining/i.test(message);
+}
+
+function markFailure(model: string, error: unknown) {
+  if (isAccountFailure(error)) deadUntil.set(providerOf(model), Date.now() + DEAD_PROVIDER_MS);
+}
+
+// Models to try, in order, when `model` fails: first another model on the
+// same provider (an OpenRouter 429 is usually one upstream model being rate
+// limited, not the account), then the other providers — only providers whose
+// key is configured and that haven't just reported an account problem
 function fallbackModelsFor(model: string): string[] {
   const candidates: [Provider, string, string | undefined][] = [
     ["dashscope", QWEN_MT_DEFAULT_MODEL, process.env.DASHSCOPE_API_KEY],
+    ["dashscope", "qwen-mt-flash", process.env.DASHSCOPE_API_KEY],
     ["openrouter", QWEN_DEFAULT_MODEL, process.env.OPENROUTER_API_KEY],
+    ["openrouter", QWEN_BACKUP_MODEL, process.env.OPENROUTER_API_KEY],
     ["openai", OPENAI_DEFAULT_MODEL, process.env.OPENAI_API_KEY],
     ["anthropic", "claude-haiku-4-5-20251001", process.env.ANTHROPIC_API_KEY],
   ];
   const primary = providerOf(model);
-  return candidates
-    .filter(([provider, , key]) => provider !== primary && !!key)
-    .map(([, m]) => m);
+  const now = Date.now();
+  const usable = candidates.filter(
+    ([provider, m, key]) => m !== model && !!key && (provider === primary || (deadUntil.get(provider) ?? 0) <= now)
+  );
+  // Same provider first, then the rest in order
+  return [
+    ...usable.filter(([p]) => p === primary),
+    ...usable.filter(([p]) => p !== primary),
+  ].map(([, m]) => m);
 }
 
 const PROVIDER_NAME: Record<Provider, string> = {
@@ -620,20 +647,51 @@ const PROVIDER_NAME: Record<Provider, string> = {
   dashscope: "阿里云百炼",
 };
 
-// User-facing message; the client shows it in the error banner
-function describeFailure(error: unknown, model: string): { status: number; body: { error: string; code: string } } {
+const MODEL_NAME: Record<string, string> = {
+  "qwen/qwen3.8-flash": "Qwen3.8 Flash",
+  "qwen/qwen3.7-plus": "Qwen3.7 Plus",
+  "qwen-mt-plus": "Qwen-MT Plus",
+  "qwen-mt-flash": "Qwen-MT Flash",
+  "gpt-5-nano": "GPT-5 Nano",
+  "claude-haiku-4-5-20251001": "Claude Haiku",
+};
+
+// Why one model failed, in a few words
+function failureReason(error: unknown, model: string): { status: number; code: string; reason: string } {
   const { status, code, message } = providerError(error);
   const provider = PROVIDER_NAME[providerOf(model)];
+  if (status === 429 && !/no credits remaining|insufficient_quota/i.test(message + " " + (code ?? ""))) {
+    return { status: 429, code: "rate_limit", reason: `${provider} 限流（请求过于频繁）` };
+  }
   if (status === 402 || code === "insufficient_quota" || code === "credit_balance_exhausted" || code === "Arrearage" || /credit|arrearage/i.test(message)) {
-    return { status: 402, body: { error: `翻译失败：${provider} 账户额度已用完，请充值或在后台切换翻译模型`, code: "quota" } };
+    return { status: 402, code: "quota", reason: `${provider} 账户额度已用完` };
   }
   if (status === 401 || status === 403) {
-    return { status: 502, body: { error: `翻译失败：${provider} API Key 无效或无权限`, code: "auth" } };
+    return { status: 502, code: "auth", reason: `${provider} API Key 无效或无权限` };
   }
-  if (status === 429) {
-    return { status: 429, body: { error: `翻译失败：${provider} 请求过于频繁，请稍后再试`, code: "rate_limit" } };
+  if (status !== undefined && status >= 500) {
+    return { status: 502, code: "error", reason: `${provider} 服务暂时不可用` };
   }
-  return { status: 500, body: { error: "翻译失败：翻译服务出错", code: "error" } };
+  return { status: 500, code: "error", reason: "翻译服务出错" };
+}
+
+// User-facing message; the client shows it in the error banner. Names the
+// model that was actually configured — a failing backup (e.g. an empty
+// OpenAI account) must not hide why the default model failed.
+function describeFailure(
+  primary: { error: unknown; model: string },
+  fallback?: { error: unknown; model: string },
+): { status: number; body: { error: string; code: string } } {
+  const first = failureReason(primary.error, primary.model);
+  const name = MODEL_NAME[primary.model] ?? primary.model;
+  let text = `翻译失败：${name} — ${first.reason}`;
+  if (fallback) {
+    const second = failureReason(fallback.error, fallback.model);
+    text += `；备用 ${MODEL_NAME[fallback.model] ?? fallback.model} 也失败（${second.reason}）`;
+  } else if (first.code === "quota") {
+    text += "，请充值或在后台切换翻译模型";
+  }
+  return { status: first.status, body: { error: text, code: first.code } };
 }
 
 export async function POST(req: NextRequest) {
@@ -684,23 +742,30 @@ export async function POST(req: NextRequest) {
     } catch (error) {
       // The compare page asks for a specific model — don't substitute there
       if (rawRequestedModel || !isProviderFailure(error)) throw error;
+      markFailure(primary, error);
       let lastError = error;
+      let lastModel = primary;
       for (const fallback of fallbackModelsFor(primary)) {
-        console.error(`Translation with ${model} failed, falling back to ${fallback}:`, providerError(lastError).message);
-        model = fallback;
+        console.error(`Translation with ${lastModel} failed, falling back to ${fallback}:`, providerError(lastError).message);
         try {
           return await run(fallback, fallback);
         } catch (e) {
+          markFailure(fallback, e);
           lastError = e;
+          lastModel = fallback;
           if (!isProviderFailure(e)) break;
         }
       }
-      throw lastError;
+      console.error("Translation error:", lastError);
+      const { status, body } = describeFailure(
+        { error, model: primary },
+        lastModel !== primary ? { error: lastError, model: lastModel } : undefined,
+      );
+      return NextResponse.json(body, { status });
     }
   } catch (error) {
     console.error("Translation error:", error);
-    // `model` is the last one tried, so the message names the right provider
-    const { status, body } = describeFailure(error, model);
+    const { status, body } = describeFailure({ error, model });
     return NextResponse.json(body, { status });
   }
 }

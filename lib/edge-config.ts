@@ -22,6 +22,8 @@ export const QWEN_MT_DEFAULT_MODEL: TranslationModel = "qwen-mt-plus";
 // Flash over Plus: live translation is latency-bound, and short sentences
 // don't need the bigger model
 export const QWEN_DEFAULT_MODEL: TranslationModel = "qwen/qwen3.8-flash";
+// Tried when the default is rate limited upstream (separate per-model limits)
+export const QWEN_BACKUP_MODEL: TranslationModel = "qwen/qwen3.7-plus";
 export const OPENAI_DEFAULT_MODEL: TranslationModel = "gpt-5-nano";
 
 // Default for users without an admin-assigned model: the first configured
