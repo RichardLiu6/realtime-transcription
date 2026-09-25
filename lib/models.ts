@@ -16,6 +16,8 @@ export const MODEL_POOL = [
   { id: "google/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash-Lite", price: "0.10 / 0.40" },
   // Open weights, served by several providers — not limited by Alibaba's quota
   { id: "qwen/qwen3-235b-a22b-2507", label: "Qwen3 235B Instruct", price: "0.087 / 0.35" },
+  // Reasoning model; runs with reasoning off (effort "none") like the others
+  { id: "openai/gpt-6-luna", label: "GPT-6 Luna", price: "0.10 / 0.50" },
   { id: "openai/gpt-4.1-nano", label: "GPT-4.1 Nano", price: "0.10 / 0.40" },
   { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash", price: "0.049 / 0.098" },
   { id: "qwen-mt-flash", label: "Qwen-MT Flash（阿里云百炼）", price: "0.16 / 0.49" },
@@ -38,7 +40,7 @@ export const FALLBACK_CHAIN: readonly TranslationModel[] = [
   "qwen/qwen3.8-flash",
   "google/gemini-2.5-flash-lite",
   "qwen/qwen3-235b-a22b-2507",
-  "openai/gpt-4.1-nano",
+  "openai/gpt-6-luna",
 ];
 
 export function modelLabel(id: string): string {
