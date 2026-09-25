@@ -92,9 +92,10 @@ export type TranslationMode = "two_way" | "one_way" | "presentation";
 // Speech-to-text engine: Soniox cloud, or self-hosted NetEase Youdao Confucius4-R2T2
 export type SttProvider = "soniox" | "r2t2";
 
-// Translation: sentence-level via /api/translate ("llm"), or simultaneous
-// (translate while speaking) via Youdao Confucius4-T3PO ("t3po", zh<->en only)
-export type TranslationEngine = "llm" | "t3po";
+// Translation: sentence-level via /api/translate ("llm"); clause by clause
+// while speaking, any translation API ("clause"); or simultaneous via Youdao
+// Confucius4-T3PO ("t3po", zh<->en only)
+export type TranslationEngine = "llm" | "clause" | "t3po";
 
 export interface SonioxConfig {
   provider?: SttProvider; // default "soniox"

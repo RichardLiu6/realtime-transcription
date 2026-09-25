@@ -243,3 +243,9 @@ export function joinTranslation(parts: string[], direction: Direction): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+// Join translation parts by target language: CJK targets without spaces
+// (like en2zh), everything else with spaces and punctuation cleanup
+export function joinForTarget(parts: string[], targetLang: string): string {
+  return joinTranslation(parts, ["zh", "ja", "ko"].includes(targetLang) ? "en2zh" : "zh2en");
+}

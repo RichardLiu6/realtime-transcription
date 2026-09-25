@@ -2,8 +2,9 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import type { BilingualEntry, SonioxConfig, SonioxToken, SttProvider } from "@/types/bilingual";
-import { type Direction, directionFor, joinTranslation } from "@/lib/t3po/protocol";
-import { SimulEngine } from "@/lib/t3po/engine";
+import { type Direction, directionFor, joinForTarget, joinTranslation } from "@/lib/t3po/protocol";
+import { type EngineCallbacks, SimulEngine } from "@/lib/t3po/engine";
+import { ClauseEngine } from "@/lib/clause/engine";
 
 const TARGET_SAMPLE_RATE = 16000;
 
@@ -403,136 +404,203 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     requestTranslation(entryId, text, sourceLang);
   }, [requestTranslation, getTranslationState]);
 
-  // --- Simultaneous translation (Youdao Confucius4-T3PO) ---
-  // Chinese<->English segments are translated while they are spoken: each
-  // piece of committed ASR text is fed to a per-direction engine, which
-  // appends translation segments as the model commits them. Other segments
-  // (multilingual mode, other languages) use sentence-level translation.
-  const simulEnginesRef = useRef(new Map<Direction, SimulEngine>());
-  const simulEntriesRef = useRef(
-    new Map<string, { direction: Direction; parts: string[]; fullText: string; lang: string }>()
+  // --- Streaming translation: translate while the sentence is spoken ---
+  // Two engines behind one interface, both fed committed (final) ASR text
+  // from any STT engine and both append-only:
+  //   "t3po"   — Youdao Confucius4-T3PO simultaneous model (zh<->en)
+  //   "clause" — any translation API, one clause at a time
+  // Segments neither engine handles (multilingual mode, T3PO + other
+  // languages, after a failure) use sentence-level translation.
+  type StreamRoute = { key: string; kind: "t3po" | "clause"; target: string; direction?: Direction };
+  type StreamEngine = { feed: (entryId: string, text: string) => void; flush: (entryId: string) => void; close: () => void };
+  const streamEnginesRef = useRef(new Map<string, StreamEngine>());
+  const streamEntriesRef = useRef(
+    new Map<string, { route: StreamRoute; parts: string[]; fullText: string; lang: string }>()
   );
   // Committed text seen before the segment's language was known
-  const simulPendingRef = useRef(new Map<string, string>());
-  // Set after a T3PO failure: the rest of the session uses sentence translation
-  const simulFailedRef = useRef(false);
+  const streamPendingRef = useRef(new Map<string, string>());
+  // Set after a failure: the rest of the session uses sentence translation
+  const streamFailedRef = useRef(false);
 
-  const simulDirectionFor = useCallback((sourceLang: string): Direction | null => {
+  const streamRouteFor = useCallback((sourceLang: string): StreamRoute | null => {
     const config = configRef.current;
-    if (!config || config.translationEngine !== "t3po" || simulFailedRef.current) return null;
+    const engine = config?.translationEngine;
+    if (!config || (engine !== "t3po" && engine !== "clause") || streamFailedRef.current) return null;
     if (config.translationMode === "presentation" || optionsRef.current?.skipTranslation) return null;
-    return directionFor(sourceLang, singleTargetFor(sourceLang, config));
+    const target = singleTargetFor(sourceLang, config);
+    if (!sourceLang || sourceLang === target) return null;
+    if (engine === "t3po") {
+      const direction = directionFor(sourceLang, target);
+      return direction ? { key: `t3po:${direction}`, kind: "t3po", target, direction } : null;
+    }
+    return { key: "clause", kind: "clause", target };
   }, []);
 
-  const getSimulEngine = useCallback((direction: Direction) => {
-    let engine = simulEnginesRef.current.get(direction);
-    if (engine) return engine;
-    engine = new SimulEngine(
-      direction,
-      async ({ direction, history, current, force }) => {
-        const res = await fetch("/api/simul", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ direction, history, current, force, terms: configRef.current?.contextTerms }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || `同传翻译失败（HTTP ${res.status}）`);
-        return { action: data.action === "TRANS" ? "TRANS" : "WAIT", text: String(data.text ?? "") };
-      },
-      {
-        onCommit: (entryId, segment) => {
-          const info = simulEntriesRef.current.get(entryId);
-          if (!info) return;
-          info.parts.push(segment);
-          const translatedText = joinTranslation(info.parts, info.direction);
-          setEntries((prev) => {
-            const existing = prev.get(entryId);
-            if (!existing) return prev;
-            return new Map(prev).set(entryId, { ...existing, translatedText, translationProvisional: false });
-          });
-        },
-        onFlushed: (entryId, leftover) => {
-          const info = simulEntriesRef.current.get(entryId);
-          simulEntriesRef.current.delete(entryId);
-          // Some source never got translated (backend couldn't force output,
-          // or a step failed): retranslate the whole sentence the normal way
-          if (info && leftover.trim() && info.fullText) {
-            requestFinalTranslation(entryId, info.fullText, info.lang);
-          }
-        },
-        onError: (error) => {
-          console.error("[Simul] step failed:", error);
-          // Shown once and kept (not via translationErrorRef, which a later
-          // successful sentence translation would clear): the user should
-          // know the session silently switched to sentence translation
-          if (!simulFailedRef.current) {
-            setError(error instanceof Error ? error.message : "同传翻译失败，已改用整句翻译");
-          }
-          simulFailedRef.current = true;
-        },
+  const streamCallbacks = useMemo<EngineCallbacks>(() => ({
+    onCommit: (entryId, segment) => {
+      const info = streamEntriesRef.current.get(entryId);
+      if (!info) return;
+      info.parts.push(segment);
+      const translatedText = info.route.direction
+        ? joinTranslation(info.parts, info.route.direction)
+        : joinForTarget(info.parts, info.route.target);
+      setEntries((prev) => {
+        const existing = prev.get(entryId);
+        if (!existing) return prev;
+        return new Map(prev).set(entryId, { ...existing, translatedText, translationProvisional: false });
+      });
+    },
+    onFlushed: (entryId, leftover) => {
+      const info = streamEntriesRef.current.get(entryId);
+      streamEntriesRef.current.delete(entryId);
+      // Some source never got translated (a step failed, or T3PO's backend
+      // couldn't force output): retranslate the whole sentence the normal way
+      if (info && leftover.trim() && info.fullText) {
+        requestFinalTranslationRef.current?.(entryId, info.fullText, info.lang);
       }
-    );
-    simulEnginesRef.current.set(direction, engine);
-    return engine;
+    },
+    onError: (error) => {
+      console.error("[Streaming translation] step failed:", error);
+      // Shown once and kept (not via translationErrorRef, which a later
+      // successful sentence translation would clear): the user should know
+      // the session switched to sentence translation
+      if (!streamFailedRef.current) {
+        setError(error instanceof Error ? error.message : "同传翻译失败，已改用整句翻译");
+      }
+      streamFailedRef.current = true;
+    },
+  }), []);
+
+  // Latest requestFinalTranslation for the engine callbacks above
+  const requestFinalTranslationRef = useRef<typeof requestFinalTranslation | null>(null);
+  useEffect(() => {
+    requestFinalTranslationRef.current = requestFinalTranslation;
   }, [requestFinalTranslation]);
 
-  // Feed newly committed source text of a segment; true if T3PO handles it
+  const getStreamEngine = useCallback((route: StreamRoute): StreamEngine => {
+    const existing = streamEnginesRef.current.get(route.key);
+    if (existing) return existing;
+    let engine: StreamEngine;
+    if (route.kind === "t3po") {
+      engine = new SimulEngine(
+        route.direction!,
+        async ({ direction, history, current, force }) => {
+          const res = await fetch("/api/simul", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ direction, history, current, force, terms: configRef.current?.contextTerms }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || `同传翻译失败（HTTP ${res.status}）`);
+          return { action: data.action === "TRANS" ? "TRANS" : "WAIT", text: String(data.text ?? "") };
+        },
+        streamCallbacks
+      );
+    } else {
+      engine = new ClauseEngine(
+        async ({ clause, sourceSoFar, translationSoFar, sourceLang, targetLang }) => {
+          const config = configRef.current;
+          // Earlier sentences as context / translation memory, as usual
+          const recent = Array.from(entriesRef.current.values())
+            .filter((e) => e.isFinal && e.originalText && e.translatedText && !e.translationProvisional)
+            .slice(-3);
+          const res = await fetch("/api/translate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text: clause,
+              sourceLang,
+              targetLang,
+              context: recent.length > 0 ? recent.map((e) => e.originalText) : undefined,
+              memory: recent.length > 0
+                ? recent.map((e) => ({
+                    source: e.originalText,
+                    sourceLang: e.language,
+                    translations: { [config ? singleTargetFor(e.language, config) : targetLang]: e.translatedText },
+                  }))
+                : undefined,
+              terms: config && config.contextTerms.length > 0 ? config.contextTerms : undefined,
+              ...(sourceSoFar.trim() && translationSoFar.trim()
+                ? { continuation: { sourceSoFar, translationSoFar } }
+                : {}),
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || `分句翻译失败（HTTP ${res.status}）`);
+          return String(data.translatedText ?? "");
+        },
+        (entryId) => {
+          const info = streamEntriesRef.current.get(entryId);
+          return info ? { sourceLang: info.lang, targetLang: info.route.target } : null;
+        },
+        joinForTarget,
+        streamCallbacks
+      );
+    }
+    streamEnginesRef.current.set(route.key, engine);
+    return engine;
+  }, [streamCallbacks]);
+
+  // Feed newly committed source text of a segment; true if a streaming
+  // engine handles it
   const simulFeed = useCallback((entryId: string, sourceLang: string, text: string): boolean => {
-    if (!text) return simulEntriesRef.current.has(entryId);
-    let info = simulEntriesRef.current.get(entryId);
+    let info = streamEntriesRef.current.get(entryId);
     if (!info) {
+      const engine = configRef.current?.translationEngine;
+      const streaming = (engine === "t3po" || engine === "clause") && !streamFailedRef.current;
       if (!sourceLang) {
         // Language not known yet: hold the text until it is
-        simulPendingRef.current.set(entryId, (simulPendingRef.current.get(entryId) ?? "") + text);
-        return configRef.current?.translationEngine === "t3po" && !simulFailedRef.current;
+        if (text) streamPendingRef.current.set(entryId, (streamPendingRef.current.get(entryId) ?? "") + text);
+        return streaming;
       }
-      const direction = simulDirectionFor(sourceLang);
-      if (!direction) {
-        simulPendingRef.current.delete(entryId);
-        return false;
-      }
-      info = { direction, parts: [], fullText: "", lang: sourceLang };
-      simulEntriesRef.current.set(entryId, info);
-      const pending = simulPendingRef.current.get(entryId);
-      simulPendingRef.current.delete(entryId);
-      if (pending) text = pending + text;
+      const pending = streamPendingRef.current.get(entryId) ?? "";
+      streamPendingRef.current.delete(entryId);
+      const route = streamRouteFor(sourceLang);
+      if (!route) return false;
+      info = { route, parts: [], fullText: "", lang: sourceLang };
+      streamEntriesRef.current.set(entryId, info);
+      text = pending + text;
     }
-    getSimulEngine(info.direction).feed(entryId, text);
+    // After a failure the sentence is retranslated whole at finalize; don't
+    // keep spending calls on it
+    if (text && !streamFailedRef.current) getStreamEngine(info.route).feed(entryId, text);
     return true;
-  }, [simulDirectionFor, getSimulEngine]);
+  }, [streamRouteFor, getStreamEngine]);
 
-  // Segment finished: force out the rest. False if T3PO isn't handling it.
+  // Segment finished: flush the rest. False if no streaming engine handles it.
   const simulFinalize = useCallback((entryId: string, fullText: string, sourceLang: string): boolean => {
-    const pending = simulPendingRef.current.get(entryId);
-    if (pending !== undefined && sourceLang) simulFeed(entryId, sourceLang, "");
-    simulPendingRef.current.delete(entryId);
-    const info = simulEntriesRef.current.get(entryId);
+    // Text held back for an unknown language gets routed now
+    if (streamPendingRef.current.has(entryId)) {
+      if (sourceLang) simulFeed(entryId, sourceLang, "");
+      streamPendingRef.current.delete(entryId);
+    }
+    const info = streamEntriesRef.current.get(entryId);
     if (!info) return false;
     info.fullText = fullText;
     info.lang = sourceLang || info.lang;
-    if (simulFailedRef.current) {
-      simulEntriesRef.current.delete(entryId);
+    if (streamFailedRef.current) {
+      streamEntriesRef.current.delete(entryId);
       requestFinalTranslation(entryId, fullText, info.lang);
       return true;
     }
-    getSimulEngine(info.direction).flush(entryId);
+    getStreamEngine(info.route).flush(entryId);
     return true;
-  }, [simulFeed, getSimulEngine, requestFinalTranslation]);
+  }, [simulFeed, getStreamEngine, requestFinalTranslation]);
 
   const resetSimul = useCallback(() => {
-    for (const engine of simulEnginesRef.current.values()) engine.close();
-    simulEnginesRef.current.clear();
-    simulEntriesRef.current.clear();
-    simulPendingRef.current.clear();
-    simulFailedRef.current = false;
+    for (const engine of streamEnginesRef.current.values()) engine.close();
+    streamEnginesRef.current.clear();
+    streamEntriesRef.current.clear();
+    streamPendingRef.current.clear();
+    streamFailedRef.current = false;
   }, []);
 
   // Throttled provisional translation while a segment is still being spoken
   const maybeTranslateProvisional = useCallback((entryId: string, text: string, sourceLang: string) => {
     if (optionsRef.current?.skipTranslation) return;
-    // T3PO segments get real incremental translation instead
-    if (simulEntriesRef.current.has(entryId) || simulPendingRef.current.has(entryId)) return;
-    if (sourceLang && simulDirectionFor(sourceLang)) return;
+    // Streaming-translated segments get real incremental translation instead
+    if (streamEntriesRef.current.has(entryId) || streamPendingRef.current.has(entryId)) return;
+    if (sourceLang && streamRouteFor(sourceLang)) return;
     if (!sourceLang) return; // targets depend on the source language
     const trimmed = text.trim();
     if (trimmed.length < PROVISIONAL_MIN_CHARS) return;
@@ -541,7 +609,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     if (Date.now() - st.lastAt < PROVISIONAL_INTERVAL_MS) return;
     if (trimmed === st.lastText) return;
     requestTranslation(entryId, trimmed, sourceLang, true);
-  }, [requestTranslation, getTranslationState, simulDirectionFor]);
+  }, [requestTranslation, getTranslationState, streamRouteFor]);
 
   // Finalize current segment into an entry
   const finalizeSegment = useCallback(() => {

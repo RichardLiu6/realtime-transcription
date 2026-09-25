@@ -54,9 +54,13 @@ Audio goes directly from browser to the STT engine — the server never touches 
 - SDK clients use `maxRetries: 1`. OpenRouter requests send `reasoning: {enabled: false}` and `provider: {sort: "latency"}`.
 - Every translation logs `[translate] model=… ms=… in=… out=… reasoning=…` to the Vercel runtime logs (reasoning > 0 means the model thought anyway).
 
-### Simultaneous translation (Youdao Confucius4-T3PO)
+### Streaming translation (translate while the sentence is spoken)
 
-StatusBar 翻译方式 **整句 | 同传**. 同传 translates Chinese↔English while the sentence is still being spoken; other segments (multilingual mode, other languages) keep using sentence translation.
+StatusBar 翻译方式 **整句 | 分句 | 同传** (`config.translationEngine` = `llm` | `clause` | `t3po`). Both streaming engines share one interface (`feed` / `flush` / `close` + `EngineCallbacks`), consume only *final* ASR text from any STT engine, and are append-only. The hook routes each segment (`streamRouteFor`); multilingual mode and unsupported pairs use sentence translation. On any failure the session falls back to sentence translation (banner stays) and affected sentences are retranslated whole.
+
+**分句 (`lib/clause/engine.ts`)** — any translation API, any language pair. Commits a clause at `，。！？；：…` or ASCII `,.!?;:` followed by a space (so `3.5` doesn't split); clauses under 4 CJK chars / 3 words merge into the next; 20 units without punctuation forces. Each clause goes to `/api/translate` with `continuation: {sourceSoFar, translationSoFar}`: chat models get a "[Sentence so far] / [Translation so far] / [Next part]" prompt and output only the continuation; Qwen-MT gets the sentence so far as a `tm_list` pair.
+
+**同传 (Youdao Confucius4-T3PO)** — Chinese↔English only, needs a self-hosted model.
 
 - `lib/t3po/protocol.ts`: prompts, glossary, response parsing, source splitting — ported byte-for-byte from github.com/netease-youdao/Confucius4-T3PO (`inference/prompts.py`, `glossary.py`, `translation.py`, `latency.py`). The prompt is part of the model interface; don't edit it independently.
 - `lib/t3po/engine.ts`: client-side port of upstream `TranslationEngine` (one per direction; committed history `src¦tgt§…` + buffer; empty reply = WAIT, non-empty = TRANS; forced step at sentence end / 20 units). Ops are serialized per engine and feeds arriving mid-call are merged.

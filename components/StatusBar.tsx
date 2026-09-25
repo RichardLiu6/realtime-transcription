@@ -159,7 +159,7 @@ export default function StatusBar({
               role="radiogroup"
               aria-label={t("translation_engine")}
             >
-              {(["llm", "t3po"] as const).map((value) => {
+              {(["llm", "clause", "t3po"] as const).map((value) => {
                 const unavailable = value === "t3po" && !t3poEnabled;
                 return (
                   <Tooltip key={value}>
@@ -178,14 +178,16 @@ export default function StatusBar({
                               : "text-muted-foreground hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent"
                           }`}
                         >
-                          {value === "llm" ? t("tr_llm") : t("tr_t3po")}
+                          {t(value === "llm" ? "tr_llm" : value === "clause" ? "tr_clause" : "tr_t3po")}
                         </button>
                       </span>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" className="max-w-64">
                       {value === "llm"
                         ? t("tr_llm_desc")
-                        : unavailable
+                        : value === "clause"
+                          ? t("tr_clause_desc")
+                          : unavailable
                           ? t("tr_t3po_unavailable")
                           : t("tr_t3po_desc")}
                     </TooltipContent>

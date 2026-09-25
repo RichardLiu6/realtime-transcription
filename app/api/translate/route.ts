@@ -119,6 +119,30 @@ async function resolveModel(req: NextRequest, requestedModel?: string): Promise<
 // Input comes from live speech recognition, often mid-sentence
 const SPEECH_INPUT_RULES = `- The input is live speech recognition output: it may contain recognition errors (use context to infer the intended words) and may be an unfinished sentence — translate what was said so far, do not complete or guess the rest`;
 
+// Clause-by-clause translation (client lib/clause/engine.ts): the earlier
+// clauses of the sentence are already translated and shown; the model must
+// only continue from them
+interface Continuation {
+  sourceSoFar: string;
+  translationSoFar: string;
+}
+
+function parseContinuation(raw: unknown): Continuation | undefined {
+  const c = raw as Partial<Continuation> | undefined;
+  if (!c || typeof c.sourceSoFar !== "string" || typeof c.translationSoFar !== "string") return undefined;
+  if (!c.sourceSoFar.trim() || !c.translationSoFar.trim()) return undefined;
+  return { sourceSoFar: c.sourceSoFar.slice(-2000), translationSoFar: c.translationSoFar.slice(-2000) };
+}
+
+const CONTINUATION_RULES = `The sentence is being translated piece by piece while it is spoken. The earlier part and its translation are already shown to the audience and cannot be changed.
+- Translate ONLY the [Next part], so that it reads naturally when appended directly after [Translation so far]
+- Do not repeat, revise or re-translate the earlier part
+- Output only the new translation text`;
+
+function continuationMessage(c: Continuation, next: string): string {
+  return `[Sentence so far]\n${c.sourceSoFar}\n\n[Translation so far]\n${c.translationSoFar}\n\n[Next part]\n${next}`;
+}
+
 // Track usage asynchronously (fire-and-forget)
 function trackUsage(req: NextRequest, inputTokens: number, outputTokens: number) {
   const authToken = req.cookies.get("auth_token")?.value;
@@ -296,6 +320,7 @@ async function handleSingleTarget(
   reasoningOverride: string | undefined,
   provisional: boolean,
   responseModel: string,
+  continuation?: Continuation,
 ) {
   const targetName = getLanguageName(targetLang);
   const sourceName = sourceLang ? getLanguageName(sourceLang) : null;
@@ -313,11 +338,14 @@ ${SPEECH_INPUT_RULES}`;
     systemPrompt += `\n\nTerminology — always use these translations when applicable:\n${terms.join(", ")}`;
   }
 
+  // Clause mode: translate only the next part of a partly translated sentence
+  if (continuation) systemPrompt += `\n\n${CONTINUATION_RULES}`;
+
   const contextMsgs = buildContextMessages(context);
   const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
     { role: "system", content: systemPrompt },
     ...contextMsgs,
-    { role: "user", content: text },
+    { role: "user", content: continuation ? continuationMessage(continuation, text) : text },
   ];
 
   const start = Date.now();
@@ -482,8 +510,17 @@ async function handleQwenMT(
   model: string,
   provisional: boolean,
   responseModel: string,
+  continuation?: Continuation,
 ) {
   const { pairs, vocabulary } = splitTerms(terms);
+  // Qwen-MT can't take instructions: give it the sentence so far as a
+  // translation-memory pair so the next part stays consistent with it
+  if (continuation && !multi && sourceLang) {
+    memory = [
+      ...(memory ?? []),
+      { source: continuation.sourceSoFar, sourceLang, translations: { [targetLangs[0]]: continuation.translationSoFar } },
+    ];
+  }
   const start = Date.now();
   const results = await Promise.all(
     targetLangs.map((t) => translateQwenMT(model, text, sourceLang, t, vocabulary, pairs, memory))
@@ -565,7 +602,8 @@ function describeFailure(error: unknown, model: string): { status: number; body:
 export async function POST(req: NextRequest) {
   let model: string = getDefaultModel();
   try {
-    const { text, sourceLang, targetLang, targetLangs, context, terms, memory, model: rawRequestedModel, provisional: rawProvisional } = await req.json();
+    const { text, sourceLang, targetLang, targetLangs, context, terms, memory, model: rawRequestedModel, provisional: rawProvisional, continuation: rawContinuation } = await req.json();
+    const continuation = parseContinuation(rawContinuation);
     const provisional = rawProvisional === true;
 
     // Parse composite model ID: "gpt-5-nano/low" → model "gpt-5-nano", reasoning "low".
@@ -595,11 +633,11 @@ export async function POST(req: NextRequest) {
     const primary = model;
     const run = (m: string, responseModel: string) =>
       isQwenMT(m)
-        ? handleQwenMT(req, text, sourceLang, isMulti ? targetLangs : [targetLang], isMulti, terms, Array.isArray(memory) ? memory : undefined, m, provisional, responseModel)
+        ? handleQwenMT(req, text, sourceLang, isMulti ? targetLangs : [targetLang], isMulti, terms, Array.isArray(memory) ? memory : undefined, m, provisional, responseModel, continuation)
         : isMulti
         // Multi-target path (presentation mode)
         ? handleMultiTarget(req, text, sourceLang, targetLangs, context, terms, m, reasoningOverride, provisional)
-        : handleSingleTarget(req, text, sourceLang, targetLang, context, terms, m, reasoningOverride, provisional, responseModel);
+        : handleSingleTarget(req, text, sourceLang, targetLang, context, terms, m, reasoningOverride, provisional, responseModel, continuation);
 
     try {
       return await run(primary, rawRequestedModel || primary);

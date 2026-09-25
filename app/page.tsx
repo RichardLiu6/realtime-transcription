@@ -80,18 +80,22 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
-  // Simultaneous translation is only selectable when a T3PO server is configured
+  // Restore the translation mode; T3PO only when its server is configured
   useEffect(() => {
     fetch("/api/simul")
       .then((r) => r.json())
+      .catch(() => ({ enabled: false }))
       .then((d) => {
         const enabled = !!d.enabled;
         setT3poEnabled(enabled);
-        if (enabled && localStorage.getItem("translationEngine") === "t3po") {
-          setTranslationEngine("t3po");
+        let saved: string | null = null;
+        try {
+          saved = localStorage.getItem("translationEngine");
+        } catch {
+          // storage unavailable
         }
-      })
-      .catch(() => {});
+        if (saved === "clause" || (saved === "t3po" && enabled)) setTranslationEngine(saved);
+      });
   }, []);
 
   const handleTranslationEngineChange = useCallback((engine: TranslationEngine) => {
@@ -159,7 +163,7 @@ export default function Home() {
     start({
       provider: sttProvider === "r2t2" && r2t2Enabled ? "r2t2" : "soniox",
       audioProcessing,
-      translationEngine: translationEngine === "t3po" && t3poEnabled ? "t3po" : "llm",
+      translationEngine: translationEngine === "t3po" && !t3poEnabled ? "llm" : translationEngine,
       languageA,
       languageB,
       contextTerms: terms,
