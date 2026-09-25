@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSonioxTranscription } from "@/hooks/useSonioxTranscription";
 import { useSpeakerManager } from "@/hooks/useSpeakerManager";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
-import type { TranslationMode } from "@/types/bilingual";
+import type { SttProvider, TranslationMode } from "@/types/bilingual";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { t } from "@/lib/i18n";
 import Sidebar from "@/components/Sidebar";
@@ -27,12 +27,33 @@ export default function Home() {
     useState<TranslationMode>("two_way");
   const [targetLangs, setTargetLangs] = useState<string[]>(["en"]);
   const [desktopLayout, setDesktopLayout] = useState<DesktopLayout>("sidebar");
+  const [sttProvider, setSttProvider] = useState<SttProvider>("soniox");
+  const [r2t2Enabled, setR2t2Enabled] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("desktopLayout");
     if (saved === "sidebar" || saved === "topbar" || saved === "floating") {
       setDesktopLayout(saved);
     }
+  }, []);
+
+  // R2T2 is only selectable when the server has a self-hosted endpoint configured
+  useEffect(() => {
+    fetch("/api/r2t2-config")
+      .then((r) => r.json())
+      .then((d) => {
+        const enabled = !!d.enabled;
+        setR2t2Enabled(enabled);
+        if (enabled && localStorage.getItem("sttProvider") === "r2t2") {
+          setSttProvider("r2t2");
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSttProviderChange = useCallback((provider: SttProvider) => {
+    setSttProvider(provider);
+    localStorage.setItem("sttProvider", provider);
   }, []);
 
   const handleDesktopLayoutChange = useCallback((layout: DesktopLayout) => {
@@ -56,12 +77,16 @@ export default function Home() {
   const { speakers, registerSpeaker, renameSpeaker, clearSpeakers } =
     useSpeakerManager();
 
-  // Auto-register speakers from entries
+  // Auto-register speakers from entries (distinct IDs only — entries change
+  // on every token update)
+  const speakerIds = useMemo(
+    () => Array.from(new Set(entries.map((e) => e.speaker))).join(","),
+    [entries]
+  );
   useEffect(() => {
-    for (const entry of entries) {
-      registerSpeaker(entry.speaker);
-    }
-  }, [entries, registerSpeaker]);
+    if (!speakerIds) return;
+    for (const id of speakerIds.split(",")) registerSpeaker(id);
+  }, [speakerIds, registerSpeaker]);
 
   const handleStart = useCallback(() => {
     const terms = termsText
@@ -71,6 +96,7 @@ export default function Home() {
     clearEntries();
     clearSpeakers();
     start({
+      provider: sttProvider === "r2t2" && r2t2Enabled ? "r2t2" : "soniox",
       languageA,
       languageB,
       contextTerms: terms,
@@ -83,6 +109,8 @@ export default function Home() {
     termsText,
     translationMode,
     targetLangs,
+    sttProvider,
+    r2t2Enabled,
     start,
     clearEntries,
     clearSpeakers,
@@ -210,6 +238,9 @@ export default function Home() {
           error={error}
           desktopLayout={desktopLayout}
           onDesktopLayoutChange={handleDesktopLayoutChange}
+          sttProvider={sttProvider}
+          onSttProviderChange={handleSttProviderChange}
+          r2t2Enabled={r2t2Enabled}
         />
 
         {/* Desktop top bar (only in topbar layout) */}

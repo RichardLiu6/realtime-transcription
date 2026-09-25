@@ -1,21 +1,65 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import type { BilingualEntry, SonioxConfig, SonioxToken } from "@/types/bilingual";
+import type { BilingualEntry, SonioxConfig, SonioxToken, SttProvider } from "@/types/bilingual";
 
 const TARGET_SAMPLE_RATE = 16000;
 
+// Audio frame size sent per WebSocket message. The worklet's native quantum is
+// 128 samples (8 ms @ 16 kHz), i.e. ~125 postMessage + ws.send calls per second
+// — batching into larger frames cuts main-thread work by >10x.
+const FRAME_MS: Record<SttProvider, number> = {
+  soniox: 100,
+  r2t2: 160, // R2T2 decodes in 160 ms chunks (ws_server.py CHUNK_ASR_SECONDS)
+};
+
+// R2T2 end-of-audio marker (ws_server.py YOUDAO_ONETIME_ASR_EOS_STRING)
+const R2T2_EOS = "YOUDAO_ONETIME_ASR_STREAM_EOS";
+// Finalize an R2T2 segment after this much time without new text,
+// in case the server's VAD reset never arrives
+const R2T2_SILENCE_FINALIZE_MS = 2500;
+// Finalize long R2T2 segments at sentence boundaries so translation keeps up
+const R2T2_MAX_SEGMENT_CHARS = 120;
+// How long stop() waits for the engine to flush trailing text
+const DRAIN_TIMEOUT_MS = 3000;
+
+// Language names accepted by Qwen3-ASR (R2T2's base model)
+const R2T2_LANGUAGE_NAMES: Record<string, string> = {
+  zh: "Chinese", en: "English", ja: "Japanese", ko: "Korean", fr: "French",
+  de: "German", es: "Spanish", pt: "Portuguese", ru: "Russian", it: "Italian",
+  ar: "Arabic", th: "Thai", vi: "Vietnamese", id: "Indonesian", ms: "Malay",
+  nl: "Dutch", tr: "Turkish", hi: "Hindi",
+};
+
 const WORKLET_CODE = `
 class PCMProcessor extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    this.frameSamples = (options.processorOptions && options.processorOptions.frameSamples) || 1600;
+    this.buffer = new Float32Array(this.frameSamples);
+    this.offset = 0;
+  }
   process(inputs) {
     const input = inputs[0];
-    if (input && input[0] && input[0].length > 0) {
-      this.port.postMessage(new Float32Array(input[0]));
+    const channel = input && input[0];
+    if (channel && channel.length > 0) {
+      let i = 0;
+      while (i < channel.length) {
+        const n = Math.min(channel.length - i, this.frameSamples - this.offset);
+        this.buffer.set(channel.subarray(i, i + n), this.offset);
+        this.offset += n;
+        i += n;
+        if (this.offset === this.frameSamples) {
+          this.port.postMessage(this.buffer, [this.buffer.buffer]);
+          this.buffer = new Float32Array(this.frameSamples);
+          this.offset = 0;
+        }
+      }
     }
     return true;
   }
 }
-registerProcessor('soniox-pcm-processor', PCMProcessor);
+registerProcessor('pcm-frame-processor', PCMProcessor);
 `;
 
 function resampleAudio(
@@ -38,13 +82,12 @@ function resampleAudio(
 }
 
 function float32ToInt16Buffer(samples: Float32Array): ArrayBuffer {
-  const buffer = new ArrayBuffer(samples.length * 2);
-  const view = new DataView(buffer);
+  const out = new Int16Array(samples.length);
   for (let i = 0; i < samples.length; i++) {
     const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
   }
-  return buffer;
+  return out.buffer;
 }
 
 // Filter out Soniox control tokens like <end>, <endpoint>, etc.
@@ -53,7 +96,7 @@ function isControlToken(text: string): boolean {
 }
 
 // CJK character detection for language fallback
-// Used when Soniox doesn't provide the language field on tokens
+// Used when the STT engine doesn't provide a language (R2T2 never does)
 function detectLanguageFromText(
   text: string,
   languageA: string[],
@@ -61,7 +104,7 @@ function detectLanguageFromText(
 ): string {
   if (!text.trim()) return "";
   // Count CJK characters (Chinese/Japanese/Korean)
-  const cjkPattern = /[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g;
+  const cjkPattern = /[一-鿿㐀-䶿　-〿぀-ゟ゠-ヿ가-힯]/g;
   const cjkMatches = text.match(cjkPattern);
   const cjkRatio = (cjkMatches?.length || 0) / text.replace(/\s/g, "").length;
 
@@ -84,6 +127,22 @@ function detectLanguageFromText(
   }
 }
 
+// R2T2 language hint: a single known language, or "zhen" (auto zh/en)
+function r2t2LanguageHint(config: SonioxConfig): string {
+  let langs: string[];
+  if (config.translationMode === "two_way") {
+    const langA = config.languageA[0] === "*" ? "zh" : (config.languageA[0] ?? "zh");
+    langs = [langA, config.languageB];
+  } else {
+    langs = config.languageA.filter((l) => l !== "*");
+  }
+  const unique = Array.from(new Set(langs));
+  if (unique.length === 1 && R2T2_LANGUAGE_NAMES[unique[0]]) {
+    return R2T2_LANGUAGE_NAMES[unique[0]];
+  }
+  return "zhen";
+}
+
 type RecordingState = "idle" | "connecting" | "recording";
 
 interface TranscriptionOptions {
@@ -97,20 +156,33 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
   const [error, setError] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [currentInterim, setCurrentInterim] = useState("");
+  const [audioAnalyser, setAudioAnalyser] = useState<AnalyserNode | null>(null);
 
   // Keep latest options in ref to avoid stale closures in finalizeSegment
   const optionsRef = useRef(options);
-  optionsRef.current = options;
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
+
+  // Latest entries, for translation context (callbacks captured by the
+  // WebSocket handlers would otherwise see the entries from start())
+  const entriesRef = useRef(entries);
+  useEffect(() => {
+    entriesRef.current = entries;
+  }, [entries]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stoppingRef = useRef(false);
+  const sessionRef = useRef(0);
+  const startedAtRef = useRef(0);
+  const samplesSentRef = useRef(0);
   const entryCounterRef = useRef(0);
   const configRef = useRef<SonioxConfig | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
 
   // Current segment: accumulates original tokens until finalized
   const currentSegmentRef = useRef<{
@@ -144,8 +216,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     if (!config || !text) return;
 
     // Gather last 3 finalized entries as context
-    const allEntries = Array.from(entries.values());
-    const context = allEntries
+    const context = Array.from(entriesRef.current.values())
       .filter((e) => e.isFinal && e.originalText && e.id !== entryId)
       .slice(-3)
       .map((e) => e.originalText);
@@ -212,15 +283,21 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         }
       })
       .catch((err) => console.error("[Translation] Failed:", err));
-  }, [entries]);
+  }, []);
 
   // Finalize current segment into an entry
   const finalizeSegment = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+
     const seg = currentSegmentRef.current;
     if (!seg || seg.tokens.length === 0) {
       // Remove any interim entry that was already displayed
       if (seg?.entryId) {
         setEntries((prev) => {
+          if (!prev.has(seg.entryId)) return prev;
           const m = new Map(prev);
           m.delete(seg.entryId);
           return m;
@@ -238,6 +315,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     if (!originalText) {
       // Remove any interim entry that was already displayed
       setEntries((prev) => {
+        if (!prev.has(seg.entryId)) return prev;
         const m = new Map(prev);
         m.delete(seg.entryId);
         return m;
@@ -246,7 +324,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       return;
     }
 
-    // Detect language via CJK fallback if not set by Soniox
+    // Detect language via CJK fallback if not set by the engine
     if (!seg.language && configRef.current) {
       seg.language = detectLanguageFromText(
         originalText,
@@ -298,14 +376,6 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
 
     currentSegmentRef.current = null;
     setCurrentInterim("");
-
-    // === DEBUG: Log finalization ===
-    console.log(
-      `%c[FINALIZE] ${seg.entryId}`,
-      "color: #22c55e; font-weight: bold",
-      { speaker: effectiveSpeaker, lang: seg.language, original: originalText, startMs: seg.startMs, endMs: seg.endMs }
-    );
-    // === END DEBUG ===
   }, [upsertEntry, requestTranslation]);
 
   // Handle Soniox WebSocket messages
@@ -412,7 +482,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
           .map((t) => t.text)
           .join("");
 
-        const entry: BilingualEntry = {
+        upsertEntry({
           id: seg.entryId,
           speaker: seg.speaker,
           speakerLabel: `Speaker ${seg.speaker || "1"}`,
@@ -424,35 +494,168 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
           startMs: seg.startMs,
           endMs: seg.endMs,
           timestamp: new Date(),
-        };
-
-        upsertEntry(entry);
+        });
       }
     },
     [finalizeSegment, upsertEntry]
   );
+
+  // Handle R2T2 WebSocket messages.
+  // Output is append-only: each `msg.text` is new, already-committed text, and
+  // `msg.reset` marks the end of a VAD segment. No speakers, no language IDs.
+  const handleR2T2Message = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (data: any) => {
+      if (data.status === "error") {
+        setError(`R2T2: ${data.msg || "server error"}`);
+        return;
+      }
+      if (data.status !== "success" || !data.msg) return;
+
+      const text: string = typeof data.msg.text === "string" ? data.msg.text : "";
+      const reset = !!data.msg.reset;
+      const nowMs = Math.round((samplesSentRef.current / TARGET_SAMPLE_RATE) * 1000);
+
+      if (text) {
+        if (!currentSegmentRef.current) {
+          currentSegmentRef.current = {
+            speaker: "1",
+            tokens: [],
+            interimTokens: [],
+            language: "",
+            entryId: `entry-${entryCounterRef.current++}`,
+            startMs: nowMs,
+            endMs: nowMs,
+          };
+        }
+        const seg = currentSegmentRef.current;
+        seg.tokens.push({
+          text,
+          is_final: true,
+          speaker: "1",
+          start_ms: nowMs,
+          end_ms: nowMs,
+          translation_status: "none",
+          language: "",
+        });
+        seg.endMs = nowMs;
+
+        const originalText = seg.tokens.map((t) => t.text).join("").trim();
+        const sentenceEnd = /[。！？.!?]\s*$/.test(originalText);
+        if (!reset && sentenceEnd && originalText.length >= R2T2_MAX_SEGMENT_CHARS) {
+          finalizeSegment();
+          return;
+        }
+
+        if (!reset) {
+          upsertEntry({
+            id: seg.entryId,
+            speaker: seg.speaker,
+            speakerLabel: "Speaker 1",
+            language: seg.language,
+            originalText,
+            translatedText: "",
+            isFinal: false,
+            startMs: seg.startMs,
+            endMs: seg.endMs,
+            timestamp: new Date(),
+          });
+
+          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = setTimeout(finalizeSegment, R2T2_SILENCE_FINALIZE_MS);
+        }
+      }
+
+      if (reset) finalizeSegment();
+    },
+    [finalizeSegment, upsertEntry]
+  );
+
+  // Release microphone and audio graph
+  const teardownAudio = useCallback(() => {
+    workletNodeRef.current?.port.close();
+    workletNodeRef.current?.disconnect();
+    workletNodeRef.current = null;
+    setAudioAnalyser(null);
+    audioContextRef.current?.close().catch(() => {});
+    audioContextRef.current = null;
+    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    mediaStreamRef.current = null;
+  }, []);
 
   // Start recording
   const start = useCallback(
     async (config: SonioxConfig) => {
       if (recordingState !== "idle") return;
 
+      const provider: SttProvider = config.provider ?? "soniox";
+      const session = ++sessionRef.current;
+
       setRecordingState("connecting");
       setError(null);
       stoppingRef.current = false;
       entryCounterRef.current = 0;
+      samplesSentRef.current = 0;
       configRef.current = config;
       currentSegmentRef.current = null;
       lastFinalizedDataRef.current = null;
 
       try {
-        const tokenRes = await fetch("/api/soniox-token", { method: "POST" });
-        if (!tokenRes.ok) {
-          const err = await tokenRes.json().catch(() => ({}));
-          throw new Error(err.error || "Failed to get Soniox token");
-        }
-        const { api_key: token } = await tokenRes.json();
+        // 1. Credentials
+        let wsUrl: string;
+        let openMessage: string;
+        if (provider === "r2t2") {
+          const res = await fetch("/api/r2t2-config", { method: "POST" });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(body.error || "R2T2 is not available");
+          wsUrl = body.url;
+          openMessage = JSON.stringify({
+            requestId: crypto.randomUUID(),
+            secret_key: body.secretKey,
+            language: r2t2LanguageHint(config),
+            use_vad: true,
+            mode: "slow",
+            ...(config.contextTerms.length > 0
+              ? { system_prompt: config.contextTerms.join(", ").slice(0, 4000) }
+              : {}),
+          });
+        } else {
+          const tokenRes = await fetch("/api/soniox-token", { method: "POST" });
+          if (!tokenRes.ok) {
+            const err = await tokenRes.json().catch(() => ({}));
+            throw new Error(err.error || "Failed to get Soniox token");
+          }
+          const { api_key: token } = await tokenRes.json();
 
+          // Build language_hints for STT quality (no translation config)
+          let languageHints: string[];
+          if (config.translationMode === "one_way" || config.translationMode === "presentation") {
+            const isAny = config.languageA.length === 1 && config.languageA[0] === "*";
+            languageHints = isAny ? [] : [...config.languageA];
+          } else {
+            const langA = config.languageA[0] === "*" ? "zh" : (config.languageA[0] ?? "zh");
+            languageHints = [langA, config.languageB];
+          }
+
+          wsUrl = "wss://stt-rt.soniox.com/transcribe-websocket";
+          openMessage = JSON.stringify({
+            api_key: token,
+            model: "stt-rt-v4",
+            audio_format: "pcm_s16le",
+            sample_rate: TARGET_SAMPLE_RATE,
+            num_channels: 1,
+            language_hints: languageHints,
+            enable_endpoint_detection: true,
+            max_endpoint_delay_ms: 3000,
+            enable_speaker_diarization: true,
+            enable_language_identification: true,
+            ...(config.contextTerms.length > 0
+              ? { context: { terms: config.contextTerms } }
+              : {}),
+          });
+        }
+
+        // 2. Microphone
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
@@ -462,82 +665,69 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         });
         mediaStreamRef.current = stream;
 
-        const ws = new WebSocket("wss://stt-rt.soniox.com/transcribe-websocket");
+        // 3. WebSocket
+        const ws = new WebSocket(wsUrl);
+        ws.binaryType = "arraybuffer";
         wsRef.current = ws;
 
         await new Promise<void>((resolve, reject) => {
           const timeout = setTimeout(() => {
             ws.close();
-            reject(new Error("Soniox connection timeout"));
+            reject(new Error(`${provider === "r2t2" ? "R2T2" : "Soniox"} connection timeout`));
           }, 10000);
 
           ws.onopen = () => {
             clearTimeout(timeout);
-
-            const context: Record<string, unknown> = {};
-            if (config.contextTerms.length > 0) {
-              context.terms = config.contextTerms;
-            }
-
-            // Build language_hints for STT quality (no translation config)
-            let languageHints: string[];
-            if (config.translationMode === "one_way" || config.translationMode === "presentation") {
-              const isAny = config.languageA.length === 1 && config.languageA[0] === "*";
-              languageHints = isAny ? [] : [...config.languageA];
-            } else {
-              const langA = config.languageA[0] === "*" ? "zh" : (config.languageA[0] ?? "zh");
-              languageHints = [langA, config.languageB];
-            }
-
-            ws.send(
-              JSON.stringify({
-                api_key: token,
-                model: "stt-rt-v4",
-                audio_format: "pcm_s16le",
-                sample_rate: 16000,
-                num_channels: 1,
-                language_hints: languageHints,
-                enable_endpoint_detection: true,
-                max_endpoint_delay_ms: 3000,
-                enable_speaker_diarization: true,
-                enable_language_identification: true,
-                ...(Object.keys(context).length > 0 ? { context } : {}),
-              })
-            );
-
+            ws.send(openMessage);
             resolve();
           };
 
           ws.onerror = () => {
             clearTimeout(timeout);
-            reject(new Error("Soniox WebSocket error"));
+            reject(new Error(`${provider === "r2t2" ? "R2T2" : "Soniox"} WebSocket error`));
           };
         });
 
+        const handleMessage = provider === "r2t2" ? handleR2T2Message : handleSonioxMessage;
         ws.onmessage = (event) => {
+          if (sessionRef.current !== session) return;
+          if (typeof event.data !== "string") return;
           try {
-            const data = JSON.parse(event.data);
-            handleSonioxMessage(data);
+            handleMessage(JSON.parse(event.data));
           } catch {
             // ignore
           }
         };
 
         ws.onclose = (event) => {
-          if (!stoppingRef.current && event.code !== 1000 && event.code !== 1005) {
-            setError(`Disconnected: ${event.code}`);
+          if (sessionRef.current !== session) return;
+          if (stoppingRef.current) {
+            // Graceful stop: flush whatever the engine sent before closing
+            finalizeSegment();
+            return;
           }
-          if (!stoppingRef.current) {
-            setRecordingState("idle");
+          if (event.code === 4401) {
+            setError("R2T2: unauthorized (check R2T2_SECRET_KEY)");
+          } else if (event.code !== 1000 && event.code !== 1005) {
+            setError(`Disconnected: ${event.code}${event.reason ? ` ${event.reason}` : ""}`);
           }
+          finalizeSegment();
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+          teardownAudio();
+          wsRef.current = null;
+          setRecordingState("idle");
         };
 
         ws.onerror = () => {
-          if (!stoppingRef.current) {
+          if (sessionRef.current === session && !stoppingRef.current) {
             setError("WebSocket error");
           }
         };
 
+        // 4. Audio graph
         const audioContext = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
         audioContextRef.current = audioContext;
 
@@ -547,83 +737,95 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         URL.revokeObjectURL(workletUrl);
 
         const source = audioContext.createMediaStreamSource(stream);
-        const workletNode = new AudioWorkletNode(audioContext, "soniox-pcm-processor");
+        const frameSamples = Math.round((audioContext.sampleRate * FRAME_MS[provider]) / 1000);
+        const workletNode = new AudioWorkletNode(audioContext, "pcm-frame-processor", {
+          processorOptions: { frameSamples },
+        });
         workletNodeRef.current = workletNode;
 
         workletNode.port.onmessage = (event: MessageEvent<Float32Array>) => {
-          if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+          const socket = wsRef.current;
+          if (!socket || socket.readyState !== WebSocket.OPEN || stoppingRef.current) return;
           let samples = event.data;
           if (audioContext.sampleRate !== TARGET_SAMPLE_RATE) {
             samples = resampleAudio(samples, audioContext.sampleRate, TARGET_SAMPLE_RATE);
           }
-          wsRef.current.send(float32ToInt16Buffer(samples));
+          socket.send(float32ToInt16Buffer(samples));
+          samplesSentRef.current += samples.length;
         };
 
         const analyser = audioContext.createAnalyser();
         analyser.fftSize = 256;
-        analyserRef.current = analyser;
+        setAudioAnalyser(analyser);
 
         source.connect(analyser);
         analyser.connect(workletNode);
         workletNode.connect(audioContext.destination);
 
+        startedAtRef.current = Date.now();
         setElapsedSeconds(0);
         timerRef.current = setInterval(() => {
-          setElapsedSeconds((prev) => prev + 1);
+          setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
         }, 1000);
 
         setRecordingState("recording");
       } catch (err) {
-        console.error("[Soniox] Failed to start:", err);
+        console.error(`[${provider}] Failed to start:`, err);
         setError(err instanceof Error ? err.message : "Failed to start");
         setRecordingState("idle");
-        mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
-        mediaStreamRef.current = null;
+        teardownAudio();
         wsRef.current?.close();
         wsRef.current = null;
-        audioContextRef.current?.close();
-        audioContextRef.current = null;
       }
     },
-    [recordingState, handleSonioxMessage]
+    [recordingState, handleSonioxMessage, handleR2T2Message, finalizeSegment, teardownAudio]
   );
 
   const stop = useCallback(() => {
     stoppingRef.current = true;
-    finalizeSegment();
+    const provider = configRef.current?.provider ?? "soniox";
 
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
 
-    if (wsRef.current) {
-      if (wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(new ArrayBuffer(0));
-      }
-      wsRef.current.close();
-      wsRef.current = null;
+    // Stop capturing audio right away
+    teardownAudio();
+
+    // Ask the engine to flush trailing text, then close. The ws.onclose
+    // handler finalizes the last segment; the timeout covers servers that
+    // never close on their own.
+    const ws = wsRef.current;
+    wsRef.current = null;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(provider === "r2t2" ? R2T2_EOS : new ArrayBuffer(0));
+      setTimeout(() => {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+        }
+      }, DRAIN_TIMEOUT_MS);
+    } else {
+      ws?.close();
+      finalizeSegment();
     }
 
-    workletNodeRef.current?.disconnect();
-    workletNodeRef.current = null;
-    analyserRef.current = null;
-    audioContextRef.current?.close();
-    audioContextRef.current = null;
-    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
-    mediaStreamRef.current = null;
-
-    // Report STT usage (fire-and-forget)
-    if (elapsedSeconds > 0) {
+    // Report STT usage (fire-and-forget). R2T2 is self-hosted, so only
+    // Soniox minutes are billed.
+    const seconds = startedAtRef.current
+      ? Math.round((Date.now() - startedAtRef.current) / 1000)
+      : 0;
+    startedAtRef.current = 0;
+    if (provider === "soniox" && seconds > 0) {
       fetch("/api/usage", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "stt", seconds: elapsedSeconds }),
+        body: JSON.stringify({ type: "stt", seconds }),
       }).catch(() => {});
     }
 
     setRecordingState("idle");
-  }, [finalizeSegment, elapsedSeconds]);
+  }, [finalizeSegment, teardownAudio]);
 
   // Reassign a single entry's speaker (manual correction)
   const reassignSpeaker = useCallback(
@@ -649,10 +851,12 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
 
   useEffect(() => {
     return () => {
+      sessionRef.current++;
       if (timerRef.current) clearInterval(timerRef.current);
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       wsRef.current?.close();
       workletNodeRef.current?.disconnect();
-      audioContextRef.current?.close();
+      audioContextRef.current?.close().catch(() => {});
       mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
@@ -664,7 +868,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     error,
     elapsedSeconds,
     config: configRef.current,
-    audioAnalyser: analyserRef.current,
+    audioAnalyser,
     start,
     stop,
     clearEntries,

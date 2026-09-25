@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useT } from "@/lib/i18n";
 import type { DesktopLayout } from "@/app/page";
+import type { SttProvider } from "@/types/bilingual";
 
 interface StatusBarProps {
   recordingState: "idle" | "connecting" | "recording";
@@ -18,6 +19,9 @@ interface StatusBarProps {
   error: string | null;
   desktopLayout?: DesktopLayout;
   onDesktopLayoutChange?: (layout: DesktopLayout) => void;
+  sttProvider?: SttProvider;
+  onSttProviderChange?: (provider: SttProvider) => void;
+  r2t2Enabled?: boolean;
 }
 
 const LAYOUT_OPTIONS: { value: DesktopLayout; icon: typeof PanelLeft; label: string }[] = [
@@ -32,6 +36,9 @@ export default function StatusBar({
   error,
   desktopLayout,
   onDesktopLayoutChange,
+  sttProvider,
+  onSttProviderChange,
+  r2t2Enabled = false,
 }: StatusBarProps) {
   const t = useT();
   const router = useRouter();
@@ -88,6 +95,50 @@ export default function StatusBar({
               <span className="text-sm text-muted-foreground">
                 {t("connecting")}
               </span>
+            </div>
+          )}
+
+          {/* STT engine picker (locked while recording) */}
+          {sttProvider && onSttProviderChange && (
+            <div
+              className="flex items-center gap-0.5 rounded-md border border-border p-0.5"
+              role="radiogroup"
+              aria-label={t("stt_engine")}
+            >
+              {(["soniox", "r2t2"] as const).map((value) => {
+                const unavailable = value === "r2t2" && !r2t2Enabled;
+                const locked = recordingState !== "idle";
+                return (
+                  <Tooltip key={value}>
+                    <TooltipTrigger asChild>
+                      {/* span wrapper: disabled buttons don't fire tooltip events */}
+                      <span className="inline-flex">
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={sttProvider === value}
+                        disabled={locked || unavailable}
+                        onClick={() => onSttProviderChange(value)}
+                        className={`rounded px-2 py-0.5 text-xs font-medium transition-colors disabled:cursor-not-allowed ${
+                          sttProvider === value
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent"
+                        }`}
+                      >
+                        {value === "soniox" ? "Soniox" : "R2T2"}
+                      </button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {value === "soniox"
+                        ? t("stt_soniox_desc")
+                        : unavailable
+                          ? t("stt_r2t2_unavailable")
+                          : t("stt_r2t2_desc")}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
             </div>
           )}
 

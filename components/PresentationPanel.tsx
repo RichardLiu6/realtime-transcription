@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import type { BilingualEntry, SpeakerInfo } from "@/types/bilingual";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
 
@@ -16,7 +16,7 @@ function getLangName(code: string): string {
   return SONIOX_LANGUAGES.find((l) => l.code === code)?.name ?? code.toUpperCase();
 }
 
-export default function PresentationPanel({
+function PresentationPanel({
   entries,
   currentInterim,
   isRecording,
@@ -24,11 +24,16 @@ export default function PresentationPanel({
 }: PresentationPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll
+  // Auto-scroll (instant, once per frame — a smooth scroll restarted on every
+  // update stutters)
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [entries]);
+    if (!el) return;
+    const frame = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [entries, currentInterim]);
 
   const finalEntries = entries.filter((e) => e.isFinal);
 
@@ -96,3 +101,6 @@ export default function PresentationPanel({
     </div>
   );
 }
+
+// Memoized so the once-per-second recording timer doesn't re-render the table
+export default memo(PresentationPanel);

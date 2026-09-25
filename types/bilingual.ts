@@ -88,7 +88,11 @@ export interface SonioxToken {
 
 export type TranslationMode = "two_way" | "one_way" | "presentation";
 
+// Speech-to-text engine: Soniox cloud, or self-hosted NetEase Youdao Confucius4-R2T2
+export type SttProvider = "soniox" | "r2t2";
+
 export interface SonioxConfig {
+  provider?: SttProvider; // default "soniox"
   languageA: string[]; // e.g. ["*"] or ["zh", "en"]
   languageB: string; // e.g. "en"
   targetLangs?: string[]; // Presentation mode: ["en", "ja", "fr"]

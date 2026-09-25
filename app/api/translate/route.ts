@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { openai } from "@/lib/openai";
+import { getOpenAI } from "@/lib/openai";
 import { getAnthropic } from "@/lib/anthropic";
 import { verifyToken } from "@/lib/auth";
 import { getUserModel, DEFAULT_MODEL, SUPPORTED_MODELS, incrementUsage } from "@/lib/edge-config";
@@ -194,7 +194,7 @@ Rules:
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const r = await openai.chat.completions.create(params as any);
+    const r = await getOpenAI().chat.completions.create(params as any);
     const raw = r.choices[0]?.message?.content?.trim() || "{}";
     try {
       translations = JSON.parse(raw);
@@ -302,7 +302,7 @@ Rules:
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const r = await openai.chat.completions.create(params as any);
+      const r = await getOpenAI().chat.completions.create(params as any);
       translatedText = r.choices[0]?.message?.content?.trim() || "";
       inputTokens = r.usage?.prompt_tokens ?? 0;
       outputTokens = r.usage?.completion_tokens ?? 0;

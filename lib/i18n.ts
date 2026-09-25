@@ -10,6 +10,12 @@ const translations = {
     "stop": "Stop",
     "connecting": "Connecting...",
 
+    // STT engine
+    "stt_engine": "Speech engine",
+    "stt_soniox_desc": "Soniox cloud: speaker diarization, 60+ languages",
+    "stt_r2t2_desc": "Youdao R2T2 (self-hosted): low-latency Chinese/English, no speaker diarization",
+    "stt_r2t2_unavailable": "R2T2 server not configured (set R2T2_WS_URL and R2T2_SECRET_KEY)",
+
     // Bottom bar buttons
     "settings": "Settings",
     "terms": "Terms",
@@ -58,6 +64,12 @@ const translations = {
     "stop_recording": "停止录音",
     "stop": "停止",
     "connecting": "连接中...",
+
+    // STT engine
+    "stt_engine": "识别引擎",
+    "stt_soniox_desc": "Soniox 云端识别：支持说话人区分、60+ 语言",
+    "stt_r2t2_desc": "有道 R2T2 自部署模型：中英文低延迟，无说话人区分",
+    "stt_r2t2_unavailable": "R2T2 服务未配置（需要 R2T2_WS_URL 和 R2T2_SECRET_KEY）",
 
     // Bottom bar buttons
     "settings": "设置",
