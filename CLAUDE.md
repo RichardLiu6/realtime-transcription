@@ -21,7 +21,7 @@ npm run lint     # ESLint
 
 ## Tech Stack
 
-Next.js 16.3 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4 + shadcn/ui (Radix). Soniox stt-rt-v4 or Confucius4-R2T2 for real-time STT. Qwen-MT (DashScope) / OpenRouter (Qwen) / OpenAI / Anthropic models for translation (per-user, configured in admin), GPT for summary. Vercel Edge Config for user database. jose for JWT. Resend for email OTP. Transcript rows are memoized (no virtualization).
+Next.js 16.3 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4 + shadcn/ui (Radix). Soniox stt-rt-v5 or Confucius4-R2T2 for real-time STT. Qwen-MT (DashScope) / OpenRouter (Qwen) / OpenAI / Anthropic models for translation (per-user, configured in admin), GPT for summary. Vercel Edge Config for user database. jose for JWT. Resend for email OTP. Transcript rows are memoized (no virtualization).
 
 ## Architecture
 
@@ -29,7 +29,7 @@ Next.js 16.3 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4
 
 ```
 Browser AudioWorklet (16kHz PCM16, batched 100 ms / 160 ms frames)
-  → WebSocket → Soniox (stt-rt-v4, speaker diarization)      [provider "soniox"]
+  → WebSocket → Soniox (stt-rt-v5, speaker diarization)      [provider "soniox"]
              or R2T2 ws_server.py /asr_stream_api_v1        [provider "r2t2"]
   ← Soniox tokens / R2T2 incremental text + VAD `reset`
   → useSonioxTranscription hook builds BilingualEntry[]
@@ -69,6 +69,7 @@ Audio goes directly from browser to the STT engine — the server never touches 
 ### Core Hook: useSonioxTranscription.ts
 
 Central logic for the entire app:
+- Microphone captured **raw** by default (browser echoCancellation / noiseSuppression / autoGainControl off — they can drop quiet or distant speakers and cancel remote participants as echo); the StatusBar 降噪 toggle (`config.audioProcessing`, localStorage `audioProcessing`) turns them on
 - AudioWorklet setup (buffers frames in the worklet), linear interpolation resampling for non-16kHz contexts
 - WebSocket connection to Soniox or R2T2 (`config.provider`)
 - Token processing: splits original vs translation tokens via `translation_status`

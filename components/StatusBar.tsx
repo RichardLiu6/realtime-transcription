@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, LogOut, User, Shield, PanelLeft, LayoutDashboard, Move } from "lucide-react";
+import { Loader2, LogOut, User, Shield, PanelLeft, LayoutDashboard, Move, AudioLines } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -22,6 +22,8 @@ interface StatusBarProps {
   sttProvider?: SttProvider;
   onSttProviderChange?: (provider: SttProvider) => void;
   r2t2Enabled?: boolean;
+  audioProcessing?: boolean;
+  onAudioProcessingChange?: (on: boolean) => void;
 }
 
 const LAYOUT_OPTIONS: { value: DesktopLayout; icon: typeof PanelLeft; label: string }[] = [
@@ -39,6 +41,8 @@ export default function StatusBar({
   sttProvider,
   onSttProviderChange,
   r2t2Enabled = false,
+  audioProcessing,
+  onAudioProcessingChange,
 }: StatusBarProps) {
   const t = useT();
   const router = useRouter();
@@ -140,6 +144,34 @@ export default function StatusBar({
                 );
               })}
             </div>
+          )}
+
+          {/* Browser noise suppression toggle (locked while recording) */}
+          {audioProcessing !== undefined && onAudioProcessingChange && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={audioProcessing}
+                    disabled={recordingState !== "idle"}
+                    onClick={() => onAudioProcessingChange(!audioProcessing)}
+                    className={`flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                      audioProcessing
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <AudioLines className="size-3" />
+                    {t("audio_processing")}
+                  </button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-64">
+                {audioProcessing ? t("audio_processing_on") : t("audio_processing_off")}
+              </TooltipContent>
+            </Tooltip>
           )}
 
           {/* Desktop layout picker */}

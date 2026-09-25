@@ -15,6 +15,9 @@ const translations = {
     "stt_soniox_desc": "Soniox cloud: speaker diarization, 60+ languages",
     "stt_r2t2_desc": "Youdao R2T2 (self-hosted): low-latency Chinese/English, no speaker diarization",
     "stt_r2t2_unavailable": "R2T2 server not configured (set R2T2_WS_URL and R2T2_SECRET_KEY)",
+    "audio_processing": "Noise reduction",
+    "audio_processing_on": "Browser noise suppression, echo cancellation and auto gain are ON. Use in noisy rooms; may drop quiet or distant speakers.",
+    "audio_processing_off": "Raw microphone audio (recommended for accuracy). Turn on only in very noisy rooms.",
 
     // Bottom bar buttons
     "settings": "Settings",
@@ -70,6 +73,9 @@ const translations = {
     "stt_soniox_desc": "Soniox 云端识别：支持说话人区分、60+ 语言",
     "stt_r2t2_desc": "有道 R2T2 自部署模型：中英文低延迟，无说话人区分",
     "stt_r2t2_unavailable": "R2T2 服务未配置（需要 R2T2_WS_URL 和 R2T2_SECRET_KEY）",
+    "audio_processing": "降噪",
+    "audio_processing_on": "已开启浏览器降噪、回声消除和自动增益。适合嘈杂环境，但可能压掉声音小或离麦克风远的发言人。",
+    "audio_processing_off": "使用原始麦克风音频（识别更准，推荐）。只在环境非常嘈杂时开启降噪。",
 
     // Bottom bar buttons
     "settings": "设置",

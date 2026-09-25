@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useSonioxTranscription } from "@/hooks/useSonioxTranscription";
 import { useSpeakerManager } from "@/hooks/useSpeakerManager";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
@@ -17,6 +17,26 @@ import DesktopFloatingBar from "@/components/desktop/DesktopFloatingBar";
 
 export type DesktopLayout = "sidebar" | "topbar" | "floating";
 
+const AUDIO_PROCESSING_KEY = "audioProcessing";
+
+function readAudioProcessing(): boolean {
+  try {
+    return localStorage.getItem(AUDIO_PROCESSING_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+// Re-read on changes from this tab (custom event) or other tabs ("storage")
+function subscribeAudioProcessing(onChange: () => void) {
+  window.addEventListener(AUDIO_PROCESSING_KEY, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(AUDIO_PROCESSING_KEY, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
 export default function Home() {
   const [languageA, setLanguageA] = useState<string[]>(["*"]);
   const [languageB, setLanguageB] = useState("en");
@@ -29,6 +49,13 @@ export default function Home() {
   const [desktopLayout, setDesktopLayout] = useState<DesktopLayout>("sidebar");
   const [sttProvider, setSttProvider] = useState<SttProvider>("soniox");
   const [r2t2Enabled, setR2t2Enabled] = useState(false);
+  // Browser noise suppression etc. Off by default: raw audio transcribes
+  // better. Stored in localStorage; false during server render.
+  const audioProcessing = useSyncExternalStore(
+    subscribeAudioProcessing,
+    readAudioProcessing,
+    () => false
+  );
 
   useEffect(() => {
     const saved = localStorage.getItem("desktopLayout");
@@ -49,6 +76,15 @@ export default function Home() {
         }
       })
       .catch(() => {});
+  }, []);
+
+  const handleAudioProcessingChange = useCallback((on: boolean) => {
+    try {
+      localStorage.setItem(AUDIO_PROCESSING_KEY, on ? "on" : "off");
+    } catch {
+      // storage unavailable: the toggle just won't stick
+    }
+    window.dispatchEvent(new Event(AUDIO_PROCESSING_KEY));
   }, []);
 
   const handleSttProviderChange = useCallback((provider: SttProvider) => {
@@ -97,6 +133,7 @@ export default function Home() {
     clearSpeakers();
     start({
       provider: sttProvider === "r2t2" && r2t2Enabled ? "r2t2" : "soniox",
+      audioProcessing,
       languageA,
       languageB,
       contextTerms: terms,
@@ -111,6 +148,7 @@ export default function Home() {
     targetLangs,
     sttProvider,
     r2t2Enabled,
+    audioProcessing,
     start,
     clearEntries,
     clearSpeakers,
@@ -241,6 +279,8 @@ export default function Home() {
           sttProvider={sttProvider}
           onSttProviderChange={handleSttProviderChange}
           r2t2Enabled={r2t2Enabled}
+          audioProcessing={audioProcessing}
+          onAudioProcessingChange={handleAudioProcessingChange}
         />
 
         {/* Desktop top bar (only in topbar layout) */}

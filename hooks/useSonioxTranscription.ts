@@ -788,7 +788,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
           wsUrl = "wss://stt-rt.soniox.com/transcribe-websocket";
           openMessage = JSON.stringify({
             api_key: token,
-            model: "stt-rt-v4",
+            model: "stt-rt-v5", // v4 was retired 2026-06-30 (auto-routed to v5)
             audio_format: "pcm_s16le",
             sample_rate: TARGET_SAMPLE_RATE,
             num_channels: 1,
@@ -804,10 +804,17 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         }
 
         // 2. Microphone
+        // Browser voice processing is tuned for human listeners, not speech
+        // recognition: it can suppress quiet or distant speakers, cancel
+        // remote participants played through the speakers as "echo", and
+        // pump the level (Chrome ties auto-gain to echoCancellation). Raw
+        // audio by default; the engines do their own noise handling.
+        const processing = config.audioProcessing === true;
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
+            echoCancellation: processing,
+            noiseSuppression: processing,
+            autoGainControl: processing,
             sampleRate: TARGET_SAMPLE_RATE,
           },
         });

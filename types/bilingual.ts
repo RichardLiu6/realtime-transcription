@@ -94,6 +94,7 @@ export type SttProvider = "soniox" | "r2t2";
 
 export interface SonioxConfig {
   provider?: SttProvider; // default "soniox"
+  audioProcessing?: boolean; // browser noise suppression / echo cancellation / auto gain (default off)
   languageA: string[]; // e.g. ["*"] or ["zh", "en"]
   languageB: string; // e.g. "en"
   targetLangs?: string[]; // Presentation mode: ["en", "ja", "fr"]
