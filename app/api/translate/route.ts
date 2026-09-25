@@ -219,7 +219,138 @@ ${SPEECH_INPUT_RULES}`;
   return NextResponse.json({ translations, model, latencyMs });
 }
 
-// --- Single-target translation (existing path) ---
+// --- Single-target translation ---
+
+async function handleSingleTarget(
+  req: NextRequest,
+  text: string,
+  sourceLang: string | undefined,
+  targetLang: string,
+  context: string[] | undefined,
+  terms: string[] | undefined,
+  model: string,
+  reasoningOverride: string | undefined,
+  provisional: boolean,
+  responseModel: string,
+) {
+  const targetName = getLanguageName(targetLang);
+  const sourceName = sourceLang ? getLanguageName(sourceLang) : null;
+
+  let systemPrompt = `You are a real-time meeting translator. Translate spoken ${sourceName || "source language"} to ${targetName}.
+
+Rules:
+- Output ONLY the translation, nothing else
+- Keep the conversational/spoken tone — do not formalize
+- Preserve the speaker's intent, including hedging, filler, and emphasis
+- Keep proper nouns, brand names, and technical terms as-is unless a translation is standard
+${SPEECH_INPUT_RULES}`;
+
+  if (Array.isArray(terms) && terms.length > 0) {
+    systemPrompt += `\n\nTerminology — always use these translations when applicable:\n${terms.join(", ")}`;
+  }
+
+  const contextMsgs = buildContextMessages(context);
+  const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+    { role: "system", content: systemPrompt },
+    ...contextMsgs,
+    { role: "user", content: text },
+  ];
+
+  const start = Date.now();
+  let translatedText: string;
+  let inputTokens = 0;
+  let outputTokens = 0;
+
+  if (isClaude(model)) {
+    const anthropicMessages = messages
+      .filter((m) => m.role !== "system")
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+    const r = await getAnthropic().messages.create({
+      model,
+      max_tokens: 1000,
+      temperature: 0.3,
+      system: systemPrompt,
+      messages: anthropicMessages,
+    });
+    translatedText = r.content[0].type === "text" ? r.content[0].text.trim() : "";
+    inputTokens = r.usage?.input_tokens ?? 0;
+    outputTokens = r.usage?.output_tokens ?? 0;
+  } else {
+    const params: Record<string, unknown> = { model, messages };
+
+    if (!NO_TEMPERATURE_MODELS.has(model)) {
+      params.temperature = 0.3;
+    }
+    if (NEW_API_MODELS.has(model)) {
+      params.max_completion_tokens = 1000;
+    } else {
+      params.max_tokens = 1000;
+    }
+    if (REASONING_MODELS.has(model)) {
+      params.reasoning_effort = reasoningOverride || "minimal";
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = await getOpenAI().chat.completions.create(params as any);
+    translatedText = r.choices[0]?.message?.content?.trim() || "";
+    inputTokens = r.usage?.prompt_tokens ?? 0;
+    outputTokens = r.usage?.completion_tokens ?? 0;
+  }
+
+  const latencyMs = Date.now() - start;
+  if (!provisional) trackUsage(req, inputTokens, outputTokens);
+
+  return NextResponse.json({
+    translatedText,
+    model: responseModel,
+    latencyMs,
+  });
+}
+
+// --- Provider errors & fallback ---
+
+// Status + code from an OpenAI / Anthropic SDK error
+function providerError(error: unknown): { status?: number; code?: string; message: string } {
+  const e = error as { status?: number; code?: string; error?: { type?: string; error?: { type?: string } }; message?: string };
+  return {
+    status: typeof e?.status === "number" ? e.status : undefined,
+    code: e?.code ?? e?.error?.type ?? e?.error?.error?.type,
+    message: e?.message ?? String(error),
+  };
+}
+
+// Out of credits / invalid key / rate limited / provider down: worth retrying
+// on the other provider. Bad requests (our fault) are not.
+function isProviderFailure(error: unknown): boolean {
+  const { status, message } = providerError(error);
+  if (status === undefined) return false;
+  if (status === 401 || status === 403 || status === 429 || status >= 500) return true;
+  // Anthropic reports an empty balance as a 400
+  return status === 400 && /credit balance/i.test(message);
+}
+
+// The other provider's cheapest model, if its key is configured
+function fallbackModelFor(model: string): string | null {
+  if (isClaude(model)) return process.env.OPENAI_API_KEY ? DEFAULT_MODEL : null;
+  return process.env.ANTHROPIC_API_KEY ? "claude-haiku-4-5-20251001" : null;
+}
+
+// User-facing message; the client shows it in the error banner
+function describeFailure(error: unknown): { status: number; body: { error: string; code: string } } {
+  const { status, code, message } = providerError(error);
+  const provider = /anthropic|claude/i.test(message) ? "Anthropic" : "OpenAI";
+  if (code === "insufficient_quota" || code === "credit_balance_exhausted" || /credit/i.test(message)) {
+    return { status: 402, body: { error: `翻译失败：${provider} 账户额度已用完，请充值或在后台切换翻译模型`, code: "quota" } };
+  }
+  if (status === 401 || status === 403) {
+    return { status: 502, body: { error: `翻译失败：${provider} API Key 无效或无权限`, code: "auth" } };
+  }
+  if (status === 429) {
+    return { status: 429, body: { error: `翻译失败：${provider} 请求过于频繁，请稍后再试`, code: "rate_limit" } };
+  }
+  return { status: 500, body: { error: "翻译失败：翻译服务出错", code: "error" } };
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -241,96 +372,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing text" }, { status: 400 });
     }
 
-    const model = await resolveModel(req, requestedModel);
-
-    // Multi-target path (presentation mode)
-    if (Array.isArray(targetLangs) && targetLangs.length > 0) {
-      return handleMultiTarget(req, text, sourceLang, targetLangs, context, terms, model, reasoningOverride, provisional);
-    }
-
-    // Single-target path (existing)
-    if (!targetLang || typeof targetLang !== "string") {
+    const isMulti = Array.isArray(targetLangs) && targetLangs.length > 0;
+    if (!isMulti && (!targetLang || typeof targetLang !== "string")) {
       return NextResponse.json({ error: "Missing targetLang" }, { status: 400 });
     }
 
-    const targetName = getLanguageName(targetLang);
-    const sourceName = sourceLang ? getLanguageName(sourceLang) : null;
+    const model = await resolveModel(req, requestedModel);
+    const run = (m: string, responseModel: string) =>
+      isMulti
+        // Multi-target path (presentation mode)
+        ? handleMultiTarget(req, text, sourceLang, targetLangs, context, terms, m, reasoningOverride, provisional)
+        : handleSingleTarget(req, text, sourceLang, targetLang, context, terms, m, reasoningOverride, provisional, responseModel);
 
-    let systemPrompt = `You are a real-time meeting translator. Translate spoken ${sourceName || "source language"} to ${targetName}.
-
-Rules:
-- Output ONLY the translation, nothing else
-- Keep the conversational/spoken tone — do not formalize
-- Preserve the speaker's intent, including hedging, filler, and emphasis
-- Keep proper nouns, brand names, and technical terms as-is unless a translation is standard
-${SPEECH_INPUT_RULES}`;
-
-    if (Array.isArray(terms) && terms.length > 0) {
-      systemPrompt += `\n\nTerminology — always use these translations when applicable:\n${terms.join(", ")}`;
+    try {
+      return await run(model, rawRequestedModel || model);
+    } catch (error) {
+      // The compare page asks for a specific model — don't substitute there
+      const fallback = rawRequestedModel ? null : fallbackModelFor(model);
+      if (!fallback || !isProviderFailure(error)) throw error;
+      console.error(`Translation with ${model} failed, falling back to ${fallback}:`, providerError(error).message);
+      return await run(fallback, fallback);
     }
-
-    const contextMsgs = buildContextMessages(context);
-    const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
-      { role: "system", content: systemPrompt },
-      ...contextMsgs,
-      { role: "user", content: text },
-    ];
-
-    const start = Date.now();
-    let translatedText: string;
-    let inputTokens = 0;
-    let outputTokens = 0;
-
-    if (isClaude(model)) {
-      const anthropicMessages = messages
-        .filter((m) => m.role !== "system")
-        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
-
-      const r = await getAnthropic().messages.create({
-        model,
-        max_tokens: 1000,
-        temperature: 0.3,
-        system: systemPrompt,
-        messages: anthropicMessages,
-      });
-      translatedText = r.content[0].type === "text" ? r.content[0].text.trim() : "";
-      inputTokens = r.usage?.input_tokens ?? 0;
-      outputTokens = r.usage?.output_tokens ?? 0;
-    } else {
-      const params: Record<string, unknown> = { model, messages };
-
-      if (!NO_TEMPERATURE_MODELS.has(model)) {
-        params.temperature = 0.3;
-      }
-      if (NEW_API_MODELS.has(model)) {
-        params.max_completion_tokens = 1000;
-      } else {
-        params.max_tokens = 1000;
-      }
-      if (REASONING_MODELS.has(model)) {
-        params.reasoning_effort = reasoningOverride || "minimal";
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const r = await getOpenAI().chat.completions.create(params as any);
-      translatedText = r.choices[0]?.message?.content?.trim() || "";
-      inputTokens = r.usage?.prompt_tokens ?? 0;
-      outputTokens = r.usage?.completion_tokens ?? 0;
-    }
-
-    const latencyMs = Date.now() - start;
-    if (!provisional) trackUsage(req, inputTokens, outputTokens);
-
-    return NextResponse.json({
-      translatedText,
-      model: rawRequestedModel || model,
-      latencyMs,
-    });
   } catch (error) {
     console.error("Translation error:", error);
-    return NextResponse.json(
-      { error: "Translation failed" },
-      { status: 500 }
-    );
+    const { status, body } = describeFailure(error);
+    return NextResponse.json(body, { status });
   }
 }

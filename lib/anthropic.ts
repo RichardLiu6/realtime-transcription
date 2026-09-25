@@ -7,7 +7,8 @@ export function getAnthropic(): Anthropic {
     if (!process.env.ANTHROPIC_API_KEY) {
       throw new Error("Missing ANTHROPIC_API_KEY environment variable");
     }
-    _client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    // One retry at most (see lib/openai.ts)
+    _client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 1 });
   }
   return _client;
 }

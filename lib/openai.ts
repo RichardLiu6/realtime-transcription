@@ -8,7 +8,9 @@ export function getOpenAI(): OpenAI {
     if (!process.env.OPENAI_API_KEY) {
       throw new Error("Missing OPENAI_API_KEY environment variable");
     }
-    _client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    // One retry at most: live translation can't wait out the SDK's default
+    // backoff (2 retries), and an exhausted balance never recovers by retrying
+    _client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 1 });
   }
   return _client;
 }

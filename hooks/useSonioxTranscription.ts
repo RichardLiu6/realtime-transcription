@@ -229,6 +229,9 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     });
   }, []);
 
+  // Last translation error shown in the banner (cleared on the next success)
+  const translationErrorRef = useRef<string | null>(null);
+
   // Per-entry translation bookkeeping (provisional throttling + ordering)
   const translationStateRef = useRef(
     new Map<string, {
@@ -316,9 +319,19 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         ...target,
       }),
     })
-      .then((res) => res.json())
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `翻译失败（HTTP ${res.status}）`);
+        return data;
+      })
       .then((data) => {
         if (provisional) st.inflight = false;
+        // Translations work again: drop the banner a failure put up
+        if (translationErrorRef.current) {
+          const stale = translationErrorRef.current;
+          translationErrorRef.current = null;
+          setError((cur) => (cur === stale ? null : cur));
+        }
         if (st.done) return; // a final translation already landed
         // A provisional result for exactly the finalized text counts as final
         const isFinal = !provisional || st.finalText === text;
@@ -340,6 +353,13 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       .catch((err) => {
         if (provisional) st.inflight = false;
         console.error("[Translation] Failed:", err);
+        // Surface it (once per distinct message) — failing silently left the
+        // transcript without translations and no hint why
+        const message = err instanceof Error ? err.message : "翻译失败";
+        if (translationErrorRef.current !== message) {
+          translationErrorRef.current = message;
+          setError(message);
+        }
       });
   }, [getTranslationState]);
 
