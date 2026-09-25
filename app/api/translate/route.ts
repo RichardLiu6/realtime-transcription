@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { openai } from "@/lib/openai";
 import { getAnthropic } from "@/lib/anthropic";
 import { verifyToken } from "@/lib/auth";
-import { getUserModel, DEFAULT_MODEL, SUPPORTED_MODELS, incrementUsage } from "@/lib/edge-config";
+import { getUserModel, DEFAULT_MODEL, SUPPORTED_MODELS } from "@/lib/edge-config";
+import { incrementUsage } from "@/lib/usage";
 import { jwtVerify } from "jose";
 
 function getLanguageName(code: string): string {
@@ -53,19 +54,23 @@ async function resolveModel(req: NextRequest, requestedModel?: string): Promise<
   return DEFAULT_MODEL;
 }
 
-// Track usage asynchronously (fire-and-forget)
+// Track usage after the response is sent; after() keeps the function alive until the write finishes
 function trackUsage(req: NextRequest, inputTokens: number, outputTokens: number) {
   const authToken = req.cookies.get("auth_token")?.value;
-  if (authToken && (inputTokens > 0 || outputTokens > 0)) {
-    verifyToken(authToken).then((payload) => {
+  if (!authToken || (inputTokens <= 0 && outputTokens <= 0)) return;
+  after(async () => {
+    try {
+      const payload = await verifyToken(authToken);
       if (payload?.email && typeof payload.email === "string") {
-        incrementUsage(payload.email, {
+        await incrementUsage(payload.email, {
           llm_input_tokens: inputTokens,
           llm_output_tokens: outputTokens,
-        }).catch(() => {});
+        });
       }
-    }).catch(() => {});
-  }
+    } catch (err) {
+      console.error("Usage tracking error:", err);
+    }
+  });
 }
 
 // Build context messages (shared between single and multi-target)

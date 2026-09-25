@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/auth";
-import { incrementUsage } from "@/lib/edge-config";
+import { incrementUsage } from "@/lib/usage";
 
 export async function POST(req: NextRequest) {
   try {

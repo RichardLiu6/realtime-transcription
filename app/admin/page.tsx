@@ -45,9 +45,10 @@ interface Meeting {
   active: boolean;
 }
 
+// UTC to match the server-side usage buckets (lib/usage.ts)
 function getCurrentMonthKey(): string {
   const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 function formatTokens(n: number): string {

@@ -21,7 +21,7 @@ npm run lint     # ESLint
 
 ## Tech Stack
 
-Next.js 16 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4 + shadcn/ui (Radix). Soniox stt-rt-v4 for real-time STT. OpenAI GPT-4o-mini for translation/summary. Vercel Edge Config for user database. jose for JWT. Resend for email OTP. react-window for virtualized transcript list.
+Next.js 16 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4 + shadcn/ui (Radix). Soniox stt-rt-v4 for real-time STT. OpenAI GPT-4o-mini for translation/summary. Vercel Edge Config for user whitelist. Upstash Redis for usage counters. jose for JWT. Resend for email OTP. react-window for virtualized transcript list.
 
 ## Architecture
 
@@ -63,6 +63,10 @@ Central logic for the entire app:
 - Auto-merge heuristic: short same-language segments adopt previous speaker
 - Reconnection: max 5 attempts, 2s interval
 
+### Usage Tracking (lib/usage.ts)
+
+Per-user monthly usage (STT seconds, LLM input/output tokens) is stored in Upstash Redis as hashes `usage:{email}:{YYYY-MM}` (UTC month) and updated with atomic `HINCRBY`. `/api/translate` records tokens via `after()` so the write survives the response; `/api/usage` records STT seconds on recording stop. `/api/admin/users` GET merges Redis counters with any legacy `usage` still stored in Edge Config. Only admin user CRUD writes `auth_users` in Edge Config.
+
 ### Key Types (types/bilingual.ts)
 
 - `BilingualEntry`: id, speaker, speakerLabel, language, originalText, translatedText, interimOriginal/Translated, isFinal, startMs, endMs, timestamp
@@ -81,7 +85,8 @@ Central logic for the entire app:
 | `/api/auth/me` | GET | Current user info (email, name, role) |
 | `/api/auth/logout` | POST | Clear cookies |
 | `/api/admin/auth` | POST | Admin password login |
-| `/api/admin/users` | GET/POST/DELETE | User CRUD |
+| `/api/usage` | POST | Record STT seconds |
+| `/api/admin/users` | GET/POST/PATCH/DELETE | User CRUD (GET includes usage) |
 
 ### Component Hierarchy
 
@@ -111,7 +116,11 @@ EDGE_CONFIG=...              # Vercel Edge Config URL
 EDGE_CONFIG_ID=...           # Edge Config ID
 VERCEL_API_TOKEN=...         # For Edge Config updates
 VERCEL_TEAM_ID=...           # Vercel team
+KV_REST_API_URL=...          # Upstash Redis REST URL (usage counters; UPSTASH_REDIS_REST_URL also accepted)
+KV_REST_API_TOKEN=...        # Upstash Redis REST token (UPSTASH_REDIS_REST_TOKEN also accepted)
 ```
+
+Usage tracking is disabled (no-op with a warning) when the Redis vars are unset.
 
 ## Known Issues
 

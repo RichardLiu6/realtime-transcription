@@ -1,13 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthUsers, updateAuthUsers, SUPPORTED_MODELS } from "@/lib/edge-config";
+import { getAuthUsers, updateAuthUsers, SUPPORTED_MODELS, type MonthlyUsage } from "@/lib/edge-config";
+import { getUsageForUsers } from "@/lib/usage";
+
+// Sum legacy Edge Config usage (frozen, pre-Redis) with live Redis counters
+function mergeUsage(
+  legacy: Record<string, MonthlyUsage> = {},
+  live: Record<string, MonthlyUsage> = {}
+): Record<string, MonthlyUsage> {
+  const merged: Record<string, MonthlyUsage> = { ...legacy };
+  for (const [month, u] of Object.entries(live)) {
+    const prev = merged[month];
+    merged[month] = prev
+      ? {
+          stt_seconds: prev.stt_seconds + u.stt_seconds,
+          llm_input_tokens: prev.llm_input_tokens + u.llm_input_tokens,
+          llm_output_tokens: prev.llm_output_tokens + u.llm_output_tokens,
+        }
+      : u;
+  }
+  return merged;
+}
 
 // GET: list all users
 export async function GET() {
   try {
     const users = await getAuthUsers();
+    const emails = Object.keys(users);
+    const liveUsage = await getUsageForUsers(emails).catch((err) => {
+      console.error("Read usage error:", err);
+      return {} as Awaited<ReturnType<typeof getUsageForUsers>>;
+    });
     const list = Object.entries(users).map(([email, info]) => ({
       email,
       ...info,
+      usage: mergeUsage(info.usage, liveUsage[email]),
     }));
     return NextResponse.json({ users: list });
   } catch (err) {
