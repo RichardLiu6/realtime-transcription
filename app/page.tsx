@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import { useSonioxTranscription } from "@/hooks/useSonioxTranscription";
 import { useSpeakerManager } from "@/hooks/useSpeakerManager";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
+import { useStoredState } from "@/lib/useStoredState";
 import type { SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { t } from "@/lib/i18n";
@@ -37,15 +38,29 @@ function subscribeAudioProcessing(onChange: () => void) {
   };
 }
 
+// Meeting settings, remembered across reloads (useStoredState)
+const DEFAULT_LANGUAGE_A = ["*"];
+// Multilingual mode: one column per language. Chinese + English by default
+// — with English alone, nothing was ever translated into Chinese
+const DEFAULT_TARGET_LANGS = ["zh", "en"];
+const isStringArray = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "string");
+const isString = (v: unknown): v is string => typeof v === "string" && v.length > 0;
+const isTranslationMode = (v: unknown): v is TranslationMode =>
+  v === "two_way" || v === "one_way" || v === "presentation";
+
 export default function Home() {
-  const [languageA, setLanguageA] = useState<string[]>(["*"]);
-  const [languageB, setLanguageB] = useState("en");
+  const [languageA, setLanguageA] = useStoredState("languageA", DEFAULT_LANGUAGE_A, isStringArray);
+  const [languageB, setLanguageB] = useStoredState("languageB", "en", isString);
   const [termsText, setTermsText] = useState("");
   const [selectedPresets, setSelectedPresets] = useState<Set<string>>(new Set());
   const [customTerms, setCustomTerms] = useState<string[]>([]);
-  const [translationMode, setTranslationMode] =
-    useState<TranslationMode>("two_way");
-  const [targetLangs, setTargetLangs] = useState<string[]>(["en"]);
+  const [translationMode, setTranslationMode] = useStoredState<TranslationMode>(
+    "translationMode",
+    "two_way",
+    isTranslationMode
+  );
+  const [targetLangs, setTargetLangs] = useStoredState("targetLangs", DEFAULT_TARGET_LANGS, isStringArray);
   const [desktopLayout, setDesktopLayout] = useState<DesktopLayout>("sidebar");
   const [sttProvider, setSttProvider] = useState<SttProvider>("soniox");
   const [r2t2Enabled, setR2t2Enabled] = useState(false);
@@ -158,8 +173,8 @@ export default function Home() {
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
-    clearEntries();
-    clearSpeakers();
+    // Stopping and starting again continues the same transcript; only
+    // 新会议 (handleNewMeeting) clears it
     start({
       provider: sttProvider === "r2t2" && r2t2Enabled ? "r2t2" : "soniox",
       audioProcessing,
@@ -182,8 +197,6 @@ export default function Home() {
     translationEngine,
     t3poEnabled,
     start,
-    clearEntries,
-    clearSpeakers,
   ]);
 
   const handleStop = useCallback(() => {
@@ -210,7 +223,7 @@ export default function Home() {
       }
       setLanguageA(codes);
     },
-    [recordingState, stop]
+    [recordingState, stop, setLanguageA]
   );
 
   const handleTargetLangsChange = useCallback(
@@ -224,7 +237,7 @@ export default function Home() {
       }
       setTargetLangs(codes);
     },
-    [recordingState, stop]
+    [recordingState, stop, setTargetLangs]
   );
 
   const handleLanguageBChange = useCallback(
@@ -238,7 +251,7 @@ export default function Home() {
       }
       setLanguageB(code);
     },
-    [recordingState, stop]
+    [recordingState, stop, setLanguageB]
   );
 
   const handleTranslationModeChange = useCallback(
@@ -252,7 +265,7 @@ export default function Home() {
       }
       setTranslationMode(mode);
     },
-    [recordingState, stop]
+    [recordingState, stop, setTranslationMode]
   );
 
   const handleRenameSpeaker = useCallback(
@@ -316,6 +329,7 @@ export default function Home() {
           translationEngine={translationEngine}
           onTranslationEngineChange={handleTranslationEngineChange}
           t3poEnabled={t3poEnabled}
+          streamingAllowed={translationMode !== "presentation"}
         />
 
         {/* Desktop top bar (only in topbar layout) */}

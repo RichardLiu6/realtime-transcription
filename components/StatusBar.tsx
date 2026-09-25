@@ -27,6 +27,8 @@ interface StatusBarProps {
   translationEngine?: TranslationEngine;
   onTranslationEngineChange?: (engine: TranslationEngine) => void;
   t3poEnabled?: boolean;
+  // Multilingual mode translates whole sentences only
+  streamingAllowed?: boolean;
 }
 
 const LAYOUT_OPTIONS: { value: DesktopLayout; icon: typeof PanelLeft; label: string }[] = [
@@ -49,6 +51,7 @@ export default function StatusBar({
   translationEngine,
   onTranslationEngineChange,
   t3poEnabled = false,
+  streamingAllowed = true,
 }: StatusBarProps) {
   const t = useT();
   const router = useRouter();
@@ -160,7 +163,8 @@ export default function StatusBar({
               aria-label={t("translation_engine")}
             >
               {(["llm", "clause", "t3po"] as const).map((value) => {
-                const unavailable = value === "t3po" && !t3poEnabled;
+                const modeBlocked = value !== "llm" && !streamingAllowed;
+                const unavailable = modeBlocked || (value === "t3po" && !t3poEnabled);
                 return (
                   <Tooltip key={value}>
                     <TooltipTrigger asChild>
@@ -169,11 +173,11 @@ export default function StatusBar({
                         <button
                           type="button"
                           role="radio"
-                          aria-checked={translationEngine === value}
+                          aria-checked={streamingAllowed ? translationEngine === value : value === "llm"}
                           disabled={recordingState !== "idle" || unavailable}
                           onClick={() => onTranslationEngineChange(value)}
                           className={`rounded px-2 py-0.5 text-xs font-medium transition-colors disabled:cursor-not-allowed ${
-                            translationEngine === value
+                            (streamingAllowed ? translationEngine === value : value === "llm")
                               ? "bg-primary text-primary-foreground"
                               : "text-muted-foreground hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent"
                           }`}
@@ -185,7 +189,9 @@ export default function StatusBar({
                     <TooltipContent side="bottom" className="max-w-64">
                       {value === "llm"
                         ? t("tr_llm_desc")
-                        : value === "clause"
+                        : modeBlocked
+                          ? t("tr_streaming_multilingual")
+                          : value === "clause"
                           ? t("tr_clause_desc")
                           : unavailable
                           ? t("tr_t3po_unavailable")

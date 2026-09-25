@@ -91,7 +91,10 @@ Central logic for the entire app:
 - Endpoint detection (all tokens final) auto-finalizes segments
 - Language detection: CJK character ratio >20% → detected language
 - Provisional translation: while a segment is still being spoken, re-translates the partial text at most once per second (`provisional: true`, shown grey); the final translation replaces it, or the provisional result is promoted when it already covers the final text
+- Segment language = majority language of its tokens by character count (not the first token — a leading "嗯" used to mislabel English sentences as ZH)
 - Auto-merge heuristic: short same-language segments adopt previous speaker
+- Starting a new recording **continues** the transcript (entry ids keep counting, timestamps offset past the last entry); only 新会议 (`clearEntries`) clears it
+- Meeting settings (languageA/B, translationMode, targetLangs) persist in localStorage via `lib/useStoredState.ts`
 - stop() sends end-of-audio and drains trailing results before closing (3 s timeout)
 
 ### Key Types (types/bilingual.ts)
@@ -103,7 +106,7 @@ Central logic for the entire app:
 ### Translation modes
 
 - **two_way / one_way**: one target language per sentence, flowing transcript view.
-- **presentation** (UI label "多语言 / Multilingual"): `targetLangs` are the meeting languages, one table column each. Each sentence is translated into every column language except the one spoken; that column shows the original. Soniox `language_hints` = source languages ∪ `targetLangs`. An extra 原文 column appears only if someone speaks a language without a column.
+- **presentation** (UI label "多语言 / Multilingual"): `targetLangs` are the meeting languages (default 中文 + English), one table column each. Sentence translation only — 分句/同传 are disabled in this mode. Each sentence is translated into every column language except the one spoken; that column shows the original. Soniox `language_hints` = source languages ∪ `targetLangs`. An extra 原文 column appears only if someone speaks a language without a column.
 
 ### API Routes
 

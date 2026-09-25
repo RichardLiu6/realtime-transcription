@@ -164,6 +164,25 @@ function flattenTerms(terms: string[]): string[] {
   return Array.from(new Set(terms.flatMap((t) => t.split("=").map((x) => x.trim())).filter(Boolean)));
 }
 
+// Language covering most of the text (by non-space characters), from the
+// per-token language tags; "" if the tokens carry none
+function majorityLanguage(tokens: SonioxToken[]): string {
+  const weight = new Map<string, number>();
+  for (const t of tokens) {
+    if (!t.language) continue;
+    weight.set(t.language, (weight.get(t.language) ?? 0) + t.text.replace(/\s/g, "").length);
+  }
+  let best = "";
+  let bestWeight = 0;
+  for (const [lang, w] of weight) {
+    if (w > bestWeight) {
+      best = lang;
+      bestWeight = w;
+    }
+  }
+  return best;
+}
+
 type RecordingState = "idle" | "connecting" | "recording";
 
 interface TranscriptionOptions {
@@ -202,6 +221,9 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
   const sessionRef = useRef(0);
   const startedAtRef = useRef(0);
   const samplesSentRef = useRef(0);
+  // Recording again continues the transcript: timestamps of the new session
+  // start after the last entry instead of at 00:00
+  const timeOffsetMsRef = useRef(0);
   const entryCounterRef = useRef(0);
   const configRef = useRef<SonioxConfig | null>(null);
 
@@ -500,10 +522,12 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       engine = new ClauseEngine(
         async ({ clause, sourceSoFar, translationSoFar, sourceLang, targetLang }) => {
           const config = configRef.current;
+          const withContinuation = !!(sourceSoFar.trim() && translationSoFar.trim());
           // Earlier sentences as context / translation memory, as usual
           const recent = Array.from(entriesRef.current.values())
             .filter((e) => e.isFinal && e.originalText && e.translatedText && !e.translationProvisional)
             .slice(-3);
+          const post = async (continuation: boolean) => {
           const res = await fetch("/api/translate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -520,14 +544,24 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
                   }))
                 : undefined,
               terms: config && config.contextTerms.length > 0 ? config.contextTerms : undefined,
-              ...(sourceSoFar.trim() && translationSoFar.trim()
-                ? { continuation: { sourceSoFar, translationSoFar } }
-                : {}),
+              ...(continuation ? { continuation: { sourceSoFar, translationSoFar } } : {}),
             }),
           });
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.error || `分句翻译失败（HTTP ${res.status}）`);
-          return String(data.translatedText ?? "");
+          return String(data.translatedText ?? "").trim();
+          };
+
+          let text = await post(withContinuation);
+          if (withContinuation) {
+            // Models sometimes restate the part already shown; keep only the new tail
+            const shown = translationSoFar.trim();
+            if (text.startsWith(shown)) text = text.slice(shown.length).trim();
+            // …or return nothing for it: translate the clause on its own
+            // rather than drop it
+            if (!text) text = await post(false);
+          }
+          return text;
         },
         (entryId) => {
           const info = streamEntriesRef.current.get(entryId);
@@ -650,6 +684,12 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       return;
     }
 
+    // The segment took the language of its first token; a leading filler
+    // ("嗯") mislabelled a whole English sentence as ZH. Use the language
+    // most of the text is in (Soniox tags every token).
+    const majority = majorityLanguage(seg.tokens);
+    if (majority) seg.language = majority;
+
     // Detect language via CJK fallback if not set by the engine
     if (!seg.language && configRef.current) {
       seg.language = detectLanguageFromText(
@@ -757,7 +797,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
           interimTokens: [],
           language: batchLanguage,
           entryId: newId,
-          startMs: tokens[0]?.start_ms ?? 0,
+          startMs: (tokens[0]?.start_ms ?? 0) + timeOffsetMsRef.current,
           endMs: 0,
         };
       }
@@ -785,7 +825,8 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       if (finalTokens.length > 0) {
         seg.tokens.push(...finalTokens);
         seg.endMs =
-          finalTokens[finalTokens.length - 1]?.end_ms ?? seg.endMs;
+          (finalTokens[finalTokens.length - 1]?.end_ms ?? seg.endMs - timeOffsetMsRef.current) +
+          timeOffsetMsRef.current;
         // Final tokens never change, so they can be fed for simultaneous translation
         simulFeed(seg.entryId, seg.language, finalTokens.map((t) => t.text).join(""));
       }
@@ -845,7 +886,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
 
       const text: string = typeof data.msg.text === "string" ? data.msg.text : "";
       const reset = !!data.msg.reset;
-      const nowMs = Math.round((samplesSentRef.current / TARGET_SAMPLE_RATE) * 1000);
+      const nowMs = Math.round((samplesSentRef.current / TARGET_SAMPLE_RATE) * 1000) + timeOffsetMsRef.current;
 
       if (text) {
         if (!currentSegmentRef.current) {
@@ -938,8 +979,11 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       setRecordingState("connecting");
       setError(null);
       stoppingRef.current = false;
-      entryCounterRef.current = 0;
+      // Entry ids keep counting (only clearEntries resets them), so a new
+      // recording appends to the transcript instead of overwriting entry-0…
       samplesSentRef.current = 0;
+      const lastEnd = Math.max(0, ...Array.from(entriesRef.current.values()).map((e) => e.endMs || e.startMs || 0));
+      timeOffsetMsRef.current = entriesRef.current.size > 0 ? lastEnd + 1000 : 0;
       configRef.current = config;
       currentSegmentRef.current = null;
       lastFinalizedDataRef.current = null;
@@ -1203,6 +1247,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     setError(null);
     setCurrentInterim("");
     entryCounterRef.current = 0;
+    timeOffsetMsRef.current = 0;
     currentSegmentRef.current = null;
     lastFinalizedDataRef.current = null;
     translationStateRef.current.clear();
