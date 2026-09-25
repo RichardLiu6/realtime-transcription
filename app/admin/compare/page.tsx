@@ -20,6 +20,7 @@ const COMPARE_MODELS = [
   { id: "qwen-mt-plus", label: "Qwen-MT Plus" },
   { id: "qwen-mt-flash", label: "Qwen-MT Flash" },
   { id: "qwen-mt-lite", label: "Qwen-MT Lite" },
+  { id: "qwen/qwen3.8-flash", label: "Qwen3.8 Flash" },
   { id: "qwen/qwen3.7-plus", label: "Qwen3.7 Plus" },
   { id: "qwen/qwen3.7-max", label: "Qwen3.7 Max" },
   { id: "qwen/qwen3.8-max-0902", label: "Qwen3.8 Max" },
@@ -41,7 +42,7 @@ interface CompareRow {
 
 export default function ComparePage() {
   const [selectedModels, setSelectedModels] = useState<Set<string>>(
-    new Set(["qwen-mt-plus", "qwen/qwen3.7-plus"])
+    new Set(["qwen/qwen3.8-flash", "qwen/qwen3.7-plus"])
   );
   const [languageA, setLanguageA] = useState("*");
   const [languageB, setLanguageB] = useState("en");

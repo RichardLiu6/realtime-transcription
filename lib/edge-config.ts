@@ -11,6 +11,7 @@ export const SUPPORTED_MODELS = [
   "qwen-mt-flash",
   "qwen-mt-lite",
   // Qwen via OpenRouter
+  "qwen/qwen3.8-flash",
   "qwen/qwen3.7-plus",
   "qwen/qwen3.7-max",
   "qwen/qwen3.8-max-0902",
@@ -18,11 +19,13 @@ export const SUPPORTED_MODELS = [
 
 export type TranslationModel = (typeof SUPPORTED_MODELS)[number];
 export const QWEN_MT_DEFAULT_MODEL: TranslationModel = "qwen-mt-plus";
-export const QWEN_DEFAULT_MODEL: TranslationModel = "qwen/qwen3.7-plus";
+// Flash over Plus: live translation is latency-bound, and short sentences
+// don't need the bigger model
+export const QWEN_DEFAULT_MODEL: TranslationModel = "qwen/qwen3.8-flash";
 export const OPENAI_DEFAULT_MODEL: TranslationModel = "gpt-5-nano";
 
 // Default for users without an admin-assigned model: the first configured
-// of Qwen-MT Plus (DashScope), Qwen3.7 Plus (OpenRouter), GPT-5 Nano
+// of Qwen-MT Plus (DashScope), Qwen3.8 Flash (OpenRouter), GPT-5 Nano
 export function getDefaultModel(): TranslationModel {
   if (process.env.DASHSCOPE_API_KEY) return QWEN_MT_DEFAULT_MODEL;
   if (process.env.OPENROUTER_API_KEY) return QWEN_DEFAULT_MODEL;

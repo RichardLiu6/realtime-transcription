@@ -43,10 +43,30 @@ function chatClient(model: string) {
   return isOpenRouter(model) ? getOpenRouter() : getOpenAI();
 }
 
-// Qwen3.x models may think before answering; for live translation that is
-// pure latency. OpenRouter ignores the field for models that don't reason.
+// OpenRouter tuning for live translation:
+// - Qwen3.x models may think before answering, which is pure latency here;
+//   OpenRouter ignores the field for models that don't reason
+// - by default OpenRouter load-balances toward the cheapest provider;
+//   sort by latency instead
 function applyProviderParams(model: string, params: Record<string, unknown>) {
-  if (isOpenRouter(model)) params.reasoning = { enabled: false };
+  if (isOpenRouter(model)) {
+    params.reasoning = { enabled: false };
+    params.provider = { sort: "latency" };
+  }
+}
+
+// One line per translation in the Vercel logs, to see where time goes.
+// reasoning > 0 means the model "thought" despite being asked not to.
+function logTiming(
+  model: string,
+  latencyMs: number,
+  usage: { prompt_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } | null } | undefined,
+  provisional: boolean,
+) {
+  console.log(
+    `[translate] model=${model} ms=${latencyMs} in=${usage?.prompt_tokens ?? 0} out=${usage?.completion_tokens ?? 0}` +
+      ` reasoning=${usage?.completion_tokens_details?.reasoning_tokens ?? 0}${provisional ? " provisional" : ""}`
+  );
 }
 
 // Models may wrap JSON in a ```json fence despite response_format
@@ -166,6 +186,8 @@ ${SPEECH_INPUT_RULES}`;
   let translations: Record<string, string> = {};
   let inputTokens = 0;
   let outputTokens = 0;
+  // OpenAI-compatible usage (incl. reasoning tokens), for logTiming
+  let chatUsage: Parameters<typeof logTiming>[2];
 
   if (isClaude(model)) {
     // Claude: use tool_use for structured output
@@ -244,6 +266,7 @@ ${SPEECH_INPUT_RULES}`;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const r = await chatClient(model).chat.completions.create(params as any);
+    chatUsage = r.usage;
     const raw = r.choices[0]?.message?.content?.trim() || "{}";
     translations = parseJsonObject(raw);
     inputTokens = r.usage?.prompt_tokens ?? 0;
@@ -251,6 +274,7 @@ ${SPEECH_INPUT_RULES}`;
   }
 
   const latencyMs = Date.now() - start;
+  logTiming(model, latencyMs, chatUsage ?? { prompt_tokens: inputTokens, completion_tokens: outputTokens }, provisional);
   // Provisional (partial-sentence) requests are not recorded: usage lives in
   // Edge Config, which is rewritten wholesale per call and can't take the
   // extra write rate. See incrementUsage in lib/edge-config.ts.
@@ -300,6 +324,8 @@ ${SPEECH_INPUT_RULES}`;
   let translatedText: string;
   let inputTokens = 0;
   let outputTokens = 0;
+  // OpenAI-compatible usage (incl. reasoning tokens), for logTiming
+  let chatUsage: Parameters<typeof logTiming>[2];
 
   if (isClaude(model)) {
     const anthropicMessages = messages
@@ -334,12 +360,14 @@ ${SPEECH_INPUT_RULES}`;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const r = await chatClient(model).chat.completions.create(params as any);
+    chatUsage = r.usage;
     translatedText = r.choices[0]?.message?.content?.trim() || "";
     inputTokens = r.usage?.prompt_tokens ?? 0;
     outputTokens = r.usage?.completion_tokens ?? 0;
   }
 
   const latencyMs = Date.now() - start;
+  logTiming(model, latencyMs, chatUsage ?? { prompt_tokens: inputTokens, completion_tokens: outputTokens }, provisional);
   if (!provisional) trackUsage(req, inputTokens, outputTokens);
 
   return NextResponse.json({
@@ -463,6 +491,7 @@ async function handleQwenMT(
   const latencyMs = Date.now() - start;
   const inputTokens = results.reduce((n, r) => n + r.inputTokens, 0);
   const outputTokens = results.reduce((n, r) => n + r.outputTokens, 0);
+  logTiming(model, latencyMs, { prompt_tokens: inputTokens, completion_tokens: outputTokens }, provisional);
   if (!provisional) trackUsage(req, inputTokens, outputTokens);
 
   if (multi) {

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ABL-translate: Web-based real-time bilingual transcription for meetings. Browser captures audio via AudioWorklet, streams to a speech engine over WebSocket — Soniox (cloud, speaker diarization) or self-hosted NetEase Youdao Confucius4-R2T2 — then translates via a per-user model (default: Qwen-MT Plus on Alibaba Cloud Model Studio if `DASHSCOPE_API_KEY` is set, else Qwen3.7 Plus via OpenRouter if `OPENROUTER_API_KEY` is set, else gpt-5-nano). Main use case: Chinese↔English. Supports 54 languages, two-way/one-way translation modes.
+ABL-translate: Web-based real-time bilingual transcription for meetings. Browser captures audio via AudioWorklet, streams to a speech engine over WebSocket — Soniox (cloud, speaker diarization) or self-hosted NetEase Youdao Confucius4-R2T2 — then translates via a per-user model (default: Qwen-MT Plus on Alibaba Cloud Model Studio if `DASHSCOPE_API_KEY` is set, else Qwen3.8 Flash via OpenRouter if `OPENROUTER_API_KEY` is set, else gpt-5-nano). Main use case: Chinese↔English. Supports 54 languages, two-way/one-way translation modes.
 
 - **Live**: https://realtime-transcription-murex.vercel.app
 - **GitHub**: https://github.com/RichardLiu6/realtime-transcription
@@ -50,8 +50,9 @@ Audio goes directly from browser to the STT engine — the server never touches 
 - **Qwen-MT** accepts one user message only (no system prompt, no history); config goes in `translation_options`. Mapping: earlier sentences + translations (client `memory`) → `tm_list`; `中文=English` term pairs → `terms` (both directions); plain terms + an ASR note → `domains`. Multi-target = one call per target language, in parallel.
 - Chat models (GPT/Claude/Qwen3.7) get terms and previous sentences in the prompt.
 - Terms are comma-separated; `a=b` entries are pairs. Speech engines receive the flattened word list.
-- On a provider failure (401/402/403/429/5xx, empty balance, DashScope `Arrearage`) the route retries on the other configured providers in order Qwen-MT Plus → Qwen3.7 Plus → GPT-5 Nano → Claude Haiku; explicit model requests (compare page) are never substituted. Errors return a Chinese message the client shows in the banner.
-- SDK clients use `maxRetries: 1`.
+- On a provider failure (401/402/403/429/5xx, empty balance, DashScope `Arrearage`) the route retries on the other configured providers in order Qwen-MT Plus → Qwen3.8 Flash → GPT-5 Nano → Claude Haiku; explicit model requests (compare page) are never substituted. Errors return a Chinese message the client shows in the banner.
+- SDK clients use `maxRetries: 1`. OpenRouter requests send `reasoning: {enabled: false}` and `provider: {sort: "latency"}`.
+- Every translation logs `[translate] model=… ms=… in=… out=… reasoning=…` to the Vercel runtime logs (reasoning > 0 means the model thought anyway).
 
 ### Two-Tier Authentication
 
