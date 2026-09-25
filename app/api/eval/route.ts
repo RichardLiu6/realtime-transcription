@@ -1,6 +1,6 @@
 // Translation model evaluation — PREVIEW DEPLOYMENTS ONLY.
 //
-// GET /api/eval[?models=a,b][&rounds=2] runs a fixed set of meeting
+// GET /api/eval[?models=a,b][&rounds=2][&cases=a,b] runs a fixed set of meeting
 // sentences (zh / en / es, code-switching, unfinished speech, terms,
 // multilingual columns) through each model via the real /api/translate
 // handler, and returns every translation with its latency.
@@ -110,6 +110,11 @@ export async function GET(req: NextRequest) {
       models.forEach((m, i) => (byModel[m] ??= []).push(outs[i]));
     }
     results.push({ id: c.id, note: c.note, source: c.body.text, byModel });
+    // One line per case × model in the runtime logs (fixed test sentences,
+    // no meeting content), so results can be read without the response
+    for (const [m, outs] of Object.entries(byModel)) {
+      console.log(`[eval] case=${c.id} model=${m} ${JSON.stringify(outs)}`);
+    }
   }
   return NextResponse.json({ models, rounds, results });
 }
