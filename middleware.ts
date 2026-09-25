@@ -16,6 +16,9 @@ export async function middleware(request: NextRequest) {
     pathname === "/admin/login" ||
     pathname.startsWith("/api/auth/") ||
     pathname === "/api/admin/auth" ||
+    // Model evaluation: the route itself 404s outside preview deployments,
+    // which are behind Vercel Authentication
+    pathname === "/api/eval" ||
     pathname === "/favicon.ico"
   ) {
     return NextResponse.next();
