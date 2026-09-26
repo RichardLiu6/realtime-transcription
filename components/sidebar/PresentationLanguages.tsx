@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
-import { useT } from "@/lib/i18n";
+import { useLanguageName, useT } from "@/lib/i18n";
 
 interface PresentationLanguagesProps {
   languageA: string[];
@@ -29,6 +29,7 @@ export default function PresentationLanguages({
   disabled,
 }: PresentationLanguagesProps) {
   const t = useT();
+  const langName = useLanguageName();
   const [sourceOpen, setSourceOpen] = useState(false);
   const [targetOpen, setTargetOpen] = useState(false);
 
@@ -69,7 +70,7 @@ export default function PresentationLanguages({
 
   const getName = (code: string) => {
     if (code === "*") return t("any_language");
-    return SONIOX_LANGUAGES.find((l) => l.code === code)?.name ?? code;
+    return langName(code);
   };
 
   return (
@@ -133,7 +134,7 @@ export default function PresentationLanguages({
                       onClick={() => toggleSource(lang.code)}
                     >
                       <Check className={cn("size-4 shrink-0", selected ? "opacity-100" : "opacity-0")} />
-                      {lang.name}
+                      {langName(lang.code)}
                     </button>
                   );
                 })}
@@ -187,7 +188,7 @@ export default function PresentationLanguages({
                       onClick={() => toggleTarget(lang.code)}
                     >
                       <Check className={cn("size-4 shrink-0", selected ? "opacity-100" : "opacity-0")} />
-                      {lang.name}
+                      {langName(lang.code)}
                     </button>
                   );
                 })}

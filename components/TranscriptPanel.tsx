@@ -1,10 +1,11 @@
 "use client";
 
-import { memo, useEffect, useRef, useState, useCallback } from "react";
+import { memo, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { ChevronDown, Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { BilingualEntry, SpeakerInfo } from "@/types/bilingual";
 import { useT } from "@/lib/i18n";
+import { defaultSpeakerLabel } from "@/hooks/useSonioxTranscription";
 
 // Soniox Compare style: 25 hex colors for speakers
 const SPEAKER_COLORS = [
@@ -15,8 +16,8 @@ const SPEAKER_COLORS = [
   "#17becf", "#aec7e8", "#c5b0d5", "#ffbb78", "#98df8a",
 ];
 
-function getSpeakerColor(speakerNum: number): string {
-  return SPEAKER_COLORS[(speakerNum - 1) % SPEAKER_COLORS.length];
+function getSpeakerColor(index: number): string {
+  return SPEAKER_COLORS[Math.max(0, index) % SPEAKER_COLORS.length];
 }
 
 function getLanguageLabel(code: string): string {
@@ -37,20 +38,95 @@ interface TranscriptPanelProps {
   isRecording: boolean;
   languageA: string[];
   languageB: string;
-  onReassignSpeaker: (entryId: string, newSpeaker: string) => void;
+  onRenameSpeaker: (speakerId: string, newLabel: string) => void;
 }
 
 interface EntryRowProps {
   entry: BilingualEntry;
   showSpeakerHeader: boolean;
   speakerName: string;
+  speakerColor: string;
   translationLabel: string;
-  // Only passed while this row's speaker picker is open, so other rows keep
-  // stable props and skip re-rendering
-  speakerOptions: SpeakerInfo[] | null;
+  // Only passed while this row's name editor is open (the other speakers,
+  // as quick picks), so other rows keep stable props and skip re-rendering
+  otherSpeakers: SpeakerInfo[] | null;
   onStartEdit: (entryId: string) => void;
   onEndEdit: () => void;
-  onReassignSpeaker: (entryId: string, newSpeaker: string) => void;
+  onRenameSpeaker: (speakerId: string, newLabel: string) => void;
+}
+
+interface SpeakerNameEditorProps {
+  speakerId: string;
+  name: string;
+  color: string;
+  otherSpeakers: SpeakerInfo[];
+  onRename: (speakerId: string, newLabel: string) => void;
+  onClose: () => void;
+}
+
+// Inline rename. Picking (or typing) a name another speaker already has
+// marks them as the same person — how a name survives stop/start.
+function SpeakerNameEditor({
+  speakerId,
+  name,
+  color,
+  otherSpeakers,
+  onRename,
+  onClose,
+}: SpeakerNameEditorProps) {
+  const t = useT();
+  const [value, setValue] = useState(name);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Enter / Esc unmount the input, which can still fire a blur
+  const doneRef = useRef(false);
+
+  useEffect(() => {
+    inputRef.current?.select();
+  }, []);
+
+  const finish = (label: string | null) => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    if (label && label.trim() && label.trim() !== name) onRename(speakerId, label.trim());
+    onClose();
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <input
+        ref={inputRef}
+        autoFocus
+        value={value}
+        placeholder={t("speaker_name_placeholder")}
+        aria-label={t("rename_speaker")}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => finish(value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") finish(value);
+          if (e.key === "Escape") finish(null);
+        }}
+        className="w-40 rounded border border-blue-300 bg-white px-2 py-0.5 text-sm font-semibold focus:outline-none"
+        style={{ color }}
+      />
+      {otherSpeakers.length > 0 && (
+        <>
+          <span className="text-xs text-gray-400">{t("same_person_as")}</span>
+          {otherSpeakers.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              // Keep the input focused, so its blur doesn't save first
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => finish(s.label)}
+              className="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-100"
+            >
+              {s.label}
+            </button>
+          ))}
+        </>
+      )}
+    </div>
+  );
 }
 
 // Memoized: while recording, only the live (non-final) row and rows whose
@@ -59,41 +135,33 @@ const EntryRow = memo(function EntryRow({
   entry,
   showSpeakerHeader,
   speakerName,
+  speakerColor,
   translationLabel,
-  speakerOptions,
+  otherSpeakers,
   onStartEdit,
   onEndEdit,
-  onReassignSpeaker,
+  onRenameSpeaker,
 }: EntryRowProps) {
-  const speakerColor = getSpeakerColor(Number(entry.speaker) || 1);
-
+  const t = useT();
   return (
     <div className="inline">
       {/* Speaker header (only when speaker changes) */}
       {showSpeakerHeader && (
         <div className="mt-4 first:mt-0 mb-1 flex items-center gap-2">
-          {speakerOptions ? (
-            <select
-              autoFocus
-              value={entry.speaker}
-              onChange={(e) => {
-                onReassignSpeaker(entry.id, e.target.value);
-                onEndEdit();
-              }}
-              onBlur={onEndEdit}
-              className="rounded border border-blue-300 bg-white px-2 py-0.5 text-sm font-semibold focus:outline-none"
-              style={{ color: speakerColor }}
-            >
-              {speakerOptions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
+          {otherSpeakers ? (
+            <SpeakerNameEditor
+              speakerId={entry.speaker}
+              name={speakerName}
+              color={speakerColor}
+              otherSpeakers={otherSpeakers}
+              onRename={onRenameSpeaker}
+              onClose={onEndEdit}
+            />
           ) : (
             <button
               type="button"
               onClick={() => onStartEdit(entry.id)}
+              title={t("rename_speaker")}
               className="text-sm font-semibold uppercase tracking-wide hover:opacity-70 transition"
               style={{ color: speakerColor }}
             >
@@ -165,7 +233,7 @@ function TranscriptPanel({
   isRecording,
   languageA,
   languageB,
-  onReassignSpeaker,
+  onRenameSpeaker,
 }: TranscriptPanelProps) {
   const t = useT();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -213,6 +281,12 @@ function TranscriptPanel({
     return () => cancelAnimationFrame(frame);
   }, [entries, currentInterim, isAtBottom]);
 
+  // Color by order of appearance: ids are "<recording>:<speaker>", not numbers
+  const speakerIndex = useMemo(
+    () => new Map(Array.from(speakers.keys(), (id, i) => [id, i])),
+    [speakers]
+  );
+
   const showEmpty = entries.length === 0 && !currentInterim;
   const languageAPrimary = languageA[0] === "*" ? "zh" : (languageA[0] ?? "zh");
 
@@ -253,16 +327,21 @@ function TranscriptPanel({
               key={entry.id}
               entry={entry}
               showSpeakerHeader={i === 0 || entries[i - 1].speaker !== entry.speaker}
-              speakerName={speakers.get(entry.speaker)?.label || `Speaker ${entry.speaker}`}
+              speakerName={speakers.get(entry.speaker)?.label || defaultSpeakerLabel(entry.speaker)}
+              speakerColor={getSpeakerColor(speakerIndex.get(entry.speaker) ?? 0)}
               // Mirrors the target selection in requestTranslation: text in
               // language B goes to language A, everything else to language B
               translationLabel={getLanguageLabel(
                 entry.language === languageB ? languageAPrimary : languageB
               )}
-              speakerOptions={isEditing ? Array.from(speakers.values()) : null}
+              otherSpeakers={
+                isEditing
+                  ? Array.from(speakers.values()).filter((s) => s.id !== entry.speaker)
+                  : null
+              }
               onStartEdit={handleStartEdit}
               onEndEdit={handleEndEdit}
-              onReassignSpeaker={onReassignSpeaker}
+              onRenameSpeaker={onRenameSpeaker}
             />
           );
         })}

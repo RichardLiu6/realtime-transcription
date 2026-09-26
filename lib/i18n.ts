@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
+import { SONIOX_LANGUAGES } from "@/types/bilingual";
 
 // Interface languages. The choice is remembered in localStorage
 // ("uiLocale"); without one, the browser language decides.
@@ -80,6 +81,9 @@ const en = {
 
   // Speakers
   "speakers": "Speakers",
+  "rename_speaker": "Rename speaker",
+  "same_person_as": "Same person as",
+  "speaker_name_placeholder": "Name",
   "words": "words",
 
   // Transcript
@@ -191,6 +195,9 @@ const zh: Record<TranslationKey, string> = {
   "preset_ecommerce": "跨境电商",
 
   "speakers": "说话人",
+  "rename_speaker": "修改说话人名字",
+  "same_person_as": "同一人：",
+  "speaker_name_placeholder": "名字",
   "words": "字",
 
   "listening": "聆听中...",
@@ -296,6 +303,9 @@ const es: Record<TranslationKey, string> = {
   "preset_ecommerce": "Comercio electrónico",
 
   "speakers": "Hablantes",
+  "rename_speaker": "Renombrar hablante",
+  "same_person_as": "Misma persona que",
+  "speaker_name_placeholder": "Nombre",
   "words": "palabras",
 
   "listening": "Escuchando...",
@@ -401,6 +411,9 @@ const vi: Record<TranslationKey, string> = {
   "preset_ecommerce": "Thương mại điện tử",
 
   "speakers": "Người nói",
+  "rename_speaker": "Đổi tên người nói",
+  "same_person_as": "Cùng người với",
+  "speaker_name_placeholder": "Tên",
   "words": "từ",
 
   "listening": "Đang nghe...",
@@ -517,4 +530,24 @@ export function useT() {
     (key: TranslationKey, vars?: Record<string, string | number>) => translate(locale, key, vars),
     [locale]
   );
+}
+
+// Meeting-language names: the language's own name, plus its name in the
+// interface language when that differs — "中文 · Chinese" in the English UI,
+// "English · 英语" in the Chinese one (Intl covers every Soniox language)
+export function languageLabel(code: string, locale: Locale): string {
+  const native = SONIOX_LANGUAGES.find((l) => l.code === code)?.name ?? code.toUpperCase();
+  let local: string | undefined;
+  try {
+    local = new Intl.DisplayNames([locale], { type: "language" }).of(code);
+  } catch {
+    // unknown code / old browser: native name only
+  }
+  if (!local || local === code || local.toLowerCase() === native.toLowerCase()) return native;
+  return `${native} · ${local}`;
+}
+
+export function useLanguageName() {
+  const locale = useLocale();
+  return useCallback((code: string) => languageLabel(code, locale), [locale]);
 }

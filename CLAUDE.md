@@ -76,7 +76,7 @@ StatusBar 翻译方式 **整句 | 分句 | 同传** (`config.translationEngine` 
 
 - UI in 中文 / English / Español / Tiếng Việt. `useT()` / `t(key, vars)`; every locale is a `Record<TranslationKey, string>`, so a missing string fails the type check.
 - Locale: stored choice (localStorage `uiLocale`, set by `components/LanguageSwitcher.tsx` in the status bar and on /login), else the browser language, else English. `useSyncExternalStore` with an English server snapshot — no hydration mismatch; switching re-renders without reload and updates `<html lang>`.
-- Server messages: `/api/translate` localizes its error banner from the `uiLocale` the client sends; `/api/auth/*` return a `code` that /login maps to `auth_<code>`. Preset chips use `preset_<key>`. The admin pages stay Chinese.
+- Server messages: `/api/translate` localizes its error banner from the `uiLocale` the client sends; `/api/auth/*` return a `code` that /login maps to `auth_<code>`. Preset chips use `preset_<key>`. Meeting-language names everywhere (selects, chips, table headers) come from `useLanguageName()`: the native name plus the name in the interface language via `Intl.DisplayNames` ("中文 · Chinese", "English · 英语"). The admin pages stay Chinese.
 
 ### Two-Tier Authentication
 
@@ -104,6 +104,8 @@ Central logic for the entire app:
 - Segment language = majority language of its tokens, weighted in units (1 per CJK character, 1 per Latin word — not letters), not the first token (a leading "嗯" used to mislabel English sentences as ZH)
 - Auto-merge heuristic: short same-language segments adopt previous speaker
 - Starting a new recording **continues** the transcript (entry ids keep counting, timestamps offset past the last entry); only 新会议 (`clearEntries`) clears it
+- Speaker ids are per recording, `"<recording>:<speaker>"` (Soniox restarts its numbering on every WebSocket session; R2T2 is always speaker 1). Default labels (`defaultSpeakerLabel`): "Speaker 1" in the first recording, "Speaker 1 (#2)" in later ones. The recording index advances on start when the transcript has entries and resets with `clearEntries`
+- Renaming: click a speaker name on a transcript row (inline input, Enter saves / Esc cancels) or in the SpeakerPanel. Giving a speaker a name another speaker already has — typed, or via the "同一人" quick picks — means the same person: `mergeSpeaker` moves their entries to the existing id and aliases the engine speaker, so later sentences keep the name, color and word count. This is how names carry over stop/start within a meeting. Export uses the given names
 - Meeting settings (languageA/B, translationMode, targetLangs) persist in localStorage via `lib/useStoredState.ts`
 - A segment of nothing but punctuation (a trailing `。` finalized on its own) is not a sentence: its mark is appended to the previous entry and it is never translated
 - stop() sends end-of-audio and drains trailing results before closing (3 s timeout)

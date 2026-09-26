@@ -19,15 +19,20 @@ export function useSpeakerManager() {
     new Map()
   );
 
-  const registerSpeaker = useCallback((speakerId: string) => {
+  const registerSpeaker = useCallback((speakerId: string, label?: string) => {
     setSpeakers((prev) => {
       if (prev.has(speakerId)) return prev;
       const next = new Map(prev);
       const index = next.size;
+      // First free color: a merged-away speaker leaves a gap, and filling
+      // it by count would give two speakers the same color
+      const used = new Set(Array.from(prev.values(), (s) => s.color));
       next.set(speakerId, {
         id: speakerId,
-        label: `Speaker ${index + 1}`,
-        color: SPEAKER_COLORS[index % SPEAKER_COLORS.length],
+        label: label ?? `Speaker ${index + 1}`,
+        color:
+          SPEAKER_COLORS.find((c) => !used.has(c)) ??
+          SPEAKER_COLORS[index % SPEAKER_COLORS.length],
         wordCount: 0,
       });
       return next;
@@ -40,6 +45,15 @@ export function useSpeakerManager() {
       if (!info) return prev;
       const next = new Map(prev);
       next.set(speakerId, { ...info, label: newLabel });
+      return next;
+    });
+  }, []);
+
+  const removeSpeaker = useCallback((speakerId: string) => {
+    setSpeakers((prev) => {
+      if (!prev.has(speakerId)) return prev;
+      const next = new Map(prev);
+      next.delete(speakerId);
       return next;
     });
   }, []);
@@ -70,6 +84,7 @@ export function useSpeakerManager() {
     speakers,
     registerSpeaker,
     renameSpeaker,
+    removeSpeaker,
     getSpeakerLabel,
     getSpeakerColor,
     clearSpeakers,
