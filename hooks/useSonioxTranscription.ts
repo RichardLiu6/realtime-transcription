@@ -251,6 +251,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
 
   // Last finalized entry data for auto-merge heuristic
   const lastFinalizedDataRef = useRef<{
+    entryId: string;
     speaker: string;
     language: string;
     endMs: number;
@@ -755,15 +756,22 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       .join("")
       .trim();
 
-    if (!originalText) {
-      // Remove any interim entry that was already displayed
+    // Nothing but punctuation (a trailing "。" finalized on its own): not a
+    // sentence — drop the row, append the mark to the previous sentence, and
+    // don't translate it
+    if (!/[\p{L}\p{N}]/u.test(originalText)) {
+      const prevId = lastFinalizedDataRef.current?.entryId;
       setEntries((prev) => {
-        if (!prev.has(seg.entryId)) return prev;
         const m = new Map(prev);
         m.delete(seg.entryId);
+        const before = prevId ? m.get(prevId) : undefined;
+        if (before && originalText && !before.originalText.endsWith(originalText)) {
+          m.set(prevId!, { ...before, originalText: before.originalText + originalText });
+        }
         return m;
       });
       currentSegmentRef.current = null;
+      setCurrentInterim("");
       return;
     }
 
@@ -811,6 +819,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
 
     upsertEntry(entry);
     lastFinalizedDataRef.current = {
+      entryId: seg.entryId,
       speaker: effectiveSpeaker,
       language: seg.language,
       endMs: seg.endMs,

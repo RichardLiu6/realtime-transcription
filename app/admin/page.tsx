@@ -18,7 +18,7 @@ import { MODEL_POOL } from "@/lib/models";
 
 // Pool: every model ≤ $0.5 per million tokens (input and output)
 const SUPPORTED_MODELS = [
-  { value: "", label: "默认（Qwen3.8 Flash；配了百炼 Key 则 Qwen-MT Flash）" },
+  { value: "", label: "默认（Seed 2.0 Mini）" },
   ...MODEL_POOL.map((m) => ({ value: m.id, label: `${m.label} · $${m.price}/M` })),
 ];
 

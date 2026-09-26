@@ -34,17 +34,20 @@ export type TranslationModel = (typeof MODEL_POOL)[number]["id"];
 export const SUPPORTED_MODELS: readonly string[] = MODEL_POOL.map((m) => m.id);
 
 export const QWEN_MT_DEFAULT_MODEL: TranslationModel = "qwen-mt-flash";
-export const OPENROUTER_DEFAULT_MODEL: TranslationModel = "qwen/qwen3.8-flash";
+// Seed 2.0 Mini: fastest and steadiest in the /api/eval run (median 0.75 s,
+// max 1.0 s over 20 calls), keeps unfinished sentences unfinished, not
+// served from Alibaba's shared, rate-limited pool
+export const OPENROUTER_DEFAULT_MODEL: TranslationModel = "bytedance-seed/seed-2.0-mini";
 
 // Tried in order when a model fails (rate limit, provider down, no credits),
 // skipping the failed one and unconfigured providers. Different vendors
 // after the default, so one vendor's rate limit can't stop translation.
 export const FALLBACK_CHAIN: readonly TranslationModel[] = [
+  "bytedance-seed/seed-2.0-mini",
+  "qwen/qwen3.7-flash",
+  "google/gemini-2.5-flash-lite",
   "qwen-mt-flash",
   "qwen-mt-lite",
-  "qwen/qwen3.8-flash",
-  "google/gemini-2.5-flash-lite",
-  "qwen/qwen3-235b-a22b-2507",
   "openai/gpt-6-luna",
 ];
 

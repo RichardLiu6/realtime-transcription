@@ -3,7 +3,7 @@ import { getOpenRouter } from "@/lib/openrouter";
 
 // Via OpenRouter, from the same ≤ $0.5 / M pool as translation; the second
 // model (another vendor) covers a rate-limited first
-const SUMMARY_MODELS = ["qwen/qwen3.8-flash", "google/gemini-2.5-flash-lite"];
+const SUMMARY_MODELS = ["bytedance-seed/seed-2.0-mini", "google/gemini-2.5-flash-lite"];
 
 interface TranscriptEntry {
   text: string;

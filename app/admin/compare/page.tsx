@@ -28,7 +28,7 @@ interface CompareRow {
 
 export default function ComparePage() {
   const [selectedModels, setSelectedModels] = useState<Set<string>>(
-    new Set(["qwen/qwen3.8-flash", "google/gemini-2.5-flash-lite"])
+    new Set(["bytedance-seed/seed-2.0-mini", "qwen/qwen3.7-flash"])
   );
   const [languageA, setLanguageA] = useState("*");
   const [languageB, setLanguageB] = useState("en");

@@ -157,7 +157,9 @@ function multiContinuationMessage(c: Continuation, next: string, targetLangs: st
 // Multilingual mode translates into every column, including the language
 // being spoken: that column gets the utterance fully in that language, so
 // speakers who mix languages still produce a clean version per column
-const SAME_LANGUAGE_RULES = `- A target language may be the same as the spoken language. For it, output the utterance entirely in that language: translate any words or phrases from other languages into it, keep the rest as said (do not paraphrase)`;
+// Same-language column: speakers mix languages on purpose, so foreign words
+// may stay — but the reader gets their meaning in brackets
+const SAME_LANGUAGE_RULES = `- A target language may be the same as the spoken language. For it, keep the utterance as said (do not paraphrase). Words or phrases from other languages may stay as spoken, but follow each one — on its first occurrence — with its meaning in that language in brackets, using the bracket style of that language (Chinese: full-width （）, others: ( )). Examples: "这个 batch 的 yield 太低了" → "这个 batch（批次）的 yield（良率）太低了"; "Vamos a revisar el budget" → "Vamos a revisar el budget (presupuesto)". Do not gloss acronyms or brand names normally written as-is in that language (FDA, Qwen)`;
 
 // Track usage asynchronously (fire-and-forget)
 function trackUsage(req: NextRequest, inputTokens: number, outputTokens: number) {
