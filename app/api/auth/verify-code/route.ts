@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
 
     if (!code || !challengeToken) {
       return NextResponse.json(
-        { error: "请输入验证码" },
+        { error: "请输入验证码", code: "code_required" },
         { status: 400 }
       );
     }
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     const payload = await verifyToken(challengeToken);
     if (!payload || !payload.email || !payload.otpHash) {
       return NextResponse.json(
-        { error: "验证码已过期，请重新发送" },
+        { error: "验证码已过期，请重新发送", code: "code_expired" },
         { status: 401 }
       );
     }
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     const submittedHash = await hashOTP(code.trim());
     if (submittedHash !== payload.otpHash) {
       return NextResponse.json(
-        { error: "验证码错误" },
+        { error: "验证码错误", code: "code_wrong" },
         { status: 401 }
       );
     }
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("Verify code error:", err);
     return NextResponse.json(
-      { error: "服务异常，请稍后重试" },
+      { error: "服务异常，请稍后重试", code: "server_error" },
       { status: 500 }
     );
   }

@@ -6,7 +6,7 @@ export async function POST(request: NextRequest) {
   try {
     const { code } = await request.json();
     if (!code || typeof code !== "string") {
-      return NextResponse.json({ error: "请输入会议码" }, { status: 400 });
+      return NextResponse.json({ error: "请输入会议码", code: "meeting_code_required" }, { status: 400 });
     }
 
     const normalizedCode = code.trim().toUpperCase();
@@ -14,14 +14,14 @@ export async function POST(request: NextRequest) {
     const meeting = codes[normalizedCode];
 
     if (!meeting) {
-      return NextResponse.json({ error: "会议码无效" }, { status: 401 });
+      return NextResponse.json({ error: "会议码无效", code: "meeting_invalid" }, { status: 401 });
     }
 
     const expiresAt = new Date(meeting.expiresAt).getTime();
     const now = Date.now();
 
     if (expiresAt <= now) {
-      return NextResponse.json({ error: "会议码已过期" }, { status: 401 });
+      return NextResponse.json({ error: "会议码已过期", code: "meeting_expired" }, { status: 401 });
     }
 
     // Calculate remaining time in seconds for token expiry
@@ -43,6 +43,6 @@ export async function POST(request: NextRequest) {
     return response;
   } catch (err) {
     console.error("Join meeting error:", err);
-    return NextResponse.json({ error: "服务异常" }, { status: 500 });
+    return NextResponse.json({ error: "服务异常", code: "server_error" }, { status: 500 });
   }
 }

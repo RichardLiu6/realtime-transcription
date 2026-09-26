@@ -615,43 +615,87 @@ const PROVIDER_NAME: Record<Provider, string> = {
   dashscope: "阿里云百炼",
 };
 
-// Why one model failed, in a few words
-function failureReason(error: unknown, model: string): { status: number; code: string; reason: string } {
+// Banner text in the user's interface language (`uiLocale` from the client)
+type UiLocale = "zh" | "en" | "es" | "vi";
+type Reason = "rate_limit" | "quota" | "auth" | "unavailable" | "down" | "error";
+
+const FAILURE_TEXT: Record<UiLocale, {
+  failed: string; backup: (model: string, reason: string) => string; topUp: string;
+  reason: Record<Reason, (provider: string) => string>;
+}> = {
+  zh: {
+    failed: "翻译失败", backup: (m, r) => `；备用 ${m} 也失败（${r}）`, topUp: "，请充值",
+    reason: {
+      rate_limit: () => "限流（请求过于频繁）", quota: (p) => `${p} 账户额度已用完`,
+      auth: (p) => `${p} API Key 无效或无权限`, unavailable: () => "模型暂不可用",
+      down: () => "服务暂时不可用", error: () => "翻译服务出错",
+    },
+  },
+  en: {
+    failed: "Translation failed", backup: (m, r) => `; backup ${m} also failed (${r})`, topUp: ", please top up",
+    reason: {
+      rate_limit: () => "rate limited (too many requests)", quota: (p) => `${p} account out of credits`,
+      auth: (p) => `${p} API key invalid or not permitted`, unavailable: () => "model temporarily unavailable",
+      down: () => "service temporarily unavailable", error: () => "translation service error",
+    },
+  },
+  es: {
+    failed: "Error de traducción", backup: (m, r) => `; el modelo de respaldo ${m} también falló (${r})`, topUp: ", recargue saldo",
+    reason: {
+      rate_limit: () => "límite de solicitudes alcanzado", quota: (p) => `sin saldo en la cuenta de ${p}`,
+      auth: (p) => `clave API de ${p} no válida o sin permiso`, unavailable: () => "modelo no disponible temporalmente",
+      down: () => "servicio no disponible temporalmente", error: () => "error del servicio de traducción",
+    },
+  },
+  vi: {
+    failed: "Dịch thất bại", backup: (m, r) => `; mô hình dự phòng ${m} cũng thất bại (${r})`, topUp: ", vui lòng nạp thêm tiền",
+    reason: {
+      rate_limit: () => "bị giới hạn (quá nhiều yêu cầu)", quota: (p) => `tài khoản ${p} đã hết hạn mức`,
+      auth: (p) => `API key của ${p} không hợp lệ hoặc không có quyền`, unavailable: () => "mô hình tạm thời không khả dụng",
+      down: () => "dịch vụ tạm thời không khả dụng", error: () => "lỗi dịch vụ dịch",
+    },
+  },
+};
+
+function uiLocaleOf(value: unknown): UiLocale {
+  return value === "en" || value === "es" || value === "vi" ? value : "zh";
+}
+
+// Why one model failed
+function failureReason(error: unknown): { status: number; code: string; reason: Reason } {
   const { status, code, message } = providerError(error);
-  const provider = PROVIDER_NAME[providerOf(model)];
-  if (status === 429) {
-    return { status: 429, code: "rate_limit", reason: "限流（请求过于频繁）" };
-  }
+  if (status === 429) return { status: 429, code: "rate_limit", reason: "rate_limit" };
   if (status === 402 || code === "Arrearage" || /arrearage|insufficient credits/i.test(message)) {
-    return { status: 402, code: "quota", reason: `${provider} 账户额度已用完` };
+    return { status: 402, code: "quota", reason: "quota" };
   }
-  if (status === 401 || status === 403) {
-    return { status: 502, code: "auth", reason: `${provider} API Key 无效或无权限` };
-  }
-  if (status === 404) {
-    return { status: 502, code: "error", reason: "模型暂不可用" };
-  }
-  if (status !== undefined && status >= 500) {
-    return { status: 502, code: "error", reason: "服务暂时不可用" };
-  }
-  return { status: 500, code: "error", reason: "翻译服务出错" };
+  if (status === 401 || status === 403) return { status: 502, code: "auth", reason: "auth" };
+  if (status === 404) return { status: 502, code: "error", reason: "unavailable" };
+  if (status !== undefined && status >= 500) return { status: 502, code: "error", reason: "down" };
+  return { status: 500, code: "error", reason: "error" };
 }
 
 // User-facing message; the client shows it in the error banner. Names the
 // configured model first — a failing backup must not hide why it failed.
 function describeFailure(
+  locale: UiLocale,
   primary: { error: unknown; model: string },
   fallback?: { error: unknown; model: string },
 ): { status: number; body: { error: string; code: string } } {
-  const first = failureReason(primary.error, primary.model);
-  let text = `翻译失败：${modelLabel(primary.model)} — ${first.reason}`;
+  const text = FAILURE_TEXT[locale];
+  // Model labels carry Chinese notes ("Seed 2.0 Mini（字节）"): drop them for other languages
+  const label = (model: string) =>
+    locale === "zh" ? modelLabel(model) : modelLabel(model).replace(/（[^）]*）/g, "").trim();
+  const why = (r: Reason, model: string) => text.reason[r](PROVIDER_NAME[providerOf(model)]);
+  const first = failureReason(primary.error);
+  let message = `${text.failed}: ${label(primary.model)} — ${why(first.reason, primary.model)}`;
+  if (locale === "zh") message = message.replace(": ", "：");
   if (fallback) {
-    const second = failureReason(fallback.error, fallback.model);
-    text += `；备用 ${modelLabel(fallback.model)} 也失败（${second.reason}）`;
+    const second = failureReason(fallback.error);
+    message += text.backup(label(fallback.model), why(second.reason, fallback.model));
   } else if (first.code === "quota") {
-    text += "，请充值";
+    message += text.topUp;
   }
-  return { status: first.status, body: { error: text, code: first.code } };
+  return { status: first.status, body: { error: message, code: first.code } };
 }
 
 // Only the term pairs this sentence actually uses: with a few presets
@@ -689,13 +733,15 @@ function relevantTerms(terms: unknown, text: string): string[] | undefined {
 
 export async function POST(req: NextRequest) {
   let model: string = getDefaultModel();
+  let locale: UiLocale = "zh";
   try {
-    const { text, sourceLang, targetLang, targetLangs, context, terms: rawTerms, memory, model: rawRequestedModel, provisional: rawProvisional, continuation: rawContinuation } = await req.json();
+    const { text, sourceLang, targetLang, targetLangs, context, terms: rawTerms, uiLocale: rawUiLocale, memory, model: rawRequestedModel, provisional: rawProvisional, continuation: rawContinuation } = await req.json();
     const continuation = parseContinuation(
       rawContinuation,
       Array.isArray(targetLangs) && targetLangs.length > 0 ? targetLangs : typeof targetLang === "string" ? [targetLang] : []
     );
     const provisional = rawProvisional === true;
+    locale = uiLocaleOf(rawUiLocale);
 
     if (!text || typeof text !== "string") {
       return NextResponse.json({ error: "Missing text" }, { status: 400 });
@@ -747,6 +793,7 @@ export async function POST(req: NextRequest) {
       }
       console.error("Translation error:", lastError);
       const { status, body } = describeFailure(
+        locale,
         { error, model: primary },
         lastModel !== primary ? { error: lastError, model: lastModel } : undefined,
       );
@@ -754,7 +801,7 @@ export async function POST(req: NextRequest) {
     }
   } catch (error) {
     console.error("Translation error:", error);
-    const { status, body } = describeFailure({ error, model });
+    const { status, body } = describeFailure(locale, { error, model });
     return NextResponse.json(body, { status });
   }
 }

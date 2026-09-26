@@ -23,6 +23,8 @@ export default function TranslationModeToggle({
       <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
         {t("translation_mode")}
       </p>
+      {/* Icon above the label: longer labels (Español, Tiếng Việt) wrap
+          instead of overflowing */}
       <ToggleGroup
         type="single"
         value={mode}
@@ -33,15 +35,15 @@ export default function TranslationModeToggle({
         variant="outline"
         className="w-full"
       >
-        <ToggleGroupItem value="two_way" className="flex-1 gap-1.5 text-xs">
+        <ToggleGroupItem value="two_way" className="h-auto min-w-0 flex-1 flex-col gap-0.5 whitespace-normal px-1 py-1.5 text-center text-xs leading-tight">
           <ArrowLeftRight className="size-3.5" />
           {t("mode_between")}
         </ToggleGroupItem>
-        <ToggleGroupItem value="one_way" className="flex-1 gap-1.5 text-xs">
+        <ToggleGroupItem value="one_way" className="h-auto min-w-0 flex-1 flex-col gap-0.5 whitespace-normal px-1 py-1.5 text-center text-xs leading-tight">
           <ArrowRight className="size-3.5" />
           {t("mode_from_to")}
         </ToggleGroupItem>
-        <ToggleGroupItem value="presentation" className="flex-1 gap-1.5 text-xs">
+        <ToggleGroupItem value="presentation" className="h-auto min-w-0 flex-1 flex-col gap-0.5 whitespace-normal px-1 py-1.5 text-center text-xs leading-tight">
           <Monitor className="size-3.5" />
           {t("mode_presentation")}
         </ToggleGroupItem>

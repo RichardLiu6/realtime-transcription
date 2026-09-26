@@ -72,6 +72,12 @@ StatusBar 翻译方式 **整句 | 分句 | 同传** (`config.translationEngine` 
 - Only *final* ASR text is fed (Soniox final tokens / R2T2 chunks are append-only). `中文=English` terms go into T3PO's glossary block.
 - On any step failure the session switches to sentence translation (banner stays); segments with untranslated leftovers are retranslated whole.
 
+### Interface languages (`lib/i18n.ts`)
+
+- UI in 中文 / English / Español / Tiếng Việt. `useT()` / `t(key, vars)`; every locale is a `Record<TranslationKey, string>`, so a missing string fails the type check.
+- Locale: stored choice (localStorage `uiLocale`, set by `components/LanguageSwitcher.tsx` in the status bar and on /login), else the browser language, else English. `useSyncExternalStore` with an English server snapshot — no hydration mismatch; switching re-renders without reload and updates `<html lang>`.
+- Server messages: `/api/translate` localizes its error banner from the `uiLocale` the client sends; `/api/auth/*` return a `code` that /login maps to `auth_<code>`. Preset chips use `preset_<key>`. The admin pages stay Chinese.
+
 ### Two-Tier Authentication
 
 **User login** (`/login`): Email OTP → `auth_token` cookie (15-day JWT)

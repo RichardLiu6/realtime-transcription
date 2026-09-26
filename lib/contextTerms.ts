@@ -15,6 +15,14 @@ export function combineTerms(presetKeys: Iterable<string>, customTerms: string[]
 // Company and brand names, in every supplement preset
 const COMPANY = ["ABL", "eguoo", "DOCKPER"];
 
+// Chip label in the interface language (preset_<key> in lib/i18n.ts), else
+// the preset's own bilingual label
+export function presetLabel(key: string, label: string, translate: (key: never) => string): string {
+  const i18nKey = `preset_${key}`;
+  const text = translate(i18nKey as never);
+  return text === i18nKey ? label : text;
+}
+
 export interface IndustryPreset {
   label: string;
   terms: string[];

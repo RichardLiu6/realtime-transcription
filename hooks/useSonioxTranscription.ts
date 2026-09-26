@@ -5,6 +5,7 @@ import type { BilingualEntry, SonioxConfig, SonioxToken, SttProvider } from "@/t
 import { type Direction, directionFor, joinForTarget, joinTranslation } from "@/lib/t3po/protocol";
 import { SimulEngine } from "@/lib/t3po/engine";
 import { ClauseEngine } from "@/lib/clause/engine";
+import { getLocale, t } from "@/lib/i18n";
 
 const TARGET_SAMPLE_RATE = 16000;
 
@@ -365,6 +366,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       body: JSON.stringify({
         text,
         sourceLang,
+        uiLocale: getLocale(), // language of error messages
         context: context.length > 0 ? context : undefined,
         memory: memory.length > 0 ? memory : undefined,
         terms: config.contextTerms.length > 0 ? config.contextTerms : undefined,
@@ -374,7 +376,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     })
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || `翻译失败（HTTP ${res.status}）`);
+        if (!res.ok) throw new Error(data.error || t("err_translation_http", { status: res.status }));
         return data;
       })
       .then((data) => {
@@ -408,7 +410,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         console.error("[Translation] Failed:", err);
         // Surface it (once per distinct message) — failing silently left the
         // transcript without translations and no hint why
-        const message = err instanceof Error ? err.message : "翻译失败";
+        const message = err instanceof Error ? err.message : t("err_translation_failed");
         if (translationErrorRef.current !== message) {
           translationErrorRef.current = message;
           setError(message);
@@ -547,7 +549,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     // successful sentence translation would clear): the user should know
     // the session switched to sentence translation
     if (!streamFailedRef.current) {
-      setError(error instanceof Error ? error.message : "同传翻译失败，已改用整句翻译");
+      setError(error instanceof Error ? error.message : t("err_simul_fallback"));
     }
     streamFailedRef.current = true;
   }, []);
@@ -567,7 +569,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
             body: JSON.stringify({ direction, history, current, force, terms: configRef.current?.contextTerms }),
           });
           const data = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(data.error || `同传翻译失败（HTTP ${res.status}）`);
+          if (!res.ok) throw new Error(data.error || t("err_translation_http", { status: res.status }));
           return { action: data.action === "TRANS" ? "TRANS" : "WAIT", text: String(data.text ?? "") };
         },
         {
@@ -596,6 +598,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
               body: JSON.stringify({
                 text: clause,
                 sourceLang,
+                uiLocale: getLocale(),
                 ...(multi ? { targetLangs } : { targetLang: targetLangs[0] }),
                 context: recent.length > 0 ? recent.map((e) => e.originalText) : undefined,
                 memory: recent.length > 0
@@ -611,7 +614,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
               }),
             });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || `分句翻译失败（HTTP ${res.status}）`);
+            if (!res.ok) throw new Error(data.error || t("err_translation_http", { status: res.status }));
             if (multi) return (data.translations ?? {}) as Record<string, string>;
             return { [targetLangs[0]]: String(data.translatedText ?? "") };
           };
@@ -1203,7 +1206,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
           if (event.code === 4401) {
             setError("R2T2: unauthorized (check R2T2_SECRET_KEY)");
           } else if (event.code !== 1000 && event.code !== 1005) {
-            setError(`Disconnected: ${event.code}${event.reason ? ` ${event.reason}` : ""}`);
+            setError(`${t("err_disconnected")}: ${event.code}${event.reason ? ` ${event.reason}` : ""}`);
           }
           finalizeSegment();
           if (timerRef.current) {
@@ -1217,7 +1220,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
 
         ws.onerror = () => {
           if (sessionRef.current === session && !stoppingRef.current) {
-            setError("WebSocket error");
+            setError(t("err_websocket"));
           }
         };
 
@@ -1265,7 +1268,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         setRecordingState("recording");
       } catch (err) {
         console.error(`[${provider}] Failed to start:`, err);
-        setError(err instanceof Error ? err.message : "Failed to start");
+        setError(err instanceof Error ? err.message : t("err_start_failed"));
         setRecordingState("idle");
         teardownAudio();
         wsRef.current?.close();

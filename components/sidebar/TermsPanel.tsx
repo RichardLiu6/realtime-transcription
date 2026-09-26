@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { X, Info } from "lucide-react";
-import { INDUSTRY_PRESETS, combineTerms, splitTermInput } from "@/lib/contextTerms";
+import { INDUSTRY_PRESETS, combineTerms, presetLabel, splitTermInput } from "@/lib/contextTerms";
 import { useT } from "@/lib/i18n";
 import {
   Popover,
@@ -94,7 +94,7 @@ function PresetChip({
               : "bg-muted/60 text-muted-foreground hover:bg-muted"
           }`}
         >
-          <span>{label.split(" ")[0]}</span>
+          <span>{label}</span>
           {isSelected && (
             <span className="opacity-70 text-[10px]">{terms.length}</span>
           )}
@@ -198,7 +198,7 @@ export default function TermsPanel({
           <PresetChip
             key={key}
             presetKey={key}
-            label={preset.label}
+            label={presetLabel(key, preset.label, t)}
             terms={preset.terms}
             isSelected={selectedPresets.has(key)}
             onToggle={() => togglePreset(key)}
