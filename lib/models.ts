@@ -40,15 +40,16 @@ export const QWEN_MT_DEFAULT_MODEL: TranslationModel = "qwen-mt-flash";
 export const OPENROUTER_DEFAULT_MODEL: TranslationModel = "bytedance-seed/seed-2.0-mini";
 
 // Tried in order when a model fails (rate limit, provider down, no credits),
-// skipping the failed one and unconfigured providers. Different vendors
-// after the default, so one vendor's rate limit can't stop translation.
+// skipping the failed one and unconfigured providers. No Qwen: Alibaba
+// serves Qwen3.x from a shared, often rate-limited pool, and the team
+// prefers other models' output; Qwen / Qwen-MT stay selectable in admin.
+// A Qwen-MT user (DashScope-only setups) falls back to the other Qwen-MT
+// model, then this chain.
 export const FALLBACK_CHAIN: readonly TranslationModel[] = [
   "bytedance-seed/seed-2.0-mini",
-  "qwen/qwen3.7-flash",
   "google/gemini-2.5-flash-lite",
-  "qwen-mt-flash",
-  "qwen-mt-lite",
   "openai/gpt-6-luna",
+  "openai/gpt-4.1-nano",
 ];
 
 export function modelLabel(id: string): string {

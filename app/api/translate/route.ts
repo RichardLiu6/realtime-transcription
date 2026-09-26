@@ -603,7 +603,11 @@ function isAccountFailure(error: unknown): boolean {
 // Models to try, in order, when `model` fails: the fallback chain minus the
 // failed model and providers without a key
 function fallbackModelsFor(model: string): string[] {
-  return FALLBACK_CHAIN.filter((m) => m !== model && !!process.env[PROVIDER_KEY[providerOf(m)]]);
+  // A Qwen-MT user first tries the other Qwen-MT model (same account)
+  const siblings = isQwenMT(model) ? ["qwen-mt-flash", "qwen-mt-lite"] : [];
+  return [...siblings, ...FALLBACK_CHAIN].filter(
+    (m) => m !== model && !!process.env[PROVIDER_KEY[providerOf(m)]]
+  );
 }
 
 const PROVIDER_NAME: Record<Provider, string> = {
