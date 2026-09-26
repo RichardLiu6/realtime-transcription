@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, LogOut, User, Shield, PanelLeft, LayoutDashboard, Move } from "lucide-react";
+import { Loader2, LogOut, User, Shield, PanelLeft, LayoutDashboard, Move, AudioLines } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useT } from "@/lib/i18n";
 import type { DesktopLayout } from "@/app/page";
+import type { SttProvider, TranslationEngine } from "@/types/bilingual";
 
 interface StatusBarProps {
   recordingState: "idle" | "connecting" | "recording";
@@ -18,6 +19,14 @@ interface StatusBarProps {
   error: string | null;
   desktopLayout?: DesktopLayout;
   onDesktopLayoutChange?: (layout: DesktopLayout) => void;
+  sttProvider?: SttProvider;
+  onSttProviderChange?: (provider: SttProvider) => void;
+  r2t2Enabled?: boolean;
+  audioProcessing?: boolean;
+  onAudioProcessingChange?: (on: boolean) => void;
+  translationEngine?: TranslationEngine;
+  onTranslationEngineChange?: (engine: TranslationEngine) => void;
+  t3poEnabled?: boolean;
 }
 
 const LAYOUT_OPTIONS: { value: DesktopLayout; icon: typeof PanelLeft; label: string }[] = [
@@ -32,6 +41,14 @@ export default function StatusBar({
   error,
   desktopLayout,
   onDesktopLayoutChange,
+  sttProvider,
+  onSttProviderChange,
+  r2t2Enabled = false,
+  audioProcessing,
+  onAudioProcessingChange,
+  translationEngine,
+  onTranslationEngineChange,
+  t3poEnabled = false,
 }: StatusBarProps) {
   const t = useT();
   const router = useRouter();
@@ -89,6 +106,123 @@ export default function StatusBar({
                 {t("connecting")}
               </span>
             </div>
+          )}
+
+          {/* STT engine picker (locked while recording) */}
+          {sttProvider && onSttProviderChange && (
+            <div
+              className="flex items-center gap-0.5 rounded-md border border-border p-0.5"
+              role="radiogroup"
+              aria-label={t("stt_engine")}
+            >
+              {(["soniox", "r2t2"] as const).map((value) => {
+                const unavailable = value === "r2t2" && !r2t2Enabled;
+                const locked = recordingState !== "idle";
+                return (
+                  <Tooltip key={value}>
+                    <TooltipTrigger asChild>
+                      {/* span wrapper: disabled buttons don't fire tooltip events */}
+                      <span className="inline-flex">
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={sttProvider === value}
+                        disabled={locked || unavailable}
+                        onClick={() => onSttProviderChange(value)}
+                        className={`rounded px-2 py-0.5 text-xs font-medium transition-colors disabled:cursor-not-allowed ${
+                          sttProvider === value
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent"
+                        }`}
+                      >
+                        {value === "soniox" ? "Soniox" : "R2T2"}
+                      </button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {value === "soniox"
+                        ? t("stt_soniox_desc")
+                        : unavailable
+                          ? t("stt_r2t2_unavailable")
+                          : t("stt_r2t2_desc")}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Translation engine picker (locked while recording) */}
+          {translationEngine && onTranslationEngineChange && (
+            <div
+              className="flex items-center gap-0.5 rounded-md border border-border p-0.5"
+              role="radiogroup"
+              aria-label={t("translation_engine")}
+            >
+              {(["llm", "clause", "t3po"] as const).map((value) => {
+                const unavailable = value === "t3po" && !t3poEnabled;
+                return (
+                  <Tooltip key={value}>
+                    <TooltipTrigger asChild>
+                      {/* span wrapper: disabled buttons don't fire tooltip events */}
+                      <span className="inline-flex">
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={translationEngine === value}
+                          disabled={recordingState !== "idle" || unavailable}
+                          onClick={() => onTranslationEngineChange(value)}
+                          className={`rounded px-2 py-0.5 text-xs font-medium transition-colors disabled:cursor-not-allowed ${
+                            translationEngine === value
+                              ? "bg-primary text-primary-foreground"
+                              : "text-muted-foreground hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent"
+                          }`}
+                        >
+                          {t(value === "llm" ? "tr_llm" : value === "clause" ? "tr_clause" : "tr_t3po")}
+                        </button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-64">
+                      {value === "llm"
+                        ? t("tr_llm_desc")
+                        : value === "clause"
+                          ? t("tr_clause_desc")
+                          : unavailable
+                          ? t("tr_t3po_unavailable")
+                          : t("tr_t3po_desc")}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Browser noise suppression toggle (locked while recording) */}
+          {audioProcessing !== undefined && onAudioProcessingChange && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={audioProcessing}
+                    disabled={recordingState !== "idle"}
+                    onClick={() => onAudioProcessingChange(!audioProcessing)}
+                    className={`flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                      audioProcessing
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <AudioLines className="size-3" />
+                    {t("audio_processing")}
+                  </button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-64">
+                {audioProcessing ? t("audio_processing_on") : t("audio_processing_off")}
+              </TooltipContent>
+            </Tooltip>
           )}
 
           {/* Desktop layout picker */}

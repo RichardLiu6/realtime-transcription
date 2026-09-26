@@ -25,7 +25,7 @@ export default function AdminLoginPage() {
         setError(data.error || "登录失败");
         return;
       }
-      window.location.href = "/";
+      window.location.href = "/admin";
     } catch {
       setError("网络错误，请重试");
     } finally {

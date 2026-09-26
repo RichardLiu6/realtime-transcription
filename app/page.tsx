@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useSonioxTranscription } from "@/hooks/useSonioxTranscription";
 import { useSpeakerManager } from "@/hooks/useSpeakerManager";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
-import type { TranslationMode } from "@/types/bilingual";
+import { useStoredState } from "@/lib/useStoredState";
+import type { SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { t } from "@/lib/i18n";
 import Sidebar from "@/components/Sidebar";
@@ -17,22 +18,122 @@ import DesktopFloatingBar from "@/components/desktop/DesktopFloatingBar";
 
 export type DesktopLayout = "sidebar" | "topbar" | "floating";
 
+const AUDIO_PROCESSING_KEY = "audioProcessing";
+
+function readAudioProcessing(): boolean {
+  try {
+    return localStorage.getItem(AUDIO_PROCESSING_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+// Re-read on changes from this tab (custom event) or other tabs ("storage")
+function subscribeAudioProcessing(onChange: () => void) {
+  window.addEventListener(AUDIO_PROCESSING_KEY, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(AUDIO_PROCESSING_KEY, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+// Meeting settings, remembered across reloads (useStoredState)
+const DEFAULT_LANGUAGE_A = ["*"];
+// Multilingual mode: one column per language. Chinese + English by default
+// — with English alone, nothing was ever translated into Chinese
+const DEFAULT_TARGET_LANGS = ["zh", "en"];
+const isStringArray = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "string");
+const isString = (v: unknown): v is string => typeof v === "string" && v.length > 0;
+const isTranslationMode = (v: unknown): v is TranslationMode =>
+  v === "two_way" || v === "one_way" || v === "presentation";
+
 export default function Home() {
-  const [languageA, setLanguageA] = useState<string[]>(["*"]);
-  const [languageB, setLanguageB] = useState("en");
+  const [languageA, setLanguageA] = useStoredState("languageA", DEFAULT_LANGUAGE_A, isStringArray);
+  const [languageB, setLanguageB] = useStoredState("languageB", "en", isString);
   const [termsText, setTermsText] = useState("");
   const [selectedPresets, setSelectedPresets] = useState<Set<string>>(new Set());
   const [customTerms, setCustomTerms] = useState<string[]>([]);
-  const [translationMode, setTranslationMode] =
-    useState<TranslationMode>("two_way");
-  const [targetLangs, setTargetLangs] = useState<string[]>(["en"]);
+  const [translationMode, setTranslationMode] = useStoredState<TranslationMode>(
+    "translationMode",
+    "two_way",
+    isTranslationMode
+  );
+  const [targetLangs, setTargetLangs] = useStoredState("targetLangs", DEFAULT_TARGET_LANGS, isStringArray);
   const [desktopLayout, setDesktopLayout] = useState<DesktopLayout>("sidebar");
+  const [sttProvider, setSttProvider] = useState<SttProvider>("soniox");
+  const [r2t2Enabled, setR2t2Enabled] = useState(false);
+  const [translationEngine, setTranslationEngine] = useState<TranslationEngine>("llm");
+  const [t3poEnabled, setT3poEnabled] = useState(false);
+  // Browser noise suppression etc. Off by default: raw audio transcribes
+  // better. Stored in localStorage; false during server render.
+  const audioProcessing = useSyncExternalStore(
+    subscribeAudioProcessing,
+    readAudioProcessing,
+    () => false
+  );
 
   useEffect(() => {
     const saved = localStorage.getItem("desktopLayout");
     if (saved === "sidebar" || saved === "topbar" || saved === "floating") {
       setDesktopLayout(saved);
     }
+  }, []);
+
+  // R2T2 is only selectable when the server has a self-hosted endpoint configured
+  useEffect(() => {
+    fetch("/api/r2t2-config")
+      .then((r) => r.json())
+      .then((d) => {
+        const enabled = !!d.enabled;
+        setR2t2Enabled(enabled);
+        if (enabled && localStorage.getItem("sttProvider") === "r2t2") {
+          setSttProvider("r2t2");
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Restore the translation mode; T3PO only when its server is configured
+  useEffect(() => {
+    fetch("/api/simul")
+      .then((r) => r.json())
+      .catch(() => ({ enabled: false }))
+      .then((d) => {
+        const enabled = !!d.enabled;
+        setT3poEnabled(enabled);
+        let saved: string | null = null;
+        try {
+          saved = localStorage.getItem("translationEngine");
+        } catch {
+          // storage unavailable
+        }
+        if (saved === "clause" || (saved === "t3po" && enabled)) setTranslationEngine(saved);
+      });
+  }, []);
+
+  const handleTranslationEngineChange = useCallback((engine: TranslationEngine) => {
+    setTranslationEngine(engine);
+    try {
+      localStorage.setItem("translationEngine", engine);
+    } catch {
+      // storage unavailable: the choice just won't stick
+    }
+  }, []);
+
+  const handleAudioProcessingChange = useCallback((on: boolean) => {
+    try {
+      localStorage.setItem(AUDIO_PROCESSING_KEY, on ? "on" : "off");
+    } catch {
+      // storage unavailable: the toggle just won't stick
+    }
+    window.dispatchEvent(new Event(AUDIO_PROCESSING_KEY));
+  }, []);
+
+  const handleSttProviderChange = useCallback((provider: SttProvider) => {
+    setSttProvider(provider);
+    localStorage.setItem("sttProvider", provider);
   }, []);
 
   const handleDesktopLayoutChange = useCallback((layout: DesktopLayout) => {
@@ -56,21 +157,28 @@ export default function Home() {
   const { speakers, registerSpeaker, renameSpeaker, clearSpeakers } =
     useSpeakerManager();
 
-  // Auto-register speakers from entries
+  // Auto-register speakers from entries (distinct IDs only — entries change
+  // on every token update)
+  const speakerIds = useMemo(
+    () => Array.from(new Set(entries.map((e) => e.speaker))).join(","),
+    [entries]
+  );
   useEffect(() => {
-    for (const entry of entries) {
-      registerSpeaker(entry.speaker);
-    }
-  }, [entries, registerSpeaker]);
+    if (!speakerIds) return;
+    for (const id of speakerIds.split(",")) registerSpeaker(id);
+  }, [speakerIds, registerSpeaker]);
 
   const handleStart = useCallback(() => {
     const terms = termsText
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
-    clearEntries();
-    clearSpeakers();
+    // Stopping and starting again continues the same transcript; only
+    // 新会议 (handleNewMeeting) clears it
     start({
+      provider: sttProvider === "r2t2" && r2t2Enabled ? "r2t2" : "soniox",
+      audioProcessing,
+      translationEngine: translationEngine === "t3po" && !t3poEnabled ? "llm" : translationEngine,
       languageA,
       languageB,
       contextTerms: terms,
@@ -83,9 +191,12 @@ export default function Home() {
     termsText,
     translationMode,
     targetLangs,
+    sttProvider,
+    r2t2Enabled,
+    audioProcessing,
+    translationEngine,
+    t3poEnabled,
     start,
-    clearEntries,
-    clearSpeakers,
   ]);
 
   const handleStop = useCallback(() => {
@@ -112,7 +223,7 @@ export default function Home() {
       }
       setLanguageA(codes);
     },
-    [recordingState, stop]
+    [recordingState, stop, setLanguageA]
   );
 
   const handleTargetLangsChange = useCallback(
@@ -126,7 +237,7 @@ export default function Home() {
       }
       setTargetLangs(codes);
     },
-    [recordingState, stop]
+    [recordingState, stop, setTargetLangs]
   );
 
   const handleLanguageBChange = useCallback(
@@ -140,7 +251,7 @@ export default function Home() {
       }
       setLanguageB(code);
     },
-    [recordingState, stop]
+    [recordingState, stop, setLanguageB]
   );
 
   const handleTranslationModeChange = useCallback(
@@ -154,7 +265,7 @@ export default function Home() {
       }
       setTranslationMode(mode);
     },
-    [recordingState, stop]
+    [recordingState, stop, setTranslationMode]
   );
 
   const handleRenameSpeaker = useCallback(
@@ -210,6 +321,14 @@ export default function Home() {
           error={error}
           desktopLayout={desktopLayout}
           onDesktopLayoutChange={handleDesktopLayoutChange}
+          sttProvider={sttProvider}
+          onSttProviderChange={handleSttProviderChange}
+          r2t2Enabled={r2t2Enabled}
+          audioProcessing={audioProcessing}
+          onAudioProcessingChange={handleAudioProcessingChange}
+          translationEngine={translationEngine}
+          onTranslationEngineChange={handleTranslationEngineChange}
+          t3poEnabled={t3poEnabled}
         />
 
         {/* Desktop top bar (only in topbar layout) */}

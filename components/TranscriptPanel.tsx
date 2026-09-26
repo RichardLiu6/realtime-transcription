@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import { memo, useEffect, useRef, useState, useCallback } from "react";
 import { ChevronDown, Mic } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import type { BilingualEntry, SpeakerInfo } from "@/types/bilingual";
 import { useT } from "@/lib/i18n";
@@ -41,7 +40,125 @@ interface TranscriptPanelProps {
   onReassignSpeaker: (entryId: string, newSpeaker: string) => void;
 }
 
-export default function TranscriptPanel({
+interface EntryRowProps {
+  entry: BilingualEntry;
+  showSpeakerHeader: boolean;
+  speakerName: string;
+  translationLabel: string;
+  // Only passed while this row's speaker picker is open, so other rows keep
+  // stable props and skip re-rendering
+  speakerOptions: SpeakerInfo[] | null;
+  onStartEdit: (entryId: string) => void;
+  onEndEdit: () => void;
+  onReassignSpeaker: (entryId: string, newSpeaker: string) => void;
+}
+
+// Memoized: while recording, only the live (non-final) row and rows whose
+// translation just arrived re-render — not the whole transcript.
+const EntryRow = memo(function EntryRow({
+  entry,
+  showSpeakerHeader,
+  speakerName,
+  translationLabel,
+  speakerOptions,
+  onStartEdit,
+  onEndEdit,
+  onReassignSpeaker,
+}: EntryRowProps) {
+  const speakerColor = getSpeakerColor(Number(entry.speaker) || 1);
+
+  return (
+    <div className="inline">
+      {/* Speaker header (only when speaker changes) */}
+      {showSpeakerHeader && (
+        <div className="mt-4 first:mt-0 mb-1 flex items-center gap-2">
+          {speakerOptions ? (
+            <select
+              autoFocus
+              value={entry.speaker}
+              onChange={(e) => {
+                onReassignSpeaker(entry.id, e.target.value);
+                onEndEdit();
+              }}
+              onBlur={onEndEdit}
+              className="rounded border border-blue-300 bg-white px-2 py-0.5 text-sm font-semibold focus:outline-none"
+              style={{ color: speakerColor }}
+            >
+              {speakerOptions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onStartEdit(entry.id)}
+              className="text-sm font-semibold uppercase tracking-wide hover:opacity-70 transition"
+              style={{ color: speakerColor }}
+            >
+              {speakerName}
+            </button>
+          )}
+          <span className="text-xs text-gray-300">
+            {formatTime(entry.startMs)}
+          </span>
+        </div>
+      )}
+
+      {/* Language badge — always show per entry when language is known */}
+      {entry.language && (
+        <span className="inline-block mr-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
+          {getLanguageLabel(entry.language)}
+        </span>
+      )}
+
+      {/* Original text */}
+      {entry.isFinal ? (
+        <span
+          title={`${formatTime(entry.startMs)}${entry.endMs > 0 ? ` – ${formatTime(entry.endMs)}` : ""}`}
+          className="text-foreground leading-relaxed hover:text-primary rounded cursor-default transition-colors"
+        >
+          {entry.originalText}
+        </span>
+      ) : (
+        <>
+          {entry.originalText && (
+            <span className="text-gray-500 leading-relaxed">
+              {entry.originalText}
+            </span>
+          )}
+          {entry.interimOriginal && (
+            <span className="text-gray-400 italic leading-relaxed">
+              {entry.interimOriginal}
+            </span>
+          )}
+          <span className="blink-cursor ml-0.5 inline-block h-4 w-0.5 bg-gray-400 align-text-bottom" />
+        </>
+      )}
+
+      {/* Translation text (smaller, italic, muted - below original) */}
+      {entry.translatedText && (
+        <>
+          <br />
+          <span className="inline-block mr-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
+            {translationLabel}
+          </span>
+          <span
+            className={`text-sm italic leading-relaxed ${
+              entry.translationProvisional ? "text-gray-300" : "text-gray-400"
+            }`}
+          >
+            {entry.translatedText}
+          </span>
+          <div className="h-2" />
+        </>
+      )}
+    </div>
+  );
+});
+
+function TranscriptPanel({
   entries,
   currentInterim,
   speakers,
@@ -64,6 +181,13 @@ export default function TranscriptPanel({
     }
   }, []);
 
+  const handleStartEdit = useCallback((entryId: string) => {
+    setEditingSpeakerEntryId(entryId);
+  }, []);
+  const handleEndEdit = useCallback(() => {
+    setEditingSpeakerEntryId(null);
+  }, []);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -77,14 +201,20 @@ export default function TranscriptPanel({
     return () => el.removeEventListener("scroll", handleScroll);
   }, []);
 
+  // Follow new text. Jump instantly (once per frame): restarting a smooth
+  // scroll animation on every token update is what made the view stutter.
   useEffect(() => {
-    if (isAtBottom) scrollToBottom();
-  }, [entries, currentInterim, isAtBottom, scrollToBottom]);
+    if (!isAtBottom) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const frame = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [entries, currentInterim, isAtBottom]);
 
   const showEmpty = entries.length === 0 && !currentInterim;
-
-  // Track previous speaker for header display logic
-  let prevSpeaker: string | null = null;
+  const languageAPrimary = languageA[0] === "*" ? "zh" : (languageA[0] ?? "zh");
 
   return (
     <div className="relative flex flex-1 flex-col overflow-hidden bg-white">
@@ -116,134 +246,24 @@ export default function TranscriptPanel({
         )}
 
         {/* Entries: Soniox Compare style - single column, flowing text */}
-        {entries.map((entry) => {
-          const speakerNum = Number(entry.speaker) || 1;
-          const speakerColor = getSpeakerColor(speakerNum);
-          const speakerInfo = speakers.get(entry.speaker);
-          const speakerName =
-            speakerInfo?.label || `Speaker ${entry.speaker}`;
+        {entries.map((entry, i) => {
           const isEditing = editingSpeakerEntryId === entry.id;
-
-          // Show speaker header when speaker changes
-          const showSpeakerHeader = entry.speaker !== prevSpeaker;
-
-          const elements: React.ReactNode[] = [];
-
-          // Speaker header
-          if (showSpeakerHeader) {
-            elements.push(
-              <div
-                key={`${entry.id}-speaker`}
-                className="mt-4 first:mt-0 mb-1 flex items-center gap-2"
-              >
-                {isEditing ? (
-                  <select
-                    autoFocus
-                    value={entry.speaker}
-                    onChange={(e) => {
-                      onReassignSpeaker(entry.id, e.target.value);
-                      setEditingSpeakerEntryId(null);
-                    }}
-                    onBlur={() => setEditingSpeakerEntryId(null)}
-                    className="rounded border border-blue-300 bg-white px-2 py-0.5 text-sm font-semibold focus:outline-none"
-                    style={{ color: speakerColor }}
-                  >
-                    {Array.from(speakers.values()).map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setEditingSpeakerEntryId(entry.id)}
-                    className="text-sm font-semibold uppercase tracking-wide hover:opacity-70 transition"
-                    style={{ color: speakerColor }}
-                  >
-                    {speakerName}
-                  </button>
-                )}
-                <span className="text-xs text-gray-300">
-                  {formatTime(entry.startMs)}
-                </span>
-              </div>
-            );
-          }
-
-          // Language badge — always show per entry when language is known
-          if (entry.language) {
-            elements.push(
-              <span
-                key={`${entry.id}-lang`}
-                className="inline-block mr-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium"
-              >
-                {getLanguageLabel(entry.language)}
-              </span>
-            );
-          }
-
-          // Original text
-          if (entry.isFinal) {
-            // Final: normal styling with tooltip showing timing
-            elements.push(
-              <Tooltip key={`${entry.id}-original`}>
-                <TooltipTrigger asChild>
-                  <span className="text-foreground leading-relaxed hover:text-primary rounded cursor-default transition-colors">
-                    {entry.originalText}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">
-                  <p>Start: {formatTime(entry.startMs)}</p>
-                  {entry.endMs > 0 && <p>End: {formatTime(entry.endMs)}</p>}
-                </TooltipContent>
-              </Tooltip>
-            );
-          } else {
-            // Non-final (streaming): show final tokens + interim tokens with cursor
-            elements.push(
-              <React.Fragment key={`${entry.id}-original`}>
-                {entry.originalText && (
-                  <span className="text-gray-500 leading-relaxed">
-                    {entry.originalText}
-                  </span>
-                )}
-                {entry.interimOriginal && (
-                  <span className="text-gray-400 italic leading-relaxed">
-                    {entry.interimOriginal}
-                  </span>
-                )}
-                <span className="blink-cursor ml-0.5 inline-block h-4 w-0.5 bg-gray-400 align-text-bottom" />
-              </React.Fragment>
-            );
-          }
-
-          // Translation text (smaller, italic, muted - below original)
-          if (entry.translatedText) {
-            elements.push(
-              <React.Fragment key={`${entry.id}-translation`}>
-                <br />
-                <span className="inline-block mr-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
-                  {getLanguageLabel(
-                    languageA.includes("*") || languageA.includes(entry.language)
-                      ? languageB
-                      : languageA[0]
-                  )}
-                </span>
-                <span className="text-sm italic text-gray-400 leading-relaxed">
-                  {entry.translatedText}
-                </span>
-                <div className="h-2" />
-              </React.Fragment>
-            );
-          }
-
-          prevSpeaker = entry.speaker;
-
           return (
-            <div key={entry.id} className="inline">
-              {elements}
-            </div>
+            <EntryRow
+              key={entry.id}
+              entry={entry}
+              showSpeakerHeader={i === 0 || entries[i - 1].speaker !== entry.speaker}
+              speakerName={speakers.get(entry.speaker)?.label || `Speaker ${entry.speaker}`}
+              // Mirrors the target selection in requestTranslation: text in
+              // language B goes to language A, everything else to language B
+              translationLabel={getLanguageLabel(
+                entry.language === languageB ? languageAPrimary : languageB
+              )}
+              speakerOptions={isEditing ? Array.from(speakers.values()) : null}
+              onStartEdit={handleStartEdit}
+              onEndEdit={handleEndEdit}
+              onReassignSpeaker={onReassignSpeaker}
+            />
           );
         })}
 
@@ -285,3 +305,7 @@ export default function TranscriptPanel({
     </div>
   );
 }
+
+// Memoized so the once-per-second recording timer in the page doesn't
+// re-render the transcript
+export default memo(TranscriptPanel);

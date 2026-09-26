@@ -46,10 +46,19 @@ export default function AudioWaveButton({
   const drawWaves = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // Hidden layout variant (desktop sidebar on mobile, or vice versa):
+    // keep the loop alive but skip the drawing work
+    if (canvas.clientWidth === 0) {
+      animFrameRef.current = requestAnimationFrame(drawWaves);
+      return;
+    }
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const { width, height } = canvas;
+    // The context is scaled by devicePixelRatio, so draw in CSS pixels —
+    // iterating over canvas.width drew 2-3x as many points, mostly offscreen
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
     ctx.clearRect(0, 0, width, height);
 
     // Get audio data
@@ -85,7 +94,7 @@ export default function AudioWaveButton({
 
       ctx.beginPath();
       ctx.moveTo(0, centerY);
-      for (let x = 0; x < width; x++) {
+      for (let x = 0; x <= width; x += 2) {
         const y =
           centerY +
           Math.sin(x * waveFreq + phaseRef.current + wave.speedOffset * 100) *

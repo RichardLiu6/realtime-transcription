@@ -11,8 +11,14 @@ export async function middleware(request: NextRequest) {
   // Public routes — no auth needed
   if (
     pathname === "/login" ||
+    // Must be public: without it the admin login page fell through to the
+    // auth_token check below and bounced to /login
+    pathname === "/admin/login" ||
     pathname.startsWith("/api/auth/") ||
     pathname === "/api/admin/auth" ||
+    // Model evaluation: the route itself 404s outside preview deployments,
+    // which are behind Vercel Authentication
+    pathname === "/api/eval" ||
     pathname === "/favicon.ico"
   ) {
     return NextResponse.next();

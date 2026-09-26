@@ -1,15 +1,16 @@
 import { createClient, type EdgeConfigClient } from "@vercel/edge-config";
+import { isSupportedModel, QWEN_MT_DEFAULT_MODEL, OPENROUTER_DEFAULT_MODEL, type TranslationModel } from "@/lib/models";
 
-export const SUPPORTED_MODELS = [
-  "gpt-5-nano",
-  "gpt-5-mini",
-  "gpt-4o-mini",
-  "claude-haiku-4-5-20251001",
-  "claude-sonnet-4-6",
-] as const;
+export { SUPPORTED_MODELS, type TranslationModel } from "@/lib/models";
 
-export type TranslationModel = (typeof SUPPORTED_MODELS)[number];
-export const DEFAULT_MODEL: TranslationModel = "gpt-5-nano";
+// Default for users without an admin-assigned model: the OpenRouter default.
+// A DashScope key alone doesn't change it (Qwen-MT is then assigned per user
+// in admin, and joins the fallback chain); Qwen-MT is the default only when
+// DashScope is the sole provider configured.
+export function getDefaultModel(): TranslationModel {
+  if (!process.env.OPENROUTER_API_KEY && process.env.DASHSCOPE_API_KEY) return QWEN_MT_DEFAULT_MODEL;
+  return OPENROUTER_DEFAULT_MODEL;
+}
 
 export interface MonthlyUsage {
   stt_seconds: number;
@@ -53,7 +54,9 @@ export async function getUserByEmail(
 
 export async function getUserModel(email: string): Promise<string> {
   const user = await getUserByEmail(email);
-  return user?.model || DEFAULT_MODEL;
+  // A model dropped from the pool (e.g. an old GPT/Claude assignment) falls
+  // back to the default
+  return isSupportedModel(user?.model) ? user.model : getDefaultModel();
 }
 
 // --- Meeting codes ---

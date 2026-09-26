@@ -14,14 +14,12 @@ import {
   GitCompareArrows,
 } from "lucide-react";
 import Link from "next/link";
+import { MODEL_POOL } from "@/lib/models";
 
+// Pool: every model ≤ $0.5 per million tokens (input and output)
 const SUPPORTED_MODELS = [
-  { value: "", label: "默认 (Nano)" },
-  { value: "gpt-5-nano", label: "GPT-5 Nano" },
-  { value: "gpt-5-mini", label: "GPT-5 Mini" },
-  { value: "gpt-4o-mini", label: "GPT-4o Mini" },
-  { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
-  { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+  { value: "", label: "默认（Seed 2.0 Mini）" },
+  ...MODEL_POOL.map((m) => ({ value: m.id, label: `${m.label} · $${m.price}/M` })),
 ];
 
 interface MonthlyUsage {

@@ -10,6 +10,23 @@ const translations = {
     "stop": "Stop",
     "connecting": "Connecting...",
 
+    // STT engine
+    "stt_engine": "Speech engine",
+    "stt_soniox_desc": "Soniox cloud: speaker diarization, 60+ languages",
+    "stt_r2t2_desc": "Youdao R2T2 (self-hosted): low-latency Chinese/English, no speaker diarization",
+    "stt_r2t2_unavailable": "R2T2 server not configured (set R2T2_WS_URL and R2T2_SECRET_KEY)",
+    "audio_processing": "Noise reduction",
+    "translation_engine": "Translation",
+    "tr_llm": "Sentence",
+    "tr_t3po": "T3PO",
+    "tr_clause": "Clause",
+    "tr_clause_desc": "Translate each clause as soon as it ends (at a comma or full stop), appended without rewriting. Any language, uses the translation model set in admin.",
+    "tr_llm_desc": "Translate each sentence after it ends (Qwen / GPT / Claude, set in admin). Works for all languages.",
+    "tr_t3po_desc": "Simultaneous interpretation with Youdao T3PO: translation appears while the sentence is still being spoken. Chinese↔English only; in multilingual mode the other columns use clause translation, elsewhere other languages use sentence translation.",
+    "tr_t3po_unavailable": "Simultaneous translation not configured (set T3PO_BASE_URL to a server running Confucius4-T3PO)",
+    "audio_processing_on": "Browser noise suppression, echo cancellation and auto gain are ON. Use in noisy rooms; may drop quiet or distant speakers.",
+    "audio_processing_off": "Raw microphone audio (recommended for accuracy). Turn on only in very noisy rooms.",
+
     // Bottom bar buttons
     "settings": "Settings",
     "terms": "Terms",
@@ -22,9 +39,9 @@ const translations = {
     "mode_from_to": "From→To",
     "mode_between_desc": "Auto-detect bilingual conversation",
     "mode_from_to_desc": "Fixed source language, translate to target",
-    "mode_presentation": "Presentation",
-    "mode_presentation_desc": "Multi-language table view",
-    "target_languages": "Target Languages",
+    "mode_presentation": "Multilingual",
+    "mode_presentation_desc": "Original transcript plus a translation into every selected language, side by side",
+    "target_languages": "Translate into (one column each)",
 
     // Languages
     "languages": "Languages",
@@ -36,7 +53,7 @@ const translations = {
 
     // Terms panel
     "context_terms": "Context Terms",
-    "add_term_placeholder": "Add term, press Enter",
+    "add_term_placeholder": "Add term (or 中文=English), press Enter",
     "terms_effect_next": "Takes effect on next recording",
     "terms_effect_start": "Takes effect when recording starts",
 
@@ -59,6 +76,23 @@ const translations = {
     "stop": "停止",
     "connecting": "连接中...",
 
+    // STT engine
+    "stt_engine": "识别引擎",
+    "stt_soniox_desc": "Soniox 云端识别：支持说话人区分、60+ 语言",
+    "stt_r2t2_desc": "有道 R2T2 自部署模型：中英文低延迟，无说话人区分",
+    "stt_r2t2_unavailable": "R2T2 服务未配置（需要 R2T2_WS_URL 和 R2T2_SECRET_KEY）",
+    "audio_processing": "降噪",
+    "translation_engine": "翻译方式",
+    "tr_llm": "整句",
+    "tr_t3po": "同传",
+    "tr_clause": "分句",
+    "tr_clause_desc": "每说完一个小句（逗号、句号处）就翻译并追加，已出的译文不再改动。支持所有语言，使用后台设置的翻译模型。",
+    "tr_llm_desc": "每句话说完再翻译（千问 / GPT / Claude，在后台设置），支持所有语言。",
+    "tr_t3po_desc": "有道 T3PO 同声传译：话还没说完译文就开始出现。仅支持中英互译；多语言模式下其他列自动改用分句翻译，其他模式下其他语言改用整句翻译。",
+    "tr_t3po_unavailable": "同传翻译未配置（需要把 T3PO_BASE_URL 指向运行 Confucius4-T3PO 的服务器）",
+    "audio_processing_on": "已开启浏览器降噪、回声消除和自动增益。适合嘈杂环境，但可能压掉声音小或离麦克风远的发言人。",
+    "audio_processing_off": "使用原始麦克风音频（识别更准，推荐）。只在环境非常嘈杂时开启降噪。",
+
     // Bottom bar buttons
     "settings": "设置",
     "terms": "术语",
@@ -71,9 +105,9 @@ const translations = {
     "mode_from_to": "单向",
     "mode_between_desc": "自动检测双语对话",
     "mode_from_to_desc": "固定源语言，翻译到目标语言",
-    "mode_presentation": "演讲",
-    "mode_presentation_desc": "多语言表格视图",
-    "target_languages": "目标语言",
+    "mode_presentation": "多语言",
+    "mode_presentation_desc": "原文转录 + 翻译成所选的每种语言，分列对照",
+    "target_languages": "翻译成（每种一列）",
 
     // Languages
     "languages": "语言",
@@ -85,7 +119,7 @@ const translations = {
 
     // Terms panel
     "context_terms": "上下文术语",
-    "add_term_placeholder": "输入术语，按回车添加",
+    "add_term_placeholder": "输入术语（可写 中文=English），回车添加",
     "terms_effect_next": "下次录音时生效",
     "terms_effect_start": "开始录音时生效",
 

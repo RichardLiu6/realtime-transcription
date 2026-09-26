@@ -8,16 +8,9 @@ import { ArrowLeft, Mic, Square } from "lucide-react";
 import Link from "next/link";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import type { TranslationMode } from "@/types/bilingual";
+import { MODEL_POOL } from "@/lib/models";
 
-const COMPARE_MODELS = [
-  { id: "gpt-5-nano/minimal", label: "Nano (minimal)" },
-  { id: "gpt-5-nano/low", label: "Nano (low)" },
-  { id: "gpt-5-nano/medium", label: "Nano (medium)" },
-  { id: "gpt-5-mini", label: "GPT-5 Mini" },
-  { id: "gpt-4o-mini", label: "GPT-4o Mini" },
-  { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
-  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
-];
+const COMPARE_MODELS = MODEL_POOL.map((m) => ({ id: m.id, label: m.label }));
 
 interface ModelResult {
   model: string;
@@ -35,7 +28,7 @@ interface CompareRow {
 
 export default function ComparePage() {
   const [selectedModels, setSelectedModels] = useState<Set<string>>(
-    new Set(["gpt-5-nano/minimal"])
+    new Set(["bytedance-seed/seed-2.0-mini", "qwen/qwen3.7-flash"])
   );
   const [languageA, setLanguageA] = useState("*");
   const [languageB, setLanguageB] = useState("en");
