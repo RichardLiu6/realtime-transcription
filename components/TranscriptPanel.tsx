@@ -1,10 +1,11 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { ChevronDown, Mic, UserRoundPen } from "lucide-react";
+import { ChevronDown, UserRoundPen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { BilingualEntry, SpeakerInfo } from "@/types/bilingual";
+import type { BilingualEntry, SpeakerInfo, TranslationMode } from "@/types/bilingual";
+import ReadyCard from "@/components/ReadyCard";
 import { useT } from "@/lib/i18n";
 import { FALLBACK_SPEAKER_COLOR, speakerDisplayName } from "@/hooks/useSpeakerManager";
 
@@ -32,6 +33,10 @@ interface TranscriptPanelProps {
   currentInterim: string;
   speakers: Map<string, SpeakerInfo>;
   isRecording: boolean;
+  // Idle screen: the ready card starts a recording itself
+  isConnecting: boolean;
+  translationMode: TranslationMode;
+  onStart: () => void;
   languageA: string[];
   languageB: string;
   onRenameSpeaker: (speakerId: string, newLabel: string) => void;
@@ -293,6 +298,9 @@ function TranscriptPanel({
   currentInterim,
   speakers,
   isRecording,
+  isConnecting,
+  translationMode,
+  onStart,
   languageA,
   languageB,
   onRenameSpeaker,
@@ -369,7 +377,7 @@ function TranscriptPanel({
       >
         {/* Empty state */}
         {showEmpty && (
-          <div className="flex flex-1 items-center justify-center py-20">
+          <div className="flex flex-1 items-center justify-center py-6 sm:py-16">
             {isRecording ? (
               <div className="text-center">
                 <div className="mb-3 flex justify-center gap-2">
@@ -380,12 +388,14 @@ function TranscriptPanel({
                 <p className="text-sm text-muted-foreground">{t("listening")}</p>
               </div>
             ) : (
-              <div className="text-center text-muted-foreground/40">
-                <Mic className="mx-auto size-16" strokeWidth={1} />
-                <p className="mt-2 text-sm">
-                  {t("click_start")}
-                </p>
-              </div>
+              <ReadyCard
+                translationMode={translationMode}
+                languageA={languageA}
+                languageB={languageB}
+                targetLangs={[]}
+                connecting={isConnecting}
+                onStart={onStart}
+              />
             )}
           </div>
         )}

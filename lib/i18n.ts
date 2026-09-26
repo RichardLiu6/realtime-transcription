@@ -88,10 +88,8 @@ const en = {
 
   // Transcript
   "listening": "Listening...",
-  "click_start": "Click Start Recording to begin",
   "original_text": "Original",
   "translating": "Translating...",
-  "presentation_empty": "Choose the meeting languages and start recording",
 
   // Confirm dialogs
   "confirm_language_change": "Changing language will stop recording. Continue?",
@@ -146,6 +144,34 @@ const en = {
   "reassign_to": "This sentence was said by:",
   "translation_provisional": "Translation still being revised",
   "scroll_to_latest": "Scroll to latest",
+
+  // Presentation (projector) mode, multilingual cards, ready card
+  "present": "Present",
+  "present_title": "Presentation mode (F)",
+  "present_exit": "Exit presentation (Esc)",
+  "present_controls": "Presentation controls",
+  "present_smaller": "Smaller text",
+  "present_larger": "Larger text",
+  "present_theme": "Colors",
+  "theme_dark": "Dark",
+  "theme_contrast": "High contrast",
+  "theme_light": "Light",
+  "present_view": "View",
+  "view_both": "Original + translation",
+  "view_single": "One language",
+  "view_side": "Side by side",
+  "present_language": "Language",
+  "present_final_only": "Complete sentences only",
+  "present_empty": "Captions appear here once recording starts",
+  "multi_filter": "Show",
+  "filter_all": "All",
+  "same_as_original": "= original",
+  "same_as_original_title": "Same as the original",
+  "ready_title": "Ready to record",
+  "ready_any": "any language",
+  "ready_tip_terms": "Pick a terms preset (or add your own) for more accurate names and jargon.",
+  "ready_tip_rename": "Click a speaker's name in the transcript to rename them.",
+  "ready_tip_present": "Press F for full-screen presentation mode on a projector.",
 };
 
 export type TranslationKey = keyof typeof en;
@@ -215,10 +241,8 @@ const zh: Record<TranslationKey, string> = {
   "words": "字",
 
   "listening": "聆听中...",
-  "click_start": "点击开始录音",
   "original_text": "原文",
   "translating": "翻译中...",
-  "presentation_empty": "选择会议语言并开始录音",
 
   "confirm_language_change": "切换语言将停止录音，是否继续？",
   "confirm_mode_change": "切换翻译模式将停止录音，是否继续？",
@@ -269,6 +293,34 @@ const zh: Record<TranslationKey, string> = {
   "reassign_to": "这句话的说话人是：",
   "translation_provisional": "译文仍在修订中",
   "scroll_to_latest": "滚动到最新",
+
+  // Presentation (projector) mode, multilingual cards, ready card
+  "present": "演示模式",
+  "present_title": "演示模式（F）",
+  "present_exit": "退出演示（Esc）",
+  "present_controls": "演示控制",
+  "present_smaller": "缩小文字",
+  "present_larger": "放大文字",
+  "present_theme": "配色",
+  "theme_dark": "深色",
+  "theme_contrast": "高对比",
+  "theme_light": "浅色",
+  "present_view": "显示",
+  "view_both": "原文 + 译文",
+  "view_single": "只看一种语言",
+  "view_side": "左右对照",
+  "present_language": "语言",
+  "present_final_only": "只显示完整句子",
+  "present_empty": "开始录音后字幕会显示在这里",
+  "multi_filter": "显示",
+  "filter_all": "全部",
+  "same_as_original": "= 原文",
+  "same_as_original_title": "与原文相同",
+  "ready_title": "准备就绪",
+  "ready_any": "任意语言",
+  "ready_tip_terms": "选择术语预设（或添加自定义术语），人名和专业词汇识别更准确。",
+  "ready_tip_rename": "点击记录里的说话人名字即可改名。",
+  "ready_tip_present": "按 F 进入全屏演示模式，适合投影。",
 };
 
 const es: Record<TranslationKey, string> = {
@@ -336,10 +388,8 @@ const es: Record<TranslationKey, string> = {
   "words": "palabras",
 
   "listening": "Escuchando...",
-  "click_start": "Pulse Iniciar grabación para empezar",
   "original_text": "Original",
   "translating": "Traduciendo...",
-  "presentation_empty": "Elija los idiomas de la reunión e inicie la grabación",
 
   "confirm_language_change": "Cambiar el idioma detendrá la grabación. ¿Continuar?",
   "confirm_mode_change": "Cambiar el modo de traducción detendrá la grabación. ¿Continuar?",
@@ -390,6 +440,34 @@ const es: Record<TranslationKey, string> = {
   "reassign_to": "Esta frase la dijo:",
   "translation_provisional": "Traducción todavía en revisión",
   "scroll_to_latest": "Ir a lo último",
+
+  // Presentation (projector) mode, multilingual cards, ready card
+  "present": "Presentar",
+  "present_title": "Modo presentación (F)",
+  "present_exit": "Salir de la presentación (Esc)",
+  "present_controls": "Controles de presentación",
+  "present_smaller": "Texto más pequeño",
+  "present_larger": "Texto más grande",
+  "present_theme": "Colores",
+  "theme_dark": "Oscuro",
+  "theme_contrast": "Alto contraste",
+  "theme_light": "Claro",
+  "present_view": "Vista",
+  "view_both": "Original + traducción",
+  "view_single": "Un idioma",
+  "view_side": "Lado a lado",
+  "present_language": "Idioma",
+  "present_final_only": "Solo frases completas",
+  "present_empty": "Los subtítulos aparecerán aquí al iniciar la grabación",
+  "multi_filter": "Mostrar",
+  "filter_all": "Todos",
+  "same_as_original": "= original",
+  "same_as_original_title": "Igual que el original",
+  "ready_title": "Listo para grabar",
+  "ready_any": "cualquier idioma",
+  "ready_tip_terms": "Elija un conjunto de términos (o añada los suyos) para reconocer mejor nombres y jerga.",
+  "ready_tip_rename": "Haga clic en el nombre de un hablante en la transcripción para cambiarlo.",
+  "ready_tip_present": "Pulse F para el modo presentación a pantalla completa en un proyector.",
 };
 
 const vi: Record<TranslationKey, string> = {
@@ -457,10 +535,8 @@ const vi: Record<TranslationKey, string> = {
   "words": "từ",
 
   "listening": "Đang nghe...",
-  "click_start": "Nhấn Bắt đầu ghi âm để bắt đầu",
   "original_text": "Bản gốc",
   "translating": "Đang dịch...",
-  "presentation_empty": "Chọn ngôn ngữ cuộc họp và bắt đầu ghi âm",
 
   "confirm_language_change": "Đổi ngôn ngữ sẽ dừng ghi âm. Tiếp tục?",
   "confirm_mode_change": "Đổi chế độ dịch sẽ dừng ghi âm. Tiếp tục?",
@@ -511,6 +587,34 @@ const vi: Record<TranslationKey, string> = {
   "reassign_to": "Câu này do ai nói:",
   "translation_provisional": "Bản dịch vẫn đang được chỉnh sửa",
   "scroll_to_latest": "Cuộn tới mới nhất",
+
+  // Presentation (projector) mode, multilingual cards, ready card
+  "present": "Trình chiếu",
+  "present_title": "Chế độ trình chiếu (F)",
+  "present_exit": "Thoát trình chiếu (Esc)",
+  "present_controls": "Điều khiển trình chiếu",
+  "present_smaller": "Chữ nhỏ hơn",
+  "present_larger": "Chữ lớn hơn",
+  "present_theme": "Màu",
+  "theme_dark": "Tối",
+  "theme_contrast": "Tương phản cao",
+  "theme_light": "Sáng",
+  "present_view": "Hiển thị",
+  "view_both": "Bản gốc + bản dịch",
+  "view_single": "Một ngôn ngữ",
+  "view_side": "Song song",
+  "present_language": "Ngôn ngữ",
+  "present_final_only": "Chỉ câu hoàn chỉnh",
+  "present_empty": "Phụ đề sẽ hiện ở đây khi bắt đầu ghi âm",
+  "multi_filter": "Hiển thị",
+  "filter_all": "Tất cả",
+  "same_as_original": "= bản gốc",
+  "same_as_original_title": "Giống bản gốc",
+  "ready_title": "Sẵn sàng ghi âm",
+  "ready_any": "bất kỳ ngôn ngữ nào",
+  "ready_tip_terms": "Chọn bộ thuật ngữ (hoặc tự thêm) để nhận dạng tên riêng và thuật ngữ chính xác hơn.",
+  "ready_tip_rename": "Nhấn vào tên người nói trong bản ghi để đổi tên.",
+  "ready_tip_present": "Nhấn F để vào chế độ trình chiếu toàn màn hình cho máy chiếu.",
 };
 
 const translations: Record<Locale, Record<TranslationKey, string>> = { en, zh, es, vi };

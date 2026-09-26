@@ -6,6 +6,7 @@ import { type Direction, directionFor, joinForTarget, joinTranslation } from "@/
 import { SimulEngine } from "@/lib/t3po/engine";
 import { ClauseEngine } from "@/lib/clause/engine";
 import { getLocale, t } from "@/lib/i18n";
+import { singleTargetLanguage } from "@/lib/meetingLanguages";
 
 const TARGET_SAMPLE_RATE = 16000;
 
@@ -151,12 +152,10 @@ function r2t2LanguageHint(config: SonioxConfig): string {
   return "zhen";
 }
 
-// Target language of a single-target translation (two_way / one_way)
+// Target language of a single-target translation (two_way / one_way); the
+// rule is shared with the displays that pick a sentence's language
 function singleTargetFor(sourceLang: string, config: SonioxConfig): string {
-  if (config.translationMode === "two_way" && sourceLang === config.languageB) {
-    return config.languageA[0] === "*" ? "zh" : (config.languageA[0] ?? "zh");
-  }
-  return config.languageB;
+  return singleTargetLanguage(config.translationMode, sourceLang, config.languageA, config.languageB);
 }
 
 // Terms may be written as "中文=English" pairs (used as enforced

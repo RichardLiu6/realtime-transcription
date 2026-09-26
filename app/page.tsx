@@ -13,6 +13,7 @@ import Sidebar from "@/components/Sidebar";
 import StatusBar from "@/components/StatusBar";
 import TranscriptPanel from "@/components/TranscriptPanel";
 import PresentationPanel from "@/components/PresentationPanel";
+import PresentationMode, { usePresentationMode } from "@/components/PresentationMode";
 import MobileBottom from "@/components/mobile/MobileBottom";
 import DesktopTopBar from "@/components/desktop/DesktopTopBar";
 import DesktopFloatingBar from "@/components/desktop/DesktopFloatingBar";
@@ -218,6 +219,10 @@ export default function Home() {
     stop();
   }, [stop]);
 
+  // Projector view of the same state (button in the status bar, or F);
+  // recording carries on across entering and leaving it
+  const presentation = usePresentationMode();
+
   // With the names the user sees: the given name, or the default one in
   // the current interface language ("说话人 1"), not the engine's "Speaker N"
   const handleExport = useCallback(() => {
@@ -373,6 +378,7 @@ export default function Home() {
           translationEngine={translationEngine}
           onTranslationEngineChange={handleTranslationEngineChange}
           t3poEnabled={t3poEnabled}
+          onPresent={presentation.enter}
         />
 
         {/* Desktop top bar (only in topbar layout) */}
@@ -388,7 +394,10 @@ export default function Home() {
             currentInterim={currentInterim}
             speakers={speakers}
             isRecording={recordingState === "recording"}
+            isConnecting={recordingState === "connecting"}
+            languageA={languageA}
             targetLangs={targetLangs}
+            onStart={handleStart}
           />
         ) : (
           <TranscriptPanel
@@ -396,6 +405,9 @@ export default function Home() {
             currentInterim={currentInterim}
             speakers={speakers}
             isRecording={recordingState === "recording"}
+            isConnecting={recordingState === "connecting"}
+            translationMode={translationMode}
+            onStart={handleStart}
             languageA={languageA}
             languageB={languageB}
             onRenameSpeaker={handleRenameSpeaker}
@@ -415,6 +427,22 @@ export default function Home() {
         <div className="hidden lg:block">
           <DesktopFloatingBar {...sharedProps} />
         </div>
+      )}
+
+      {presentation.open && (
+        <PresentationMode
+          entries={entries}
+          speakers={speakers}
+          translationMode={translationMode}
+          languageA={languageA}
+          languageB={languageB}
+          targetLangs={targetLangs}
+          recordingState={recordingState}
+          elapsedSeconds={elapsedSeconds}
+          onStart={handleStart}
+          onStop={handleStop}
+          onExit={presentation.exit}
+        />
       )}
     </div>
     </TooltipProvider>
