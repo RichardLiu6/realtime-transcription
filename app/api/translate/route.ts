@@ -654,10 +654,43 @@ function describeFailure(
   return { status: first.status, body: { error: text, code: first.code } };
 }
 
+// Only the term pairs this sentence actually uses: with a few presets
+// selected the full list is 200+ pairs, which would add thousands of
+// tokens (latency and cost) to every call. A pair matches when either side
+// appears (Latin sides as whole words, so "Cap" doesn't match "capsule").
+// Single terms (names, acronyms) are few and always kept — they also help
+// the model repair misrecognized words, which by definition don't match.
+const MAX_SINGLE_TERMS = 60;
+
+function termOccurs(term: string, text: string): boolean {
+  if (/^[\x20-\x7e]+$/.test(term)) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // plural allowed: "batch records" uses "Batch Record"
+    return new RegExp(`(^|[^A-Za-z0-9])${escaped}(?:s|es)?($|[^A-Za-z0-9])`, "i").test(text);
+  }
+  return text.includes(term);
+}
+
+function relevantTerms(terms: unknown, text: string): string[] | undefined {
+  if (!Array.isArray(terms)) return undefined;
+  const pairs: string[] = [];
+  const singles: string[] = [];
+  for (const raw of terms) {
+    if (typeof raw !== "string" || !raw.trim()) continue;
+    const sides = raw.split("=").map((x) => x.trim()).filter(Boolean);
+    if (sides.length >= 2) {
+      if (sides.some((side) => termOccurs(side, text))) pairs.push(raw);
+    } else if (singles.length < MAX_SINGLE_TERMS) {
+      singles.push(raw);
+    }
+  }
+  return [...pairs, ...singles];
+}
+
 export async function POST(req: NextRequest) {
   let model: string = getDefaultModel();
   try {
-    const { text, sourceLang, targetLang, targetLangs, context, terms, memory, model: rawRequestedModel, provisional: rawProvisional, continuation: rawContinuation } = await req.json();
+    const { text, sourceLang, targetLang, targetLangs, context, terms: rawTerms, memory, model: rawRequestedModel, provisional: rawProvisional, continuation: rawContinuation } = await req.json();
     const continuation = parseContinuation(
       rawContinuation,
       Array.isArray(targetLangs) && targetLangs.length > 0 ? targetLangs : typeof targetLang === "string" ? [targetLang] : []
@@ -667,6 +700,7 @@ export async function POST(req: NextRequest) {
     if (!text || typeof text !== "string") {
       return NextResponse.json({ error: "Missing text" }, { status: 400 });
     }
+    const terms = relevantTerms(rawTerms, continuation ? continuation.sourceSoFar + text : text);
 
     const isMulti = Array.isArray(targetLangs) && targetLangs.length > 0;
     if (!isMulti && (!targetLang || typeof targetLang !== "string")) {
