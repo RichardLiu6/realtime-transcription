@@ -124,6 +124,18 @@ Central logic for the entire app:
 
 - **two_way / one_way**: one target language per sentence, flowing transcript view.
 - **presentation** (UI label "多语言 / Multilingual"): table with an always-present **原文** column (the transcript, shown exactly once) plus one column per `targetLangs` entry (default 中文 + English). Every sentence is translated into **every** column, including the spoken language — that column keeps the utterance as said; foreign words may stay but get their meaning in brackets on first use (`这个 batch（批次）的 yield（良率）`; SAME_LANGUAGE_RULES — chat models only; Qwen-MT / Hy-MT can't take the instruction and just translate). Costs one extra target per sentence by design. Works with 整句, 分句 and 同传. Soniox `language_hints` = source languages ∪ `targetLangs`.
+  - `components/PresentationPanel.tsx`: the # column shows the speaker (display name, speaker color). A column whose text equals the original (ignoring punctuation / case, `sameText` in `lib/meetingLanguages.ts`) is muted with a "= 原文" marker. When the panel is narrower than (columns × 250 px + 72) — ResizeObserver on the panel, so the sidebar counts — it switches to **cards** (speaker + original, then each language with its name) with a 显示 filter (全部 / 原文 / one language; localStorage `multiFilter`). Scroll-to-latest button as in TranscriptPanel.
+
+### Presentation (projector) mode (`components/PresentationMode.tsx`)
+
+- Not the multilingual mode above: a full-screen caption view of the page's state for a meeting-room projector. Opened by the 演示模式 button in the status bar (the one bar every layout, incl. mobile, shows) or `F` (ignored while typing in a text field); Esc / F / the exit button close it. `usePresentationMode()` requests the Fullscreen API when available (else a full-viewport overlay) and leaves the mode when the browser leaves full screen (its Esc never reaches the page). Only displays: recording keeps running when entering or leaving; Start/Stop in the strip call the page's handlers.
+- Control strip over the captions (captions never move), auto-hides after 3 s without activity (resting the pointer on it doesn't count — only moving over it): recording dot + timer, Start/Stop, A−/A+ (20–80 px, default 32), 深色 (default) / 高对比 (yellow on black) / 浅色 — every text color ≥ 7:1, speaker names use lighter shades on dark —, view, language, 只显示完整句子 (hides live tails and provisional translations, like Wordly).
+- Views: 原文 + 译文; 只看一种语言 (`sentenceIn` in `lib/meetingLanguages.ts`: the original if spoken in that language, else `translatedText` when that is the sentence's target, else the original; multilingual uses `translations[lang]`); 左右对照 when the meeting has exactly two languages (`meetingLanguages`: A left, B right). The single-target rule (`singleTargetLanguage`) is shared with the hook.
+- Captions are bottom-anchored (older sentences scroll off the top under a fade, the latest 30 rendered), left-aligned, `min(70ch, 68vw)` wide (BBC guidance), line height 1.45; provisional = dotted underline, live tail lighter. Settings in localStorage: `presentFontSize`, `presentTheme`, `presentView`, `presentLanguage`, `presentFinalOnly`.
+
+### Idle screen
+
+`components/ReadyCard.tsx` (TranscriptPanel and PresentationPanel when there are no entries): 准备就绪 + mode and languages, a large Start button, one-line tips (terms presets, rename by clicking a name, F for presentation mode — hidden on touch screens). Text ≥ 4.5:1.
 
 ### API Routes
 
@@ -149,7 +161,7 @@ Central logic for the entire app:
 ├── <StatusBar>              # Top: recording dot + the only timer; Advanced settings (gear popover:
 │                            #   engine, 整句/分句/同传, 降噪, desktop layout — locked while recording;
 │                            #   unavailable R2T2/同传 hidden, shown disabled with env-var hints to admins),
-│                            #   interface language, user menu (admin panel, log out)
+│                            #   interface language, user menu (admin panel, log out), 演示模式 button
 ├── <Sidebar>                # Left: language, mode, speaker, terms, record/export
 │   ├── <AudioWaveButton>    # Record/stop with waveform
 │   ├── <TranslationModeToggle>
@@ -158,8 +170,10 @@ Central logic for the entire app:
 │   └── <SpeakerPanel>       # Speaker rename + word count
 ├── <MobileSidebarDrawer>    # Mobile sheet wrapper
 ├── <DesktopTopBar>          # topbar layout: preset chips that fit + "+N", always a Terms (N) button
-└── <TranscriptPanel>        # Memoized rows (role=log); translation in a ruled, indented block,
-                             #   upright and ≥ 4.5:1 contrast
+├── <TranscriptPanel>        # Memoized rows (role=log); translation in a ruled, indented block,
+│                            #   upright and ≥ 4.5:1 contrast; <ReadyCard> when empty
+├── <PresentationPanel>      # Multilingual table / cards (instead of TranscriptPanel)
+└── <PresentationMode>       # Full-screen projector captions (overlay, F / Esc)
 ```
 
 ## Environment Variables

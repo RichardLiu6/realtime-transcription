@@ -13,6 +13,7 @@ import {
   AudioLines,
   Settings2,
   ChevronDown,
+  MonitorPlay,
 } from "lucide-react";
 import {
   Popover,
@@ -43,6 +44,9 @@ interface StatusBarProps {
   translationEngine?: TranslationEngine;
   onTranslationEngineChange?: (engine: TranslationEngine) => void;
   t3poEnabled?: boolean;
+  // Presentation (projector) mode: here because the status bar is the one
+  // place every layout (sidebar, top bar, floating, mobile) shows
+  onPresent?: () => void;
 }
 
 const LAYOUT_OPTIONS: { value: DesktopLayout; icon: typeof PanelLeft; label: TranslationKey }[] = [
@@ -139,6 +143,7 @@ export default function StatusBar({
   translationEngine,
   onTranslationEngineChange,
   t3poEnabled = false,
+  onPresent,
 }: StatusBarProps) {
   const t = useT();
   const router = useRouter();
@@ -210,6 +215,23 @@ export default function StatusBar({
         </div>
 
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+          {onPresent && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={onPresent}
+                  aria-keyshortcuts="F"
+                  data-present-button
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2 text-sm text-foreground transition-colors hover:bg-muted"
+                >
+                  <MonitorPlay className="size-4 shrink-0" />
+                  <span>{t("present")}</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{t("present_title")}</TooltipContent>
+            </Tooltip>
+          )}
           {/* Advanced settings: speech engine, translation style, noise
               reduction, desktop layout */}
           <Popover>
