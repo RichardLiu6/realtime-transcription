@@ -2,7 +2,7 @@
 
 import { ArrowUpDown } from "lucide-react";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
-import { useT } from "@/lib/i18n";
+import { useLanguageName, useT } from "@/lib/i18n";
 import {
   Select,
   SelectContent,
@@ -27,6 +27,7 @@ export default function BetweenLanguages({
   disabled,
 }: BetweenLanguagesProps) {
   const t = useT();
+  const langName = useLanguageName();
   // two_way mode uses single language — take first element, fallback to "zh"
   const langA = languageA[0] === "*" ? "zh" : (languageA[0] ?? "zh");
 
@@ -56,7 +57,7 @@ export default function BetweenLanguages({
                   value={lang.code}
                   disabled={lang.code === languageB}
                 >
-                  {lang.name}
+                  {langName(lang.code)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -86,7 +87,7 @@ export default function BetweenLanguages({
                   value={lang.code}
                   disabled={lang.code === langA}
                 >
-                  {lang.name}
+                  {langName(lang.code)}
                 </SelectItem>
               ))}
             </SelectContent>

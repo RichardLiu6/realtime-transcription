@@ -47,7 +47,7 @@ import PresentationLanguages from "@/components/sidebar/PresentationLanguages";
 import type { TranslationMode, SpeakerInfo, BilingualEntry } from "@/types/bilingual";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import { INDUSTRY_PRESETS, presetLabel } from "@/lib/contextTerms";
-import { useT } from "@/lib/i18n";
+import { useLanguageName, useT } from "@/lib/i18n";
 
 interface DesktopTopBarProps {
   translationMode: TranslationMode;
@@ -79,6 +79,7 @@ interface DesktopTopBarProps {
 
 export default function DesktopTopBar(props: DesktopTopBarProps) {
   const t = useT();
+  const langName = useLanguageName();
   const isRecording = props.recordingState === "recording";
   const isConnecting = props.recordingState === "connecting";
   const isIdle = props.recordingState === "idle";
@@ -219,7 +220,7 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
                 <SelectContent>
                   {SONIOX_LANGUAGES.map((lang) => (
                     <SelectItem key={lang.code} value={lang.code} disabled={lang.code === props.languageB}>
-                      {lang.name}
+                      {langName(lang.code)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -236,7 +237,7 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
                 <SelectContent>
                   {SONIOX_LANGUAGES.map((lang) => (
                     <SelectItem key={lang.code} value={lang.code} disabled={lang.code === langA}>
-                      {lang.name}
+                      {langName(lang.code)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -256,7 +257,7 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
                   <SelectItem value="*">{t("any_language")}</SelectItem>
                   {SONIOX_LANGUAGES.map((lang) => (
                     <SelectItem key={lang.code} value={lang.code}>
-                      {lang.name}
+                      {langName(lang.code)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -273,7 +274,7 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
                 <SelectContent>
                   {SONIOX_LANGUAGES.map((lang) => (
                     <SelectItem key={lang.code} value={lang.code}>
-                      {lang.name}
+                      {langName(lang.code)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -286,7 +287,7 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
                   <ArrowDown className="size-3" />
                   {props.targetLangs.map((code) => (
                     <Badge key={code} variant="secondary" className="text-[10px] px-1 py-0 h-4">
-                      {SONIOX_LANGUAGES.find((l) => l.code === code)?.name ?? code}
+                      {langName(code)}
                     </Badge>
                   ))}
                 </Button>

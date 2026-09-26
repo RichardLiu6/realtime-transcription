@@ -2,8 +2,7 @@
 
 import { memo, useEffect, useRef, useState } from "react";
 import type { BilingualEntry, SpeakerInfo } from "@/types/bilingual";
-import { SONIOX_LANGUAGES } from "@/types/bilingual";
-import { useT } from "@/lib/i18n";
+import { useLanguageName, useT } from "@/lib/i18n";
 
 interface PresentationPanelProps {
   entries: BilingualEntry[];
@@ -13,9 +12,6 @@ interface PresentationPanelProps {
   targetLangs: string[];
 }
 
-function getLangName(code: string): string {
-  return SONIOX_LANGUAGES.find((l) => l.code === code)?.name ?? code.toUpperCase();
-}
 
 const Cursor = () => (
   <span className="blink-cursor ml-0.5 inline-block h-4 w-0.5 bg-gray-400 align-text-bottom" />
@@ -86,6 +82,7 @@ function PresentationPanel({
   targetLangs,
 }: PresentationPanelProps) {
   const t = useT();
+  const langName = useLanguageName();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
 
@@ -136,7 +133,7 @@ function PresentationPanel({
                 key={lang}
                 className="text-left px-3 py-2 font-medium text-muted-foreground min-w-[200px]"
               >
-                {getLangName(lang)}
+                {langName(lang)}
               </th>
             ))}
           </tr>

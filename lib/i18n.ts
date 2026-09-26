@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
+import { SONIOX_LANGUAGES } from "@/types/bilingual";
 
 // Interface languages. The choice is remembered in localStorage
 // ("uiLocale"); without one, the browser language decides.
@@ -517,4 +518,24 @@ export function useT() {
     (key: TranslationKey, vars?: Record<string, string | number>) => translate(locale, key, vars),
     [locale]
   );
+}
+
+// Meeting-language names: the language's own name, plus its name in the
+// interface language when that differs — "中文 · Chinese" in the English UI,
+// "English · 英语" in the Chinese one (Intl covers every Soniox language)
+export function languageLabel(code: string, locale: Locale): string {
+  const native = SONIOX_LANGUAGES.find((l) => l.code === code)?.name ?? code.toUpperCase();
+  let local: string | undefined;
+  try {
+    local = new Intl.DisplayNames([locale], { type: "language" }).of(code);
+  } catch {
+    // unknown code / old browser: native name only
+  }
+  if (!local || local === code || local.toLowerCase() === native.toLowerCase()) return native;
+  return `${native} · ${local}`;
+}
+
+export function useLanguageName() {
+  const locale = useLocale();
+  return useCallback((code: string) => languageLabel(code, locale), [locale]);
 }

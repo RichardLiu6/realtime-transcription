@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
-import { useT } from "@/lib/i18n";
+import { useLanguageName, useT } from "@/lib/i18n";
 
 interface FromToLanguagesProps {
   languageA: string[];
@@ -36,6 +36,7 @@ export default function FromToLanguages({
   disabled,
 }: FromToLanguagesProps) {
   const t = useT();
+  const langName = useLanguageName();
   const [open, setOpen] = useState(false);
 
   const isAny = languageA.length === 1 && languageA[0] === "*";
@@ -68,7 +69,7 @@ export default function FromToLanguages({
 
   const getLanguageName = (code: string) => {
     if (code === "*") return t("any_language");
-    return SONIOX_LANGUAGES.find((l) => l.code === code)?.name ?? code;
+    return langName(code);
   };
 
   return (
@@ -160,7 +161,7 @@ export default function FromToLanguages({
                           selected ? "opacity-100" : "opacity-0"
                         )}
                       />
-                      {lang.name}
+                      {langName(lang.code)}
                     </button>
                   );
                 })}
@@ -188,7 +189,7 @@ export default function FromToLanguages({
             <SelectContent>
               {SONIOX_LANGUAGES.map((lang) => (
                 <SelectItem key={lang.code} value={lang.code}>
-                  {lang.name}
+                  {langName(lang.code)}
                 </SelectItem>
               ))}
             </SelectContent>

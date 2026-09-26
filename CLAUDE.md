@@ -76,7 +76,7 @@ StatusBar 翻译方式 **整句 | 分句 | 同传** (`config.translationEngine` 
 
 - UI in 中文 / English / Español / Tiếng Việt. `useT()` / `t(key, vars)`; every locale is a `Record<TranslationKey, string>`, so a missing string fails the type check.
 - Locale: stored choice (localStorage `uiLocale`, set by `components/LanguageSwitcher.tsx` in the status bar and on /login), else the browser language, else English. `useSyncExternalStore` with an English server snapshot — no hydration mismatch; switching re-renders without reload and updates `<html lang>`.
-- Server messages: `/api/translate` localizes its error banner from the `uiLocale` the client sends; `/api/auth/*` return a `code` that /login maps to `auth_<code>`. Preset chips use `preset_<key>`. The admin pages stay Chinese.
+- Server messages: `/api/translate` localizes its error banner from the `uiLocale` the client sends; `/api/auth/*` return a `code` that /login maps to `auth_<code>`. Preset chips use `preset_<key>`. Meeting-language names everywhere (selects, chips, table headers) come from `useLanguageName()`: the native name plus the name in the interface language via `Intl.DisplayNames` ("中文 · Chinese", "English · 英语"). The admin pages stay Chinese.
 
 ### Two-Tier Authentication
 
