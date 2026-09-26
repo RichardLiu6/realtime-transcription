@@ -5,6 +5,7 @@ import { useSonioxTranscription } from "@/hooks/useSonioxTranscription";
 import { useSpeakerManager } from "@/hooks/useSpeakerManager";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
 import { useStoredState } from "@/lib/useStoredState";
+import { combineTerms, INDUSTRY_PRESETS } from "@/lib/contextTerms";
 import type { SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { t } from "@/lib/i18n";
@@ -46,6 +47,10 @@ const DEFAULT_TARGET_LANGS = ["zh", "en"];
 const isStringArray = (v: unknown): v is string[] =>
   Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "string");
 const isString = (v: unknown): v is string => typeof v === "string" && v.length > 0;
+// Terms (possibly none): selected preset keys and custom terms
+const NO_TERMS: string[] = [];
+const isTermList = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((x) => typeof x === "string");
 const isTranslationMode = (v: unknown): v is TranslationMode =>
   v === "two_way" || v === "one_way" || v === "presentation";
 
@@ -53,8 +58,17 @@ export default function Home() {
   const [languageA, setLanguageA] = useStoredState("languageA", DEFAULT_LANGUAGE_A, isStringArray);
   const [languageB, setLanguageB] = useStoredState("languageB", "en", isString);
   const [termsText, setTermsText] = useState("");
-  const [selectedPresets, setSelectedPresets] = useState<Set<string>>(new Set());
-  const [customTerms, setCustomTerms] = useState<string[]>([]);
+  // Terms survive a reload too (stored as arrays; the panel works with a Set)
+  const [presetKeys, setPresetKeys] = useStoredState("termPresets", NO_TERMS, isTermList);
+  const [customTerms, setCustomTerms] = useStoredState("customTerms", NO_TERMS, isTermList);
+  const selectedPresets = useMemo(
+    () => new Set(presetKeys.filter((k) => k in INDUSTRY_PRESETS)),
+    [presetKeys]
+  );
+  const setSelectedPresets = useCallback(
+    (presets: Set<string>) => setPresetKeys(Array.from(presets)),
+    [setPresetKeys]
+  );
   const [translationMode, setTranslationMode] = useStoredState<TranslationMode>(
     "translationMode",
     "two_way",
@@ -169,10 +183,9 @@ export default function Home() {
   }, [speakerIds, registerSpeaker]);
 
   const handleStart = useCallback(() => {
-    const terms = termsText
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean);
+    // From the stored selection itself, so it doesn't depend on the terms
+    // panel being mounted
+    const terms = combineTerms(selectedPresets, customTerms);
     // Stopping and starting again continues the same transcript; only
     // 新会议 (handleNewMeeting) clears it
     start({
@@ -188,7 +201,8 @@ export default function Home() {
   }, [
     languageA,
     languageB,
-    termsText,
+    selectedPresets,
+    customTerms,
     translationMode,
     targetLangs,
     sttProvider,

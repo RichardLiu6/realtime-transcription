@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { X, Info } from "lucide-react";
-import { INDUSTRY_PRESETS } from "@/lib/contextTerms";
+import { INDUSTRY_PRESETS, combineTerms, splitTermInput } from "@/lib/contextTerms";
 import { useT } from "@/lib/i18n";
 import {
   Popover,
@@ -141,19 +141,13 @@ export default function TermsPanel({
 
   // Sync combined terms to parent
   useEffect(() => {
-    const presetTerms = Array.from(selectedPresets).flatMap(
-      (key) => INDUSTRY_PRESETS[key]?.terms ?? []
-    );
-    const all = [...new Set([...presetTerms, ...customTerms])];
-    onTermsTextChange(all.join(", "));
+    onTermsTextChange(combineTerms(selectedPresets, customTerms).join(", "));
   }, [selectedPresets, customTerms, onTermsTextChange]);
 
-  const totalCount = useMemo(() => {
-    const presetTerms = Array.from(selectedPresets).flatMap(
-      (key) => INDUSTRY_PRESETS[key]?.terms ?? []
-    );
-    return new Set([...presetTerms, ...customTerms]).size;
-  }, [selectedPresets, customTerms]);
+  const totalCount = useMemo(
+    () => combineTerms(selectedPresets, customTerms).length,
+    [selectedPresets, customTerms]
+  );
 
   const togglePreset = useCallback(
     (key: string) => {
@@ -165,13 +159,15 @@ export default function TermsPanel({
     [selectedPresets, onSelectedPresetsChange]
   );
 
+  // One entry may hold several terms ("千问=Qwen，硬胶囊=hard capsule", a
+  // pasted list): each becomes its own tag
   const addCustomTag = useCallback(
-    (tag: string) => {
-      const trimmed = tag.trim();
-      if (!trimmed) return;
-      if (customTerms.some((t) => t.toLowerCase() === trimmed.toLowerCase()))
-        return;
-      onCustomTermsChange([...customTerms, trimmed]);
+    (input: string) => {
+      const next = [...customTerms];
+      for (const term of splitTermInput(input)) {
+        if (!next.some((t) => t.toLowerCase() === term.toLowerCase())) next.push(term);
+      }
+      if (next.length !== customTerms.length) onCustomTermsChange(next);
     },
     [customTerms, onCustomTermsChange]
   );
@@ -184,7 +180,7 @@ export default function TermsPanel({
   );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" || e.key === ",") {
+    if (e.key === "Enter" || e.key === "," || e.key === "，" || e.key === "、") {
       e.preventDefault();
       addCustomTag(inputValue);
       setInputValue("");
