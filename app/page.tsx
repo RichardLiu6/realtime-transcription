@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useSonioxTranscription, defaultSpeakerLabel } from "@/hooks/useSonioxTranscription";
-import { useSpeakerManager } from "@/hooks/useSpeakerManager";
+import { useSpeakerManager, speakerDisplayName } from "@/hooks/useSpeakerManager";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
 import { useStoredState } from "@/lib/useStoredState";
 import { combineTerms, INDUSTRY_PRESETS } from "@/lib/contextTerms";
@@ -165,6 +165,7 @@ export default function Home() {
     start,
     stop,
     clearEntries,
+    reassignSpeaker,
     mergeSpeaker,
   } = useSonioxTranscription();
 
@@ -217,17 +218,24 @@ export default function Home() {
     stop();
   }, [stop]);
 
-  // With the names the user gave, not the engine's "Speaker N"
+  // With the names the user sees: the given name, or the default one in
+  // the current interface language ("说话人 1"), not the engine's "Speaker N"
   const handleExport = useCallback(() => {
     triggerBilingualDownload(
-      entries.map((e) => ({ ...e, speakerLabel: speakers.get(e.speaker)?.label ?? e.speakerLabel }))
+      entries.map((e) => ({
+        ...e,
+        speakerLabel: speakerDisplayName(e.speaker, speakers.get(e.speaker)?.label ?? e.speakerLabel, t),
+      }))
     );
   }, [entries, speakers]);
 
+  // Clears the whole transcript, so ask first (every layout's 新会议
+  // button ends up here)
   const handleNewMeeting = useCallback(() => {
+    if (entries.length > 0 && !window.confirm(t("confirm_new_meeting"))) return;
     clearEntries();
     clearSpeakers();
-  }, [clearEntries, clearSpeakers]);
+  }, [entries.length, clearEntries, clearSpeakers]);
 
   const handleLanguageAChange = useCallback(
     (codes: string[]) => {
@@ -292,8 +300,14 @@ export default function Home() {
     (speakerId: string, newLabel: string) => {
       const name = newLabel.trim();
       if (!name) return;
+      // Also against the names as shown: an unrenamed speaker reads
+      // "说话人 2" in the Chinese UI
       const same = Array.from(speakers.values()).find(
-        (s) => s.id !== speakerId && s.label.trim().toLowerCase() === name.toLowerCase()
+        (s) =>
+          s.id !== speakerId &&
+          [s.label, speakerDisplayName(s.id, s.label, t)].some(
+            (n) => n.trim().toLowerCase() === name.toLowerCase()
+          )
       );
       if (same) {
         mergeSpeaker(speakerId, same.id);
@@ -385,6 +399,8 @@ export default function Home() {
             languageA={languageA}
             languageB={languageB}
             onRenameSpeaker={handleRenameSpeaker}
+            // One sentence to another speaker; their other sentences stay
+            onReassignSpeaker={reassignSpeaker}
           />
         )}
 

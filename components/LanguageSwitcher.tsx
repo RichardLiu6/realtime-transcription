@@ -20,7 +20,9 @@ export default function LanguageSwitcher({ className = "" }: { className?: strin
         value={locale}
         onChange={(e) => setLocale(e.target.value as Locale)}
         aria-label={t("ui_language")}
-        className="cursor-pointer bg-transparent text-xs text-muted-foreground outline-none hover:text-foreground"
+        // field-sizing: as wide as the chosen name, not the longest option
+        // ("Tiếng Việt"), which left a gap and cost room in the status bar
+        className="cursor-pointer bg-transparent field-sizing-content text-xs text-muted-foreground outline-none hover:text-foreground"
       >
         {LOCALES.map((l) => (
           <option key={l.code} value={l.code}>

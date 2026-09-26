@@ -70,8 +70,6 @@ export default function DesktopFloatingBar(props: DesktopFloatingBarProps) {
   const isRecording = props.recordingState === "recording";
   const isConnecting = props.recordingState === "connecting";
   const isIdle = props.recordingState === "idle";
-  const minutes = String(Math.floor(props.elapsedSeconds / 60)).padStart(2, "0");
-  const seconds = String(props.elapsedSeconds % 60).padStart(2, "0");
 
   const totalTerms = useMemo(() => {
     const presetTerms = Array.from(props.selectedPresets).flatMap(
@@ -83,22 +81,22 @@ export default function DesktopFloatingBar(props: DesktopFloatingBarProps) {
   return (
     <div className="fixed bottom-6 right-6 z-50">
       <div className="flex items-center gap-2 rounded-2xl bg-background/95 backdrop-blur-sm px-4 py-3 shadow-lg ring-1 ring-border/50">
-        {/* Record / Stop */}
+        {/* Record / Stop (the timer is in the status bar) */}
         {isRecording ? (
-          <>
-            <span className="h-2.5 w-2.5 rounded-full bg-red-500 recording-pulse" />
-            <span className="font-mono text-sm font-semibold">
-              {minutes}:{seconds}
-            </span>
-            <Button
-              variant="destructive"
-              size="icon"
-              onClick={props.onStop}
-              className="size-10"
-            >
-              <Square className="size-4" />
-            </Button>
-          </>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="destructive"
+                size="icon"
+                onClick={props.onStop}
+                aria-label={t("stop_recording")}
+                className="size-10"
+              >
+                <Square className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">{t("stop_recording")}</TooltipContent>
+          </Tooltip>
         ) : (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -106,6 +104,7 @@ export default function DesktopFloatingBar(props: DesktopFloatingBarProps) {
                 onClick={props.onStart}
                 disabled={isConnecting}
                 size="icon"
+                aria-label={isConnecting ? t("connecting") : t("start_recording")}
                 className="size-10"
               >
                 {isConnecting ? (
@@ -128,7 +127,7 @@ export default function DesktopFloatingBar(props: DesktopFloatingBarProps) {
           <Tooltip>
             <TooltipTrigger asChild>
               <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" className="size-10">
+                <Button variant="ghost" size="icon" aria-label={t("settings")} className="size-10">
                   <Settings className="size-5" />
                 </Button>
               </PopoverTrigger>
@@ -174,7 +173,12 @@ export default function DesktopFloatingBar(props: DesktopFloatingBarProps) {
           <Tooltip>
             <TooltipTrigger asChild>
               <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" className="size-10 relative">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={totalTerms > 0 ? `${t("terms")} (${totalTerms})` : t("terms")}
+                  className="size-10 relative"
+                >
                   <BookOpen className="size-5" />
                   {totalTerms > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-medium flex items-center justify-center px-1">
@@ -206,7 +210,12 @@ export default function DesktopFloatingBar(props: DesktopFloatingBarProps) {
             <Tooltip>
               <TooltipTrigger asChild>
                 <PopoverTrigger asChild>
-                  <Button variant="ghost" size="icon" className="size-10 relative">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`${t("speakers")} (${props.speakers.size})`}
+                    className="size-10 relative"
+                  >
                     <Users className="size-5" />
                     <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full bg-muted text-muted-foreground text-[9px] font-medium flex items-center justify-center px-1">
                       {props.speakers.size}
@@ -232,7 +241,7 @@ export default function DesktopFloatingBar(props: DesktopFloatingBarProps) {
             <div className="h-6 w-px bg-border" />
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={props.onExport} className="size-10">
+                <Button variant="ghost" size="icon" onClick={props.onExport} aria-label={t("export")} className="size-10">
                   <Download className="size-5" />
                 </Button>
               </TooltipTrigger>
@@ -240,7 +249,13 @@ export default function DesktopFloatingBar(props: DesktopFloatingBarProps) {
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={props.onNewMeeting} className="size-10">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={props.onNewMeeting}
+                  aria-label={t("new_meeting")}
+                  className="size-10"
+                >
                   <FilePlus className="size-5" />
                 </Button>
               </TooltipTrigger>

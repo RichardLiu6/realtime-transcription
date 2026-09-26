@@ -132,6 +132,20 @@ const en = {
   "auth_meeting_expired": "This meeting code has expired",
   "auth_send_failed": "Could not send the code. Please try again later",
   "auth_server_error": "Service error. Please try again later",
+
+  // Status bar, advanced settings, speakers, confirmations
+  "advanced_settings": "Advanced settings",
+  "settings_locked": "Locked while recording — stop to change.",
+  "desktop_layout": "Layout",
+  "user_menu": "Account",
+  "recording_status": "Recording",
+  "done": "Done",
+  "confirm_new_meeting": "Start a new meeting? The current transcript will be cleared (export it first if you need it).",
+  "speaker_default": "Speaker {n}",
+  "reassign_sentence": "Move this sentence to another speaker",
+  "reassign_to": "This sentence was said by:",
+  "translation_provisional": "Translation still being revised",
+  "scroll_to_latest": "Scroll to latest",
 };
 
 export type TranslationKey = keyof typeof en;
@@ -242,6 +256,19 @@ const zh: Record<TranslationKey, string> = {
   "auth_meeting_expired": "会议码已过期",
   "auth_send_failed": "验证码发送失败，请稍后重试",
   "auth_server_error": "服务异常，请稍后重试",
+
+  "advanced_settings": "高级设置",
+  "settings_locked": "录音中不可更改，停止后再调整。",
+  "desktop_layout": "布局",
+  "user_menu": "账户",
+  "recording_status": "录音中",
+  "done": "完成",
+  "confirm_new_meeting": "开始新会议？当前的转录内容将被清空（如需保留请先导出）。",
+  "speaker_default": "说话人 {n}",
+  "reassign_sentence": "把这句话改到其他说话人",
+  "reassign_to": "这句话的说话人是：",
+  "translation_provisional": "译文仍在修订中",
+  "scroll_to_latest": "滚动到最新",
 };
 
 const es: Record<TranslationKey, string> = {
@@ -350,6 +377,19 @@ const es: Record<TranslationKey, string> = {
   "auth_meeting_expired": "El código de reunión ha caducado",
   "auth_send_failed": "No se pudo enviar el código. Inténtelo más tarde",
   "auth_server_error": "Error del servicio. Inténtelo más tarde",
+
+  "advanced_settings": "Ajustes avanzados",
+  "settings_locked": "Bloqueado durante la grabación: deténgala para cambiarlo.",
+  "desktop_layout": "Diseño",
+  "user_menu": "Cuenta",
+  "recording_status": "Grabando",
+  "done": "Listo",
+  "confirm_new_meeting": "¿Empezar una nueva reunión? Se borrará la transcripción actual (expórtela antes si la necesita).",
+  "speaker_default": "Hablante {n}",
+  "reassign_sentence": "Asignar esta frase a otro hablante",
+  "reassign_to": "Esta frase la dijo:",
+  "translation_provisional": "Traducción todavía en revisión",
+  "scroll_to_latest": "Ir a lo último",
 };
 
 const vi: Record<TranslationKey, string> = {
@@ -458,6 +498,19 @@ const vi: Record<TranslationKey, string> = {
   "auth_meeting_expired": "Mã cuộc họp đã hết hạn",
   "auth_send_failed": "Không gửi được mã. Vui lòng thử lại sau",
   "auth_server_error": "Lỗi dịch vụ. Vui lòng thử lại sau",
+
+  "advanced_settings": "Cài đặt nâng cao",
+  "settings_locked": "Bị khóa khi đang ghi âm — dừng lại để thay đổi.",
+  "desktop_layout": "Bố cục",
+  "user_menu": "Tài khoản",
+  "recording_status": "Đang ghi âm",
+  "done": "Xong",
+  "confirm_new_meeting": "Bắt đầu cuộc họp mới? Bản ghi hiện tại sẽ bị xóa (hãy xuất trước nếu cần).",
+  "speaker_default": "Người nói {n}",
+  "reassign_sentence": "Chuyển câu này sang người nói khác",
+  "reassign_to": "Câu này do ai nói:",
+  "translation_provisional": "Bản dịch vẫn đang được chỉnh sửa",
+  "scroll_to_latest": "Cuộn tới mới nhất",
 };
 
 const translations: Record<Locale, Record<TranslationKey, string>> = { en, zh, es, vi };

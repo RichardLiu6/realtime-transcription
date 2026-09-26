@@ -2,8 +2,9 @@
 
 /**
  * Desktop Layout V2: Single-row top toolbar
- * Record | Mode | Languages | Terms chips (fill remaining space) | Speakers | Export
- * Terms overflow into a Popover when space is tight.
+ * Record | Mode | Languages | Terms chips (fill remaining space) | Terms | Speakers | Export
+ * Preset chips that don't fit collapse into "+N"; the Terms button (always
+ * there) opens the full terms panel, custom terms included.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -77,48 +78,66 @@ interface DesktopTopBarProps {
   hasEntries: boolean;
 }
 
+const chipClass = (selected: boolean) =>
+  `shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] leading-tight transition-colors whitespace-nowrap ${
+    selected
+      ? "bg-primary text-primary-foreground font-medium"
+      : "bg-muted/60 text-muted-foreground hover:bg-muted"
+  }`;
+
 export default function DesktopTopBar(props: DesktopTopBarProps) {
   const t = useT();
   const langName = useLanguageName();
   const isRecording = props.recordingState === "recording";
   const isConnecting = props.recordingState === "connecting";
   const isIdle = props.recordingState === "idle";
-  const minutes = String(Math.floor(props.elapsedSeconds / 60)).padStart(2, "0");
-  const seconds = String(props.elapsedSeconds % 60).padStart(2, "0");
 
   // two_way mode uses single language
   const langA = props.languageA[0] === "*" ? "zh" : (props.languageA[0] ?? "zh");
 
-  // Measure how many preset chips fit in the available space
+  // How many preset chips fit in the space left. Widths come from an
+  // invisible, absolutely positioned copy of every chip (plus a "+N"
+  // sample), so chips that don't fit are simply not rendered — hidden ones
+  // taking up room is what pushed "+N" out of view.
   const chipsContainerRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
   const [visibleCount, setVisibleCount] = useState(Object.keys(INDUSTRY_PRESETS).length);
+  const [termsOpen, setTermsOpen] = useState(false);
 
   const presetEntries = useMemo(() => Object.entries(INDUSTRY_PRESETS), []);
 
   const measureChips = useCallback(() => {
     const container = chipsContainerRef.current;
-    if (!container) return;
-    const children = Array.from(container.children) as HTMLElement[];
-    if (children.length === 0) return;
-
-    const containerRight = container.getBoundingClientRect().right;
+    const measure = measureRef.current;
+    if (!container || !measure) return;
+    const widths = Array.from(measure.children, (c) => c.getBoundingClientRect().width);
+    const overflowWidth = widths.pop() ?? 0;
+    const GAP = 4; // gap-1
+    const available = container.clientWidth;
+    const all = widths.reduce((sum, w, i) => sum + w + (i ? GAP : 0), 0);
+    if (all <= available) {
+      setVisibleCount(widths.length);
+      return;
+    }
+    let used = 0;
     let count = 0;
-    for (const child of children) {
-      // Skip the overflow button (last child when overflow exists)
-      if (child.dataset.overflow) break;
-      const childRight = child.getBoundingClientRect().right;
-      if (childRight > containerRight + 2) break;
+    for (const w of widths) {
+      const next = used + (count ? GAP : 0) + w;
+      if (next + GAP + overflowWidth > available) break;
+      used = next;
       count++;
     }
-    setVisibleCount(count || 1);
+    setVisibleCount(count);
   }, []);
 
+  // Re-measure on resize, and when chip widths change (selection count,
+  // interface language)
   useEffect(() => {
     measureChips();
     const ro = new ResizeObserver(measureChips);
     if (chipsContainerRef.current) ro.observe(chipsContainerRef.current);
     return () => ro.disconnect();
-  }, [measureChips, props.selectedPresets]);
+  }, [measureChips, props.selectedPresets, t]);
 
   const togglePreset = useCallback(
     (key: string) => {
@@ -143,22 +162,18 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
     <div className="shrink-0 border-b border-border bg-background px-4 py-2">
       <div className="flex items-center gap-2">
         {/* Record / Stop */}
+        {/* The timer is in the status bar */}
         {isRecording ? (
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="h-2.5 w-2.5 rounded-full bg-red-500 recording-pulse" />
-            <span className="font-mono text-sm font-semibold">
-              {minutes}:{seconds}
-            </span>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={props.onStop}
-              className="gap-1.5"
-            >
-              <Square className="size-3.5" />
-              {t("stop")}
-            </Button>
-          </div>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={props.onStop}
+            aria-label={t("stop_recording")}
+            className="gap-1.5 shrink-0"
+          >
+            <Square className="size-3.5" />
+            {t("stop")}
+          </Button>
         ) : (
           <Button
             onClick={props.onStart}
@@ -307,21 +322,35 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
 
         <div className="h-5 w-px bg-border shrink-0" />
 
-        {/* Terms chips — fill remaining space, overflow into popover */}
+        {/* Preset chips — as many as fit; the rest collapse into "+N" */}
         <div
           ref={chipsContainerRef}
-          className="flex items-center gap-1 flex-1 min-w-0 overflow-hidden"
+          className="relative flex items-center gap-1 flex-1 min-w-0 overflow-hidden"
         >
-          {presetEntries.map(([key, preset], idx) => (
+          {/* Invisible copies for measuring (every chip + a "+N" sample) */}
+          <div
+            ref={measureRef}
+            aria-hidden
+            className="pointer-events-none invisible absolute left-0 top-0 flex gap-1"
+          >
+            {presetEntries.map(([key, preset]) => (
+              <span key={key} className={chipClass(props.selectedPresets.has(key))}>
+                <span>{presetLabel(key, preset.label, t)}</span>
+                {props.selectedPresets.has(key) && (
+                  <span className="opacity-70 text-[10px]">{preset.terms.length}</span>
+                )}
+              </span>
+            ))}
+            <span className={chipClass(false)}>+{presetEntries.length}</span>
+          </div>
+
+          {presetEntries.slice(0, visibleCount).map(([key, preset]) => (
             <button
               key={key}
               type="button"
+              aria-pressed={props.selectedPresets.has(key)}
               onClick={() => togglePreset(key)}
-              className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] leading-tight transition-colors whitespace-nowrap ${
-                props.selectedPresets.has(key)
-                  ? "bg-primary text-primary-foreground font-medium"
-                  : "bg-muted/60 text-muted-foreground hover:bg-muted"
-              } ${idx >= visibleCount ? "invisible" : ""}`}
+              className={chipClass(props.selectedPresets.has(key))}
             >
               <span>{presetLabel(key, preset.label, t)}</span>
               {props.selectedPresets.has(key) && (
@@ -330,39 +359,42 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
             </button>
           ))}
 
-          {/* Overflow: show "+N more" button that opens full terms popover */}
+          {/* The hidden presets are in the full terms panel */}
           {overflowPresets.length > 0 && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  data-overflow="true"
-                  className="shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] bg-muted/60 text-muted-foreground hover:bg-muted whitespace-nowrap"
-                >
-                  <BookOpen className="size-3" />
-                  +{overflowPresets.length}
-                  {totalTerms > 0 && (
-                    <span className="rounded-full bg-primary/15 px-1 text-[9px] font-medium text-primary">
-                      {totalTerms}
-                    </span>
-                  )}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent side="bottom" align="end" className="w-80 p-0">
-                <TermsPanel
-                  termsText={props.termsText}
-                  onTermsTextChange={props.onTermsTextChange}
-                  selectedPresets={props.selectedPresets}
-                  onSelectedPresetsChange={props.onSelectedPresetsChange}
-                  customTerms={props.customTerms}
-                  onCustomTermsChange={props.onCustomTermsChange}
-                  isRecording={isRecording}
-                  inline
-                />
-              </PopoverContent>
-            </Popover>
+            <button
+              type="button"
+              onClick={() => setTermsOpen(true)}
+              aria-label={`${t("context_terms")} +${overflowPresets.length}`}
+              className={chipClass(false)}
+            >
+              +{overflowPresets.length}
+            </button>
           )}
         </div>
+
+        {/* Terms: always here — the only way to add custom terms in this
+            layout */}
+        <Popover open={termsOpen} onOpenChange={setTermsOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs shrink-0">
+              <BookOpen className="size-3.5" />
+              {t("terms")}
+              {totalTerms > 0 && <span className="tabular-nums">({totalTerms})</span>}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent side="bottom" align="end" className="w-80 p-0">
+            <TermsPanel
+              termsText={props.termsText}
+              onTermsTextChange={props.onTermsTextChange}
+              selectedPresets={props.selectedPresets}
+              onSelectedPresetsChange={props.onSelectedPresetsChange}
+              customTerms={props.customTerms}
+              onCustomTermsChange={props.onCustomTermsChange}
+              isRecording={isRecording}
+              inline
+            />
+          </PopoverContent>
+        </Popover>
 
         {/* Speakers popover */}
         {props.speakers.size > 0 && (
@@ -372,7 +404,12 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-1.5 text-xs shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label={`${t("speakers")} (${props.speakers.size})`}
+                      className="gap-1.5 text-xs shrink-0"
+                    >
                       <Users className="size-3.5" />
                       {props.speakers.size}
                     </Button>
@@ -398,7 +435,7 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
             <div className="flex items-center gap-1 shrink-0">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="icon-sm" onClick={props.onExport}>
+                  <Button variant="outline" size="icon-sm" onClick={props.onExport} aria-label={t("export")}>
                     <Download className="size-3.5" />
                   </Button>
                 </TooltipTrigger>
@@ -406,7 +443,12 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="icon-sm" onClick={props.onNewMeeting}>
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    onClick={props.onNewMeeting}
+                    aria-label={t("new_meeting")}
+                  >
                     <FilePlus className="size-3.5" />
                   </Button>
                 </TooltipTrigger>
