@@ -42,7 +42,7 @@ Audio goes directly from browser to the STT engine — the server never touches 
 ### STT engines
 
 - **Soniox** (default): cloud, 60+ languages, speaker diarization + language ID.
-- **R2T2** (NetEase Youdao Confucius4-R2T2, Qwen3-ASR based): must be self-hosted on a GPU (vLLM + `ws_server.py` from github.com/netease-youdao/Confucius4-R2T2). Append-only output, Chinese/English optimized, **no speaker diarization or language ID** (language comes from the CJK heuristic). The picker in StatusBar enables it only when `R2T2_WS_URL` + `R2T2_SECRET_KEY` are set. Protocol: first frame JSON header `{requestId, secret_key, language, use_vad, system_prompt}`, then binary 16 kHz int16 PCM, end with the string `YOUDAO_ONETIME_ASR_STREAM_EOS`. Change `secret_key_list` in `ws_server.py` (defaults to a debug key).
+- **R2T2** (NetEase Youdao Confucius4-R2T2, Qwen3-ASR based): must be self-hosted on a GPU (vLLM + `ws_server.py` from github.com/netease-youdao/Confucius4-R2T2). Append-only output, Chinese/English optimized, **no speaker diarization or language ID** (language comes from the CJK heuristic). The engine picker (status bar → Advanced settings) offers it only when `R2T2_WS_URL` + `R2T2_SECRET_KEY` are set. Protocol: first frame JSON header `{requestId, secret_key, language, use_vad, system_prompt}`, then binary 16 kHz int16 PCM, end with the string `YOUDAO_ONETIME_ASR_STREAM_EOS`. Change `secret_key_list` in `ws_server.py` (defaults to a debug key).
 
 ### Translation providers (`app/api/translate/route.ts`)
 
@@ -60,7 +60,7 @@ Audio goes directly from browser to the STT engine — the server never touches 
 
 ### Streaming translation (translate while the sentence is spoken)
 
-StatusBar 翻译方式 **整句 | 分句 | 同传** (`config.translationEngine` = `llm` | `clause` | `t3po`). Both streaming engines expose `feed` / `flush` / `close`, consume only *final* ASR text from any STT engine, and are append-only. The hook plans **routes per segment** (`streamRoutesFor`): one or more engines, each covering some target languages; commits are merged per language (`commitStreamParts`), and the segment is done when every route has flushed. With 同传 in multilingual mode, zh↔en columns go through T3PO and all other columns (incl. same-language) through the clause engine; outside multilingual mode 同传 only covers zh↔en. On any failure the session falls back to sentence translation (banner stays) and affected sentences are retranslated whole.
+翻译方式 **整句 | 分句 | 同传** (status bar → Advanced settings) (`config.translationEngine` = `llm` | `clause` | `t3po`). Both streaming engines expose `feed` / `flush` / `close`, consume only *final* ASR text from any STT engine, and are append-only. The hook plans **routes per segment** (`streamRoutesFor`): one or more engines, each covering some target languages; commits are merged per language (`commitStreamParts`), and the segment is done when every route has flushed. With 同传 in multilingual mode, zh↔en columns go through T3PO and all other columns (incl. same-language) through the clause engine; outside multilingual mode 同传 only covers zh↔en. On any failure the session falls back to sentence translation (banner stays) and affected sentences are retranslated whole.
 
 **分句 (`lib/clause/engine.ts`)** — any translation API, any language pair, one or several targets per call. Commits a clause at `，。！？；：…` or ASCII `,.!?;:` followed by a space (so `3.5` doesn't split); clauses under 4 CJK chars / 3 words merge into the next; 20 units without punctuation forces. Each clause goes to `/api/translate` with `continuation: {sourceSoFar, translationsSoFar: {lang: text}}` (`translationSoFar` string also accepted for one target): chat models get a "[Sentence so far] / [Translation so far] / [Next part]" prompt and output only the continuation (per language as JSON when multi-target); Qwen-MT gets the sentence so far as a `tm_list` pair. Client guards: a restated prefix is stripped; an empty continuation is retried as a standalone clause.
 
@@ -93,19 +93,23 @@ StatusBar 翻译方式 **整句 | 分句 | 同传** (`config.translationEngine` 
 ### Core Hook: useSonioxTranscription.ts
 
 Central logic for the entire app:
-- Microphone captured **raw** by default (browser echoCancellation / noiseSuppression / autoGainControl off — they can drop quiet or distant speakers and cancel remote participants as echo); the StatusBar 降噪 toggle (`config.audioProcessing`, localStorage `audioProcessing`) turns them on
+- Microphone captured **raw** by default (browser echoCancellation / noiseSuppression / autoGainControl off — they can drop quiet or distant speakers and cancel remote participants as echo); the 降噪 toggle in Advanced settings (`config.audioProcessing`, localStorage `audioProcessing`) turns them on
 - AudioWorklet setup (buffers frames in the worklet), linear interpolation resampling for non-16kHz contexts
 - WebSocket connection to Soniox or R2T2 (`config.provider`)
 - Token processing: splits original vs translation tokens via `translation_status`
 - Speaker change detection triggers segment finalization
 - Endpoint detection (all tokens final) auto-finalizes segments
 - Language detection: CJK character ratio >20% → detected language
-- Provisional translation: while a segment is still being spoken, re-translates the partial text at most once per second (`provisional: true`, shown grey); the final translation replaces it, or the provisional result is promoted when it already covers the final text
+- Provisional translation: while a segment is still being spoken, re-translates the partial text at most once per second (`provisional: true`, shown with a dotted underline — not faded); the final translation replaces it, or the provisional result is promoted when it already covers the final text
 - Segment language = majority language of its tokens, weighted in units (1 per CJK character, 1 per Latin word — not letters), not the first token (a leading "嗯" used to mislabel English sentences as ZH)
 - Auto-merge heuristic: short same-language segments adopt previous speaker
 - Starting a new recording **continues** the transcript (entry ids keep counting, timestamps offset past the last entry); only 新会议 (`clearEntries`) clears it
 - Speaker ids are per recording, `"<recording>:<speaker>"` (Soniox restarts its numbering on every WebSocket session; R2T2 is always speaker 1). Default labels (`defaultSpeakerLabel`): "Speaker 1" in the first recording, "Speaker 1 (#2)" in later ones. The recording index advances on start when the transcript has entries and resets with `clearEntries`
-- Renaming: click a speaker name on a transcript row (inline input, Enter saves / Esc cancels) or in the SpeakerPanel. Giving a speaker a name another speaker already has — typed, or via the "同一人" quick picks — means the same person: `mergeSpeaker` moves their entries to the existing id and aliases the engine speaker, so later sentences keep the name, color and word count. This is how names carry over stop/start within a meeting. Export uses the given names
+- Default names are shown in the interface language at display time only (`speakerDisplayName` in `hooks/useSpeakerManager.ts`: "说话人 1 (#2)" / "Hablante 1" / "Người nói 1"); ids and given names are never changed. A typed name is also matched against these displayed names
+- Renaming: click a speaker name on a transcript row (inline input, Enter saves / Esc cancels) or in the SpeakerPanel. Giving a speaker a name another speaker already has — typed, or via the "同一人" quick picks — means the same person: `mergeSpeaker` moves their entries to the existing id and aliases the engine speaker, so later sentences keep the name, color and word count. This is how names carry over stop/start within a meeting. Export uses the names as shown (given, or the localized default)
+- One sentence to another speaker: the small person-pen button after a finalized row's text (visible on hover / focus, always on touch screens) lists the other speakers and calls `reassignSpeaker(entryId, speakerId)` for that entry only; word counts and colors follow
+- Speaker colors: `SpeakerInfo.color` (hex, from `SPEAKER_COLORS` in `useSpeakerManager.ts`: 8 colors, each ≥ 4.5:1 on white, no red) is the single source for transcript names, the SpeakerPanel dots and bars; a merged-away speaker's color is freed for the next one
+- 新会议 asks for confirmation (`confirm_new_meeting`) when there is a transcript, in every layout
 - Meeting settings (languageA/B, translationMode, targetLangs) persist in localStorage via `lib/useStoredState.ts`
 - A segment of nothing but punctuation (a trailing `。` finalized on its own) is not a sentence: its mark is appended to the previous entry and it is never translated
 - stop() sends end-of-audio and drains trailing results before closing (3 s timeout)
@@ -142,7 +146,10 @@ Central logic for the entire app:
 
 ```
 <Home> (app/page.tsx)
-├── <StatusBar>              # Top: recording state, timer, user info, admin link
+├── <StatusBar>              # Top: recording dot + the only timer; Advanced settings (gear popover:
+│                            #   engine, 整句/分句/同传, 降噪, desktop layout — locked while recording;
+│                            #   unavailable R2T2/同传 hidden, shown disabled with env-var hints to admins),
+│                            #   interface language, user menu (admin panel, log out)
 ├── <Sidebar>                # Left: language, mode, speaker, terms, record/export
 │   ├── <AudioWaveButton>    # Record/stop with waveform
 │   ├── <TranslationModeToggle>
@@ -150,7 +157,9 @@ Central logic for the entire app:
 │   ├── <TermsPanel>         # Context terms with preset categories
 │   └── <SpeakerPanel>       # Speaker rename + word count
 ├── <MobileSidebarDrawer>    # Mobile sheet wrapper
-└── <TranscriptPanel>        # Virtual list, 25-color speaker palette
+├── <DesktopTopBar>          # topbar layout: preset chips that fit + "+N", always a Terms (N) button
+└── <TranscriptPanel>        # Memoized rows (role=log); translation in a ruled, indented block,
+                             #   upright and ≥ 4.5:1 contrast
 ```
 
 ## Environment Variables

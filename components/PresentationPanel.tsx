@@ -23,9 +23,8 @@ function OriginalText({ entry }: { entry: BilingualEntry }) {
   return (
     <>
       {entry.originalText && <span className="text-foreground/80">{entry.originalText}</span>}
-      {entry.interimOriginal && (
-        <span className="text-gray-400 italic">{entry.interimOriginal}</span>
-      )}
+      {/* Not yet confirmed by the engine: lighter, still readable */}
+      {entry.interimOriginal && <span className="text-gray-500">{entry.interimOriginal}</span>}
       <Cursor />
     </>
   );
@@ -44,7 +43,7 @@ const Row = memo(function Row({ entry, index, targetLangs }: RowProps) {
     <tr className="align-top">
       <td className="px-3 py-2 text-muted-foreground">
         <div>{index + 1}</div>
-        <span className="mt-1 inline-block px-1.5 py-0.5 bg-gray-100 rounded-full text-[10px] text-gray-500">
+        <span className="mt-1 inline-block px-1.5 py-0.5 bg-gray-100 rounded-full text-[10px] text-gray-600">
           {entry.language?.toUpperCase() || "?"}
         </span>
       </td>
@@ -58,16 +57,22 @@ const Row = memo(function Row({ entry, index, targetLangs }: RowProps) {
         const text = entry.translations?.[lang];
         return (
           <td key={lang} className="px-3 py-2">
+            {/* Provisional (still being revised): dotted underline, not a
+                paler color or italics — it must stay readable */}
             {text ? (
               <span
+                data-translation
+                title={entry.translationProvisional ? t("translation_provisional") : undefined}
                 className={
-                  entry.translationProvisional ? "text-gray-400 italic" : undefined
+                  entry.translationProvisional
+                    ? "text-gray-700 underline decoration-dotted decoration-gray-400 underline-offset-4"
+                    : undefined
                 }
               >
                 {text}
               </span>
             ) : entry.isFinal ? (
-              <span className="text-gray-300 animate-pulse">{t("translating")}</span>
+              <span className="text-muted-foreground animate-pulse">{t("translating")}</span>
             ) : null}
           </td>
         );
@@ -120,17 +125,18 @@ function PresentationPanel({
   }
 
   return (
-    <div ref={scrollRef} className="flex-1 overflow-auto">
+    <div ref={scrollRef} role="log" aria-live="polite" className="flex-1 overflow-auto">
       <table className="w-full text-sm">
         <thead className="sticky top-0 bg-background border-b border-border z-10">
           <tr>
-            <th className="text-left px-3 py-2 font-medium text-muted-foreground w-8">#</th>
-            <th className="text-left px-3 py-2 font-medium text-muted-foreground min-w-[200px]">
+            <th scope="col" className="text-left px-3 py-2 font-medium text-muted-foreground w-8">#</th>
+            <th scope="col" className="text-left px-3 py-2 font-medium text-muted-foreground min-w-[200px]">
               {t("original_text")}
             </th>
             {targetLangs.map((lang) => (
               <th
                 key={lang}
+                scope="col"
                 className="text-left px-3 py-2 font-medium text-muted-foreground min-w-[200px]"
               >
                 {langName(lang)}

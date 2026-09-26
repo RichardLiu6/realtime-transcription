@@ -1,24 +1,12 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { ChevronDown, Mic } from "lucide-react";
+import { ChevronDown, Mic, UserRoundPen } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { BilingualEntry, SpeakerInfo } from "@/types/bilingual";
 import { useT } from "@/lib/i18n";
-import { defaultSpeakerLabel } from "@/hooks/useSonioxTranscription";
-
-// Soniox Compare style: 25 hex colors for speakers
-const SPEAKER_COLORS = [
-  "#007ecc", "#5aa155", "#e0585b", "#f18f3b", "#77b7b2",
-  "#edc958", "#af7aa0", "#fe9ea8", "#9c7561", "#bab0ac",
-  "#8884d8", "#82ca9d", "#ff7f0e", "#1f77b4", "#d62728",
-  "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22",
-  "#17becf", "#aec7e8", "#c5b0d5", "#ffbb78", "#98df8a",
-];
-
-function getSpeakerColor(index: number): string {
-  return SPEAKER_COLORS[Math.max(0, index) % SPEAKER_COLORS.length];
-}
+import { FALLBACK_SPEAKER_COLOR, speakerDisplayName } from "@/hooks/useSpeakerManager";
 
 function getLanguageLabel(code: string): string {
   return code.toUpperCase();
@@ -31,6 +19,14 @@ function formatTime(ms: number): string {
   return `${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 }
 
+// A speaker as the rows show it: the display name (given, or the default in
+// the interface language) and the color from SpeakerInfo
+interface SpeakerOption {
+  id: string;
+  name: string;
+  color: string;
+}
+
 interface TranscriptPanelProps {
   entries: BilingualEntry[];
   currentInterim: string;
@@ -39,6 +35,7 @@ interface TranscriptPanelProps {
   languageA: string[];
   languageB: string;
   onRenameSpeaker: (speakerId: string, newLabel: string) => void;
+  onReassignSpeaker: (entryId: string, speakerId: string) => void;
 }
 
 interface EntryRowProps {
@@ -47,19 +44,21 @@ interface EntryRowProps {
   speakerName: string;
   speakerColor: string;
   translationLabel: string;
-  // Only passed while this row's name editor is open (the other speakers,
-  // as quick picks), so other rows keep stable props and skip re-rendering
-  otherSpeakers: SpeakerInfo[] | null;
+  // Every speaker (stable between speaker changes, so rows stay memoized):
+  // the targets for moving this sentence, and the rename quick picks
+  speakerOptions: SpeakerOption[];
+  isEditing: boolean;
   onStartEdit: (entryId: string) => void;
   onEndEdit: () => void;
   onRenameSpeaker: (speakerId: string, newLabel: string) => void;
+  onReassignSpeaker: (entryId: string, speakerId: string) => void;
 }
 
 interface SpeakerNameEditorProps {
   speakerId: string;
   name: string;
   color: string;
-  otherSpeakers: SpeakerInfo[];
+  otherSpeakers: SpeakerOption[];
   onRename: (speakerId: string, newLabel: string) => void;
   onClose: () => void;
 }
@@ -110,22 +109,71 @@ function SpeakerNameEditor({
       />
       {otherSpeakers.length > 0 && (
         <>
-          <span className="text-xs text-gray-400">{t("same_person_as")}</span>
+          <span className="text-xs text-muted-foreground">{t("same_person_as")}</span>
           {otherSpeakers.map((s) => (
             <button
               key={s.id}
               type="button"
               // Keep the input focused, so its blur doesn't save first
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => finish(s.label)}
-              className="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-100"
+              onClick={() => finish(s.name)}
+              className="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-100"
             >
-              {s.label}
+              {s.name}
             </button>
           ))}
         </>
       )}
     </div>
+  );
+}
+
+// Moves just this sentence to another speaker (a diarization slip), unlike
+// renaming, which covers everything that speaker said. Faint until the row
+// is hovered or the button focused; always shown on touch screens.
+function ReassignSentence({
+  entryId,
+  otherSpeakers,
+  onReassign,
+}: {
+  entryId: string;
+  otherSpeakers: SpeakerOption[];
+  onReassign: (entryId: string, speakerId: string) => void;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={t("reassign_sentence")}
+          data-reassign
+          className="ml-1 inline-flex size-6 items-center justify-center rounded align-middle text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100"
+        >
+          <UserRoundPen className="size-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="bottom" align="start" className="w-auto min-w-44 max-w-72 p-1">
+        <p className="px-2 py-1 text-xs text-muted-foreground">{t("reassign_to")}</p>
+        {otherSpeakers.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => {
+              onReassign(entryId, s.id);
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+          >
+            <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: s.color }} />
+            <span className="truncate" style={{ color: s.color }}>
+              {s.name}
+            </span>
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -137,18 +185,24 @@ const EntryRow = memo(function EntryRow({
   speakerName,
   speakerColor,
   translationLabel,
-  otherSpeakers,
+  speakerOptions,
+  isEditing,
   onStartEdit,
   onEndEdit,
   onRenameSpeaker,
+  onReassignSpeaker,
 }: EntryRowProps) {
   const t = useT();
+  const otherSpeakers = useMemo(
+    () => speakerOptions.filter((s) => s.id !== entry.speaker),
+    [speakerOptions, entry.speaker]
+  );
   return (
-    <div className="inline">
+    <div className={`group ${showSpeakerHeader ? "mt-4 first:mt-0" : "mt-2"}`}>
       {/* Speaker header (only when speaker changes) */}
       {showSpeakerHeader && (
-        <div className="mt-4 first:mt-0 mb-1 flex items-center gap-2">
-          {otherSpeakers ? (
+        <div className="mb-1 flex items-center gap-2">
+          {isEditing ? (
             <SpeakerNameEditor
               speakerId={entry.speaker}
               name={speakerName}
@@ -162,65 +216,73 @@ const EntryRow = memo(function EntryRow({
               type="button"
               onClick={() => onStartEdit(entry.id)}
               title={t("rename_speaker")}
-              className="text-sm font-semibold uppercase tracking-wide hover:opacity-70 transition"
+              className="text-sm font-semibold hover:opacity-70 transition"
               style={{ color: speakerColor }}
             >
               {speakerName}
             </button>
           )}
-          <span className="text-xs text-gray-300">
+          <span className="text-xs text-muted-foreground tabular-nums">
             {formatTime(entry.startMs)}
           </span>
         </div>
       )}
 
-      {/* Language badge — always show per entry when language is known */}
-      {entry.language && (
-        <span className="inline-block mr-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
-          {getLanguageLabel(entry.language)}
-        </span>
-      )}
+      {/* Original: language tag + what was said */}
+      <div className="leading-relaxed">
+        {entry.language && (
+          <span className="inline-block mr-1.5 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium align-[1px]">
+            {getLanguageLabel(entry.language)}
+          </span>
+        )}
+        {entry.isFinal ? (
+          <span
+            title={`${formatTime(entry.startMs)}${entry.endMs > 0 ? ` – ${formatTime(entry.endMs)}` : ""}`}
+            className="text-foreground rounded cursor-default"
+          >
+            {entry.originalText}
+          </span>
+        ) : (
+          <>
+            {entry.originalText && <span className="text-gray-700">{entry.originalText}</span>}
+            {/* Not yet confirmed by the engine: lighter, still readable */}
+            {entry.interimOriginal && (
+              <span className="text-gray-500">{entry.interimOriginal}</span>
+            )}
+            <span className="blink-cursor ml-0.5 inline-block h-4 w-0.5 bg-gray-400 align-text-bottom" />
+          </>
+        )}
+        {/* The live sentence's speaker is still the engine's to decide */}
+        {entry.isFinal && otherSpeakers.length > 0 && (
+          <ReassignSentence
+            entryId={entry.id}
+            otherSpeakers={otherSpeakers}
+            onReassign={onReassignSpeaker}
+          />
+        )}
+      </div>
 
-      {/* Original text */}
-      {entry.isFinal ? (
-        <span
-          title={`${formatTime(entry.startMs)}${entry.endMs > 0 ? ` – ${formatTime(entry.endMs)}` : ""}`}
-          className="text-foreground leading-relaxed hover:text-primary rounded cursor-default transition-colors"
-        >
-          {entry.originalText}
-        </span>
-      ) : (
-        <>
-          {entry.originalText && (
-            <span className="text-gray-500 leading-relaxed">
-              {entry.originalText}
-            </span>
-          )}
-          {entry.interimOriginal && (
-            <span className="text-gray-400 italic leading-relaxed">
-              {entry.interimOriginal}
-            </span>
-          )}
-          <span className="blink-cursor ml-0.5 inline-block h-4 w-0.5 bg-gray-400 align-text-bottom" />
-        </>
-      )}
-
-      {/* Translation text (smaller, italic, muted - below original) */}
+      {/* Translation: set apart by the indent rule and its language tag, not
+          by fading — it has to be as readable as the original. Upright, as
+          italics slant Chinese glyphs. A provisional one (still being
+          revised) gets a dotted underline instead of a paler color. */}
       {entry.translatedText && (
-        <>
-          <br />
-          <span className="inline-block mr-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
+        <div className="mt-1 border-l-2 border-gray-200 pl-2.5 text-sm leading-relaxed text-gray-700">
+          <span className="inline-block mr-1.5 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-medium">
             {translationLabel}
           </span>
           <span
-            className={`text-sm italic leading-relaxed ${
-              entry.translationProvisional ? "text-gray-300" : "text-gray-400"
-            }`}
+            data-translation
+            title={entry.translationProvisional ? t("translation_provisional") : undefined}
+            className={
+              entry.translationProvisional
+                ? "underline decoration-dotted decoration-gray-400 underline-offset-4"
+                : undefined
+            }
           >
             {entry.translatedText}
           </span>
-          <div className="h-2" />
-        </>
+        </div>
       )}
     </div>
   );
@@ -234,6 +296,7 @@ function TranscriptPanel({
   languageA,
   languageB,
   onRenameSpeaker,
+  onReassignSpeaker,
 }: TranscriptPanelProps) {
   const t = useT();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -281,10 +344,16 @@ function TranscriptPanel({
     return () => cancelAnimationFrame(frame);
   }, [entries, currentInterim, isAtBottom]);
 
-  // Color by order of appearance: ids are "<recording>:<speaker>", not numbers
-  const speakerIndex = useMemo(
-    () => new Map(Array.from(speakers.keys(), (id, i) => [id, i])),
-    [speakers]
+  // Names and colors come from SpeakerInfo — the same source as the
+  // speaker panel, so a person looks the same everywhere
+  const speakerOptions = useMemo<SpeakerOption[]>(
+    () =>
+      Array.from(speakers.values(), (s) => ({
+        id: s.id,
+        name: speakerDisplayName(s.id, s.label, t),
+        color: s.color,
+      })),
+    [speakers, t]
   );
 
   const showEmpty = entries.length === 0 && !currentInterim;
@@ -294,6 +363,8 @@ function TranscriptPanel({
     <div className="relative flex flex-1 flex-col overflow-hidden bg-white">
       <div
         ref={containerRef}
+        role="log"
+        aria-live="polite"
         className="transcript-scroll flex-1 overflow-y-auto px-5 py-4"
       >
         {/* Empty state */}
@@ -306,7 +377,7 @@ function TranscriptPanel({
                   <span className="listening-dot inline-block h-3 w-3 rounded-full bg-blue-500" />
                   <span className="listening-dot inline-block h-3 w-3 rounded-full bg-blue-500" />
                 </div>
-                <p className="text-sm text-gray-400">{t("listening")}</p>
+                <p className="text-sm text-muted-foreground">{t("listening")}</p>
               </div>
             ) : (
               <div className="text-center text-muted-foreground/40">
@@ -319,36 +390,34 @@ function TranscriptPanel({
           </div>
         )}
 
-        {/* Entries: Soniox Compare style - single column, flowing text */}
+        {/* Entries: one block per sentence, original then translation */}
         {entries.map((entry, i) => {
-          const isEditing = editingSpeakerEntryId === entry.id;
+          const info = speakers.get(entry.speaker);
           return (
             <EntryRow
               key={entry.id}
               entry={entry}
               showSpeakerHeader={i === 0 || entries[i - 1].speaker !== entry.speaker}
-              speakerName={speakers.get(entry.speaker)?.label || defaultSpeakerLabel(entry.speaker)}
-              speakerColor={getSpeakerColor(speakerIndex.get(entry.speaker) ?? 0)}
+              speakerName={speakerDisplayName(entry.speaker, info?.label, t)}
+              speakerColor={info?.color ?? FALLBACK_SPEAKER_COLOR}
               // Mirrors the target selection in requestTranslation: text in
               // language B goes to language A, everything else to language B
               translationLabel={getLanguageLabel(
                 entry.language === languageB ? languageAPrimary : languageB
               )}
-              otherSpeakers={
-                isEditing
-                  ? Array.from(speakers.values()).filter((s) => s.id !== entry.speaker)
-                  : null
-              }
+              speakerOptions={speakerOptions}
+              isEditing={editingSpeakerEntryId === entry.id}
               onStartEdit={handleStartEdit}
               onEndEdit={handleEndEdit}
               onRenameSpeaker={onRenameSpeaker}
+              onReassignSpeaker={onReassignSpeaker}
             />
           );
         })}
 
         {/* Global interim text (from hook's currentInterim, if any) */}
         {currentInterim && entries.length > 0 && (
-          <span className="text-gray-400 italic">
+          <span className="text-gray-500">
             {currentInterim}
             <span className="blink-cursor ml-0.5 inline-block h-4 w-0.5 bg-gray-400 align-text-bottom" />
           </span>
@@ -376,6 +445,7 @@ function TranscriptPanel({
           variant="ghost"
           size="icon-sm"
           onClick={scrollToBottom}
+          aria-label={t("scroll_to_latest")}
           className="absolute bottom-4 right-4 z-20 rounded-full bg-zinc-500/30 text-white shadow-lg backdrop-blur-sm hover:bg-zinc-600/80 hover:text-white"
         >
           <ChevronDown className="size-4" />

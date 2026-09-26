@@ -108,7 +108,13 @@ function PresetChip({
         </button>
       </PopoverTrigger>
 
-      <PopoverContent side="top" align="start" className="w-56 p-2">
+      {/* A preset can hold 100+ terms: cap the height and scroll */}
+      <PopoverContent
+        side="top"
+        align="start"
+        collisionPadding={8}
+        className="w-64 max-h-[min(20rem,var(--radix-popover-content-available-height))] overflow-y-auto overscroll-contain p-2"
+      >
         <p className="text-xs font-medium mb-1.5">{label}</p>
         <div className="flex flex-wrap gap-1">
           {terms.map((term) => (
