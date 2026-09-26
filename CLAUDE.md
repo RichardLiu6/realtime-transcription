@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ABL-translate: Web-based real-time bilingual transcription for meetings. Browser captures audio via AudioWorklet, streams to a speech engine over WebSocket — Soniox (cloud, speaker diarization) or self-hosted NetEase Youdao Confucius4-R2T2 — then translates via a per-user model from a pool capped at $0.5 per million tokens (default: Seed 2.0 Mini via OpenRouter; Qwen-MT Flash on Alibaba Cloud Model Studio only when DashScope is the sole provider configured). Main use case: Chinese↔English. Supports 54 languages, two-way/one-way translation modes.
+ABL-translate: Web-based real-time bilingual transcription for meetings. Browser captures audio via AudioWorklet, streams to a speech engine over WebSocket — Soniox (cloud, speaker diarization) or self-hosted NetEase Youdao Confucius4-R2T2 — then translates via a per-user model from a pool capped at $0.5 per million tokens (default: Seed 2.0 Mini), all via OpenRouter. Main use case: Chinese↔English. Supports 54 languages, two-way/one-way translation modes.
 
 - **Live**: https://realtime-transcription-murex.vercel.app
 - **GitHub**: https://github.com/RichardLiu6/realtime-transcription
@@ -21,7 +21,7 @@ npm run lint     # ESLint
 
 ## Tech Stack
 
-Next.js 16.3 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4 + shadcn/ui (Radix). Soniox stt-rt-v5 or Confucius4-R2T2 for real-time STT. Translation and summary via OpenRouter (Qwen / Gemini / GPT / DeepSeek) or Qwen-MT on DashScope (per-user, configured in admin). Vercel Edge Config for user database. jose for JWT. Resend for email OTP. Transcript rows are memoized (no virtualization).
+Next.js 16.3 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4 + shadcn/ui (Radix). Soniox stt-rt-v5 or Confucius4-R2T2 for real-time STT. Translation and summary via OpenRouter (Seed / Gemini / GPT / DeepSeek / Qwen / Hy-MT; per-user, configured in admin). Vercel Edge Config for user database. jose for JWT. Resend for email OTP. Transcript rows are memoized (no virtualization).
 
 ## Architecture
 
@@ -33,7 +33,7 @@ Browser AudioWorklet (16kHz PCM16, batched 100 ms / 160 ms frames)
              or R2T2 ws_server.py /asr_stream_api_v1        [provider "r2t2"]
   ← Soniox tokens / R2T2 incremental text + VAD `reset`
   → useSonioxTranscription hook builds BilingualEntry[]
-  → POST /api/translate → translation (OpenRouter pool / Qwen-MT)
+  → POST /api/translate → translation (OpenRouter model pool)
   → TranscriptPanel (memoized rows)
 ```
 
@@ -46,13 +46,12 @@ Audio goes directly from browser to the STT engine — the server never touches 
 
 ### Translation providers (`app/api/translate/route.ts`)
 
-- **Model pool** (`lib/models.ts`, shared by the route, admin and compare pages): every model ≤ $0.5 per million tokens, input and output. Seed 2.0 Mini (default — fastest and steadiest in the `/api/eval` run), Qwen3.8 Flash, Gemini 2.5 Flash-Lite, Qwen3 235B Instruct (open weights, several hosts), GPT-6 Luna, GPT-4.1 Nano, DeepSeek V4 Flash, Qwen3.7 Flash, MiMo V2.6 Flash, Hy-MT2 30B — all via OpenRouter — plus Qwen-MT Flash / Lite on DashScope. A user assigned a model that left the pool gets the default. Prices come from OpenRouter list prices; re-check when changing the pool.
-- Model ID picks the provider: `qwen-mt-*` → DashScope (`lib/dashscope.ts`), anything else (`vendor/model`) → OpenRouter (`lib/openrouter.ts`). No direct OpenAI / Anthropic calls.
-- **Qwen-MT** accepts one user message only (no system prompt, no history); config goes in `translation_options`. Mapping: earlier sentences + translations (client `memory`) → `tm_list`; `中文=English` term pairs → `terms` (both directions); plain terms + an ASR note → `domains`. Multi-target = one call per target language, in parallel.
+- **Model pool** (`lib/models.ts`, shared by the route, admin and compare pages): every model ≤ $0.5 per million tokens, input and output. Seed 2.0 Mini (default — fastest and steadiest in the `/api/eval` run), Qwen3.8 Flash, Gemini 2.5 Flash-Lite, Qwen3 235B Instruct (open weights, several hosts), GPT-6 Luna, GPT-4.1 Nano, DeepSeek V4 Flash, Qwen3.7 Flash, MiMo V2.6 Flash, Hy-MT2 30B — all via OpenRouter. A user assigned a model that left the pool gets the default. Prices come from OpenRouter list prices; re-check when changing the pool.
+- Every model goes through OpenRouter (`lib/openrouter.ts`, `vendor/model` IDs). No direct OpenAI / Anthropic / Alibaba calls — Alibaba Cloud Model Studio (DashScope, Qwen-MT) was removed and is not coming back; a user still assigned `qwen-mt-*` gets the default.
 - **Hy-MT2** (`tencent/hy-mt*`, Tencent's dedicated translation model) has no system prompt and is trained on fixed instruction templates (huggingface.co/tencent/Hy-MT2-30B-A3B): one user message per target language, in parallel; Chinese template + Chinese language names when Chinese is involved, English otherwise. Term pairs present in the text → terminology template; earlier sentences (`memory`) → background template; clause-mode continuation → personalization template. Plain (unpaired) terms are not sent. Sampling per the model card (temperature 0.7, top_p 1.0).
 - Chat models get terms and previous sentences in the prompt; multi-target asks for a JSON object per language (`json_schema`, fence-tolerant parse).
 - Terms: industry presets (`lib/contextTerms.ts`) + custom tags, both remembered in localStorage (`termPresets`, `customTerms`). Typing or pasting splits on `,` `，` `、` `;` `；` and newlines. `a=b` entries are pairs. Speech engines receive the flattened word list (Soniox `context.terms`, R2T2 `system_prompt`). `/api/translate` keeps only the pairs whose either side occurs in the sentence (Latin sides as whole words, plural allowed) plus up to 60 single terms, so large presets don't bloat every prompt. Presets: 保健品生产 (`supplements`), 保健品销售 (`supplement_sales`), 跨境电商 (`ecommerce`) — mostly pairs, company/brand names (ABL, eguoo, DOCKPER) in each. The generic manufacturing / medical / legal / tech / finance presets are kept in `ARCHIVED_PRESETS` (hidden; a stored selection of them is ignored).
-- **Fallback** (`FALLBACK_CHAIN`): on 401/402/403/404/429/5xx, a network error/timeout, or DashScope `Arrearage`, the route tries Seed 2.0 Mini → Gemini Flash-Lite → GPT-6 Luna → GPT-4.1 Nano (a Qwen-MT user first tries the other Qwen-MT model); no Qwen on the default path, Qwen / Qwen-MT stay selectable per user; skipping the failed model and providers without a key; an account failure (no credits / bad key) skips that provider's remaining models. Different vendors follow the default, so one upstream's rate limit doesn't stop translation (Qwen3.x Flash are served only by Alibaba, from a pool shared by all OpenRouter users unless an Alibaba key is added in OpenRouter BYOK — that key must have the models activated, or Alibaba answers 403 `AccessDenied.Unpurchased`). Explicit model requests (compare page) are never substituted. The Chinese banner message names the default model's failure first, then the last backup's.
+- **Fallback** (`FALLBACK_CHAIN`): on 401/402/403/404/429/5xx, or a network error/timeout, the route tries Seed 2.0 Mini → Gemini Flash-Lite → GPT-6 Luna → GPT-4.1 Nano, skipping the failed model; no Qwen on the default path, Qwen stays selectable per user; an account failure (401/402, no credits / bad key) stops there, since every model shares the OpenRouter account. Different vendors follow the default, so one upstream's rate limit doesn't stop translation (Qwen3.x Flash are served only by Alibaba, from a pool shared by all OpenRouter users; no Alibaba BYOK key — an unactivated one answers 403 `AccessDenied.Unpurchased`). Explicit model requests (compare page) are never substituted. The Chinese banner message names the default model's failure first, then the last backup's.
 - SDK clients use `maxRetries: 0` (the fallback chain retries on another model instead) and a 15 s timeout. OpenRouter requests send `reasoning: {enabled: false}` and `provider: {sort: "latency"}`.
 - `/api/summarize` uses Seed 2.0 Mini, falling back to Gemini Flash-Lite.
 - **`/api/eval`** (preview deployments only, 404 elsewhere; preview URLs are behind Vercel Authentication so it skips the app login): runs a fixed zh/en/es sentence set (code-switching, unfinished speech, terms, multilingual columns, clause continuation) through each model via the real handler; `?models=a,b&rounds=2&cases=a,b`. Results are also logged as `[eval] case=… model=…` lines.
@@ -62,7 +61,7 @@ Audio goes directly from browser to the STT engine — the server never touches 
 
 翻译方式 **整句 | 分句 | 同传** (status bar → Advanced settings) (`config.translationEngine` = `llm` | `clause` | `t3po`). Both streaming engines expose `feed` / `flush` / `close`, consume only *final* ASR text from any STT engine, and are append-only. The hook plans **routes per segment** (`streamRoutesFor`): one or more engines, each covering some target languages; commits are merged per language (`commitStreamParts`), and the segment is done when every route has flushed. With 同传 in multilingual mode, zh↔en columns go through T3PO and all other columns (incl. same-language) through the clause engine; outside multilingual mode 同传 only covers zh↔en. On any failure the session falls back to sentence translation (banner stays) and affected sentences are retranslated whole.
 
-**分句 (`lib/clause/engine.ts`)** — any translation API, any language pair, one or several targets per call. Commits a clause at `，。！？；：…` or ASCII `,.!?;:` followed by a space (so `3.5` doesn't split); clauses under 4 CJK chars / 3 words merge into the next; 20 units without punctuation forces. Each clause goes to `/api/translate` with `continuation: {sourceSoFar, translationsSoFar: {lang: text}}` (`translationSoFar` string also accepted for one target): chat models get a "[Sentence so far] / [Translation so far] / [Next part]" prompt and output only the continuation (per language as JSON when multi-target); Qwen-MT gets the sentence so far as a `tm_list` pair. Client guards: a restated prefix is stripped; an empty continuation is retried as a standalone clause.
+**分句 (`lib/clause/engine.ts`)** — any translation API, any language pair, one or several targets per call. Commits a clause at `，。！？；：…` or ASCII `,.!?;:` followed by a space (so `3.5` doesn't split); clauses under 4 CJK chars / 3 words merge into the next; 20 units without punctuation forces. Each clause goes to `/api/translate` with `continuation: {sourceSoFar, translationsSoFar: {lang: text}}` (`translationSoFar` string also accepted for one target): chat models get a "[Sentence so far] / [Translation so far] / [Next part]" prompt and output only the continuation (per language as JSON when multi-target); Hy-MT gets it in its personalization template. Client guards: a restated prefix is stripped; an empty continuation is retried as a standalone clause.
 
 **同传 (Youdao Confucius4-T3PO)** — Chinese↔English only, needs a self-hosted model.
 
@@ -123,7 +122,7 @@ Central logic for the entire app:
 ### Translation modes
 
 - **two_way / one_way**: one target language per sentence, flowing transcript view.
-- **presentation** (UI label "多语言 / Multilingual"): table with an always-present **原文** column (the transcript, shown exactly once) plus one column per `targetLangs` entry (default 中文 + English). Every sentence is translated into **every** column, including the spoken language — that column keeps the utterance as said; foreign words may stay but get their meaning in brackets on first use (`这个 batch（批次）的 yield（良率）`; SAME_LANGUAGE_RULES — chat models only; Qwen-MT / Hy-MT can't take the instruction and just translate). Costs one extra target per sentence by design. Works with 整句, 分句 and 同传. Soniox `language_hints` = source languages ∪ `targetLangs`.
+- **presentation** (UI label "多语言 / Multilingual"): table with an always-present **原文** column (the transcript, shown exactly once) plus one column per `targetLangs` entry (default 中文 + English). Every sentence is translated into **every** column, including the spoken language — that column keeps the utterance as said; foreign words may stay but get their meaning in brackets on first use (`这个 batch（批次）的 yield（良率）`; SAME_LANGUAGE_RULES — chat models only; Hy-MT can't take the instruction and just translate). Costs one extra target per sentence by design. Works with 整句, 分句 and 同传. Soniox `language_hints` = source languages ∪ `targetLangs`.
   - `components/PresentationPanel.tsx`: the # column shows the speaker (display name, speaker color). A column whose text equals the original (ignoring punctuation / case, `sameText` in `lib/meetingLanguages.ts`) is muted with a "= 原文" marker. When the panel is narrower than (columns × 250 px + 72) — ResizeObserver on the panel, so the sidebar counts — it switches to **cards** (speaker + original, then each language with its name) with a 显示 filter (全部 / 原文 / one language; localStorage `multiFilter`). Scroll-to-latest button as in TranscriptPanel.
 
 ### Presentation (projector) mode (`components/PresentationMode.tsx`)
@@ -180,9 +179,7 @@ Central logic for the entire app:
 
 ```bash
 SONIOX_API_KEY=...           # Soniox STT API key
-DASHSCOPE_API_KEY=sk-...     # Alibaba Cloud Model Studio — Qwen-MT Flash/Lite (assign per user in admin; default only without OpenRouter)
-DASHSCOPE_BASE_URL=...       # Optional; default intl endpoint, use https://dashscope.aliyuncs.com/compatible-mode/v1 for a China-region key
-OPENROUTER_API_KEY=sk-or-... # Translation pool + summaries (required unless DashScope-only)
+OPENROUTER_API_KEY=sk-or-... # Translation pool + summaries (required)
 R2T2_WS_URL=wss://.../asr_stream_api_v1  # Self-hosted R2T2 (optional)
 R2T2_SECRET_KEY=...          # Must match secret_key_list in ws_server.py
 T3PO_BASE_URL=https://.../v1 # OpenAI-compatible server running Confucius4-T3PO (enables 同传)

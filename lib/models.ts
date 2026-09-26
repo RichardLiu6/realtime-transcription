@@ -1,8 +1,8 @@
 // Translation model pool. Every model costs at most $0.5 per million tokens,
 // input and output (list prices per million, input / output, Sep 2026).
 //
-// "vendor/model" IDs go through OpenRouter (one key, one balance for every
-// vendor); "qwen-mt-*" go to Alibaba Cloud Model Studio (DashScope) directly.
+// All models go through OpenRouter ("vendor/model" IDs: one key, one
+// balance for every vendor).
 // No dependencies: imported by client pages (admin, compare) too.
 
 export interface PoolModel {
@@ -25,15 +25,12 @@ export const MODEL_POOL = [
   { id: "xiaomi/mimo-v2.6-flash", label: "MiMo V2.6 Flash（小米）", price: "0.14 / 0.28" },
   // Dedicated translation model: own prompt templates, one call per target
   { id: "tencent/hy-mt2-30b-a3b", label: "Hy-MT2 30B（腾讯翻译模型）", price: "0.074 / 0.295" },
-  { id: "qwen-mt-flash", label: "Qwen-MT Flash（阿里云百炼）", price: "0.16 / 0.49" },
-  { id: "qwen-mt-lite", label: "Qwen-MT Lite（阿里云百炼）", price: "0.12 / 0.36" },
 ] as const satisfies readonly PoolModel[];
 
 export type TranslationModel = (typeof MODEL_POOL)[number]["id"];
 
 export const SUPPORTED_MODELS: readonly string[] = MODEL_POOL.map((m) => m.id);
 
-export const QWEN_MT_DEFAULT_MODEL: TranslationModel = "qwen-mt-flash";
 // Seed 2.0 Mini: fastest and steadiest in the /api/eval run (median 0.75 s,
 // max 1.0 s over 20 calls), keeps unfinished sentences unfinished, not
 // served from Alibaba's shared, rate-limited pool
@@ -42,9 +39,7 @@ export const OPENROUTER_DEFAULT_MODEL: TranslationModel = "bytedance-seed/seed-2
 // Tried in order when a model fails (rate limit, provider down, no credits),
 // skipping the failed one and unconfigured providers. No Qwen: Alibaba
 // serves Qwen3.x from a shared, often rate-limited pool, and the team
-// prefers other models' output; Qwen / Qwen-MT stay selectable in admin.
-// A Qwen-MT user (DashScope-only setups) falls back to the other Qwen-MT
-// model, then this chain.
+// prefers other models' output; Qwen stays selectable in admin.
 export const FALLBACK_CHAIN: readonly TranslationModel[] = [
   "bytedance-seed/seed-2.0-mini",
   "google/gemini-2.5-flash-lite",

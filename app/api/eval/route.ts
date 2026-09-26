@@ -22,8 +22,6 @@ const DEFAULT_MODELS = [
   "bytedance-seed/seed-2.0-mini",
   "xiaomi/mimo-v2.6-flash",
   "tencent/hy-mt2-30b-a3b",
-  "qwen-mt-flash",
-  "qwen-mt-lite",
 ];
 
 interface Case {

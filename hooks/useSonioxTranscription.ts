@@ -158,8 +158,8 @@ function singleTargetFor(sourceLang: string, config: SonioxConfig): string {
   return singleTargetLanguage(config.translationMode, sourceLang, config.languageA, config.languageB);
 }
 
-// Terms may be written as "中文=English" pairs (used as enforced
-// translations by Qwen-MT); speech engines just get every word
+// Terms may be written as "中文=English" pairs (enforced translations for
+// the translation models); speech engines just get every word
 function flattenTerms(terms: string[]): string[] {
   return Array.from(new Set(terms.flatMap((t) => t.split("=").map((x) => x.trim())).filter(Boolean)));
 }
@@ -370,7 +370,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       .filter((e) => e.isFinal && e.originalText && e.id !== entryId)
       .slice(-3);
     const context = recent.map((e) => e.originalText);
-    // ...and their settled translations, as translation memory (Qwen-MT
+    // ...and their settled translations, as translation memory (Hy-MT
     // can't take conversation context, only source→target pairs)
     const memory = recent
       .filter((e) => !e.translationProvisional)

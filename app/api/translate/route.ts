@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOpenRouter } from "@/lib/openrouter";
-import { getDashScope } from "@/lib/dashscope";
 import { verifyToken } from "@/lib/auth";
 import { getUserModel, getDefaultModel, incrementUsage } from "@/lib/edge-config";
 import { FALLBACK_CHAIN, isSupportedModel, modelLabel } from "@/lib/models";
@@ -15,27 +14,10 @@ function getLanguageName(code: string): string {
 }
 
 
-// Qwen-MT dedicated translation models on DashScope
-function isQwenMT(model: string): boolean {
-  return model.startsWith("qwen-mt-");
-}
-
 // Tencent Hy-MT dedicated translation models (via OpenRouter)
 function isHyMT(model: string): boolean {
   return model.startsWith("tencent/hy-mt");
 }
-
-type Provider = "openrouter" | "dashscope";
-
-// Everything but Qwen-MT goes through OpenRouter ("vendor/model" IDs)
-function providerOf(model: string): Provider {
-  return isQwenMT(model) ? "dashscope" : "openrouter";
-}
-
-const PROVIDER_KEY: Record<Provider, string> = {
-  openrouter: "OPENROUTER_API_KEY",
-  dashscope: "DASHSCOPE_API_KEY",
-};
 
 // OpenRouter tuning for live translation:
 // - reasoning models (Qwen3.x, DeepSeek) may think before answering, which
@@ -327,14 +309,7 @@ ${SPEECH_INPUT_RULES}`;
   });
 }
 
-// --- Qwen-MT (DashScope) ---
-//
-// Qwen-MT takes exactly one user message (no system prompt, no chat
-// history); everything else goes in `translation_options`. What the chat
-// models get from the prompt is mapped onto its native features:
-//   - earlier sentences + their translations → tm_list (translation memory)
-//   - "中文=English" term pairs → terms (enforced, both directions)
-//   - the plain term list → a domains hint
+// --- Shared by the dedicated translation model (Hy-MT) ---
 
 // Earlier sentences with their translations, sent by the client
 interface MemoryItem {
@@ -348,21 +323,15 @@ interface TermPair {
   target: string;
 }
 
-// "a=b" entries become pairs (usable in either direction); the rest, plus
-// both sides of each pair, form the vocabulary hint
-function splitTerms(terms: string[] | undefined): { pairs: TermPair[]; vocabulary: string[] } {
+// "a=b" entries become pairs, usable in either direction; plain terms are
+// not used
+function splitTerms(terms: string[] | undefined): TermPair[] {
   const pairs: TermPair[] = [];
-  const vocabulary: string[] = [];
   for (const raw of terms ?? []) {
     const [a, b] = raw.split("=").map((x) => x.trim());
-    if (a && b) {
-      pairs.push({ source: a, target: b }, { source: b, target: a });
-      vocabulary.push(a, b);
-    } else if (a) {
-      vocabulary.push(a);
-    }
+    if (a && b) pairs.push({ source: a, target: b }, { source: b, target: a });
   }
-  return { pairs, vocabulary };
+  return pairs;
 }
 
 // Translation-memory pairs oriented source → target, from earlier sentences
@@ -380,51 +349,9 @@ function memoryPairs(memory: MemoryItem[] | undefined, src: string | undefined, 
   return pairs;
 }
 
-async function translateQwenMT(
-  model: string,
-  text: string,
-  sourceLang: string | undefined,
-  targetLang: string,
-  vocabulary: string[],
-  termPairs: TermPair[],
-  memory: MemoryItem[] | undefined,
-) {
-  let domains =
-    "Live spoken business meeting, transcribed by speech recognition in real time: " +
-    "the text may contain recognition errors or stop mid-sentence. " +
-    "Keep the conversational tone; translate only what was said.";
-  if (vocabulary.length > 0) {
-    domains += ` Terms that may appear: ${vocabulary.join(", ")}`.slice(0, 1500);
-  }
-  const tmList = memoryPairs(memory, sourceLang, targetLang);
-
-  const params: Record<string, unknown> = {
-    model,
-    messages: [{ role: "user", content: text }],
-    translation_options: {
-      // Same-language target (multilingual mode): the input is mixed, let
-      // the model detect each part
-      source_lang: sourceLang && sourceLang !== targetLang ? getLanguageName(sourceLang) : "auto",
-      target_lang: getLanguageName(targetLang),
-      domains,
-      ...(termPairs.length > 0 ? { terms: termPairs.slice(0, 200) } : {}),
-      ...(tmList.length > 0 ? { tm_list: tmList } : {}),
-    },
-  };
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const r = await getDashScope().chat.completions.create(params as any);
-  return {
-    text: r.choices[0]?.message?.content?.trim() || "",
-    inputTokens: r.usage?.prompt_tokens ?? 0,
-    outputTokens: r.usage?.completion_tokens ?? 0,
-  };
-}
-
 type PerTargetFn = (targetLang: string) => Promise<{ text: string; inputTokens: number; outputTokens: number }>;
 
-// Single- or multi-target via a dedicated translation model (Qwen-MT,
-// Hy-MT): one call per target language, in parallel. Same response shape as
+// Single- or multi-target via a dedicated translation model (Hy-MT): one call per target language, in parallel. Same response shape as
 // the chat-model paths.
 async function handlePerTarget(
   req: NextRequest,
@@ -448,26 +375,6 @@ async function handlePerTarget(
     return NextResponse.json({ translations, model: responseModel, latencyMs });
   }
   return NextResponse.json({ translatedText: results[0].text, model: responseModel, latencyMs });
-}
-
-// Qwen-MT can't take instructions: the sentence so far (clause mode) goes in
-// as a translation-memory pair so the next part stays consistent with it
-function qwenMTTranslator(
-  model: string,
-  text: string,
-  sourceLang: string | undefined,
-  terms: string[] | undefined,
-  memory: MemoryItem[] | undefined,
-  continuation: Continuation | undefined,
-): PerTargetFn {
-  const { pairs, vocabulary } = splitTerms(terms);
-  if (continuation && sourceLang) {
-    memory = [
-      ...(memory ?? []),
-      { source: continuation.sourceSoFar, sourceLang, translations: continuation.translationsSoFar },
-    ];
-  }
-  return (t) => translateQwenMT(model, text, sourceLang, t, vocabulary, pairs, memory);
 }
 
 // --- Hy-MT (Tencent, via OpenRouter) ---
@@ -549,7 +456,7 @@ function hyMTTranslator(
   memory: MemoryItem[] | undefined,
   continuation: Continuation | undefined,
 ): PerTargetFn {
-  const { pairs } = splitTerms(terms);
+  const pairs = splitTerms(terms);
   return async (targetLang) => {
     const params: Record<string, unknown> = {
       model,
@@ -572,7 +479,7 @@ function hyMTTranslator(
 
 // --- Provider errors & fallback ---
 
-// Status + code from an OpenAI-SDK error (OpenRouter / DashScope)
+// Status + code from an OpenAI-SDK error (OpenRouter)
 function providerError(error: unknown): { status?: number; code?: string; message: string } {
   const e = error as { status?: number; code?: string; error?: { type?: string; error?: { type?: string } }; message?: string };
   return {
@@ -585,35 +492,25 @@ function providerError(error: unknown): { status?: number; code?: string; messag
 // Out of credits / invalid key / rate limited / model unavailable / provider
 // down: worth trying another model. Other bad requests (our fault) are not.
 function isProviderFailure(error: unknown): boolean {
-  const { status, code, message } = providerError(error);
+  const { status } = providerError(error);
   // Network error or timeout (OpenAI SDK APIConnectionError / APIConnectionTimeoutError)
   if (status === undefined) return /Connection/.test((error as Error)?.constructor?.name ?? "");
-  if (status === 401 || status === 402 || status === 403 || status === 404 || status === 429 || status >= 500) return true;
-  // DashScope reports an overdue account as 400 "Arrearage"
-  return status === 400 && /arrearage/i.test(message + " " + (code ?? ""));
+  return status === 401 || status === 402 || status === 403 || status === 404 || status === 429 || status >= 500;
 }
 
-// Out of credits / bad key: the whole provider is unusable, not one model
+// Out of credits / bad key: every model fails the same way (all go through
+// the one OpenRouter account)
 function isAccountFailure(error: unknown): boolean {
-  const { status, code, message } = providerError(error);
-  if (status === 401 || status === 402 || status === 403) return true;
-  return code === "Arrearage" || /arrearage|insufficient credits/i.test(message);
+  const { status, message } = providerError(error);
+  return status === 401 || status === 402 || (status !== undefined && /insufficient credits/i.test(message));
 }
 
-// Models to try, in order, when `model` fails: the fallback chain minus the
-// failed model and providers without a key
+// Models to try, in order, when `model` fails
 function fallbackModelsFor(model: string): string[] {
-  // A Qwen-MT user first tries the other Qwen-MT model (same account)
-  const siblings = isQwenMT(model) ? ["qwen-mt-flash", "qwen-mt-lite"] : [];
-  return [...siblings, ...FALLBACK_CHAIN].filter(
-    (m) => m !== model && !!process.env[PROVIDER_KEY[providerOf(m)]]
-  );
+  return FALLBACK_CHAIN.filter((m) => m !== model);
 }
 
-const PROVIDER_NAME: Record<Provider, string> = {
-  openrouter: "OpenRouter",
-  dashscope: "阿里云百炼",
-};
+const PROVIDER_NAME = "OpenRouter";
 
 // Banner text in the user's interface language (`uiLocale` from the client)
 type UiLocale = "zh" | "en" | "es" | "vi";
@@ -663,9 +560,9 @@ function uiLocaleOf(value: unknown): UiLocale {
 
 // Why one model failed
 function failureReason(error: unknown): { status: number; code: string; reason: Reason } {
-  const { status, code, message } = providerError(error);
+  const { status, message } = providerError(error);
   if (status === 429) return { status: 429, code: "rate_limit", reason: "rate_limit" };
-  if (status === 402 || code === "Arrearage" || /arrearage|insufficient credits/i.test(message)) {
+  if (status === 402 || /insufficient credits/i.test(message)) {
     return { status: 402, code: "quota", reason: "quota" };
   }
   if (status === 401 || status === 403) return { status: 502, code: "auth", reason: "auth" };
@@ -685,13 +582,13 @@ function describeFailure(
   // Model labels carry Chinese notes ("Seed 2.0 Mini（字节）"): drop them for other languages
   const label = (model: string) =>
     locale === "zh" ? modelLabel(model) : modelLabel(model).replace(/（[^）]*）/g, "").trim();
-  const why = (r: Reason, model: string) => text.reason[r](PROVIDER_NAME[providerOf(model)]);
+  const why = (r: Reason) => text.reason[r](PROVIDER_NAME);
   const first = failureReason(primary.error);
-  let message = `${text.failed}: ${label(primary.model)} — ${why(first.reason, primary.model)}`;
+  let message = `${text.failed}: ${label(primary.model)} — ${why(first.reason)}`;
   if (locale === "zh") message = message.replace(": ", "：");
   if (fallback) {
     const second = failureReason(fallback.error);
-    message += text.backup(label(fallback.model), why(second.reason, fallback.model));
+    message += text.backup(label(fallback.model), why(second.reason));
   } else if (first.code === "quota") {
     message += text.topUp;
   }
@@ -759,8 +656,8 @@ export async function POST(req: NextRequest) {
     const run = (m: string, responseModel: string) => {
       const targets: string[] = isMulti ? targetLangs : [targetLang];
       // Dedicated translation models: one call per target language
-      if (isQwenMT(m) || isHyMT(m)) {
-        const translator = (isQwenMT(m) ? qwenMTTranslator : hyMTTranslator)(m, text, sourceLang, terms, memoryItems, continuation);
+      if (isHyMT(m)) {
+        const translator = hyMTTranslator(m, text, sourceLang, terms, memoryItems, continuation);
         return handlePerTarget(req, targets, isMulti, m, provisional, responseModel, translator);
       }
       return isMulti
@@ -774,21 +671,17 @@ export async function POST(req: NextRequest) {
     } catch (error) {
       // The compare page asks for a specific model — don't substitute there
       if (rawRequestedModel || !isProviderFailure(error)) throw error;
-      // Out of credits / bad key: the provider's other models fail too
-      const deadProviders = new Set<Provider>();
-      if (isAccountFailure(error)) deadProviders.add(providerOf(primary));
       let lastError = error;
       let lastModel = primary;
-      for (const fallback of fallbackModelsFor(primary)) {
-        if (deadProviders.has(providerOf(fallback))) continue;
+      // Out of credits / bad key: the other models fail too
+      for (const fallback of isAccountFailure(error) ? [] : fallbackModelsFor(primary)) {
         console.error(`Translation with ${lastModel} failed, falling back to ${fallback}:`, providerError(lastError).message);
         try {
           return await run(fallback, fallback);
         } catch (e) {
-          if (isAccountFailure(e)) deadProviders.add(providerOf(fallback));
           lastError = e;
           lastModel = fallback;
-          if (!isProviderFailure(e)) break;
+          if (!isProviderFailure(e) || isAccountFailure(e)) break;
         }
       }
       console.error("Translation error:", lastError);
