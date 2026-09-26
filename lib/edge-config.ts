@@ -1,14 +1,11 @@
 import { createClient, type EdgeConfigClient } from "@vercel/edge-config";
-import { isSupportedModel, QWEN_MT_DEFAULT_MODEL, OPENROUTER_DEFAULT_MODEL, type TranslationModel } from "@/lib/models";
+import { isSupportedModel, OPENROUTER_DEFAULT_MODEL, type TranslationModel } from "@/lib/models";
 
 export { SUPPORTED_MODELS, type TranslationModel } from "@/lib/models";
 
-// Default for users without an admin-assigned model: the OpenRouter default.
-// A DashScope key alone doesn't change it (Qwen-MT is then assigned per user
-// in admin, and joins the fallback chain); Qwen-MT is the default only when
-// DashScope is the sole provider configured.
+// Default for users without an admin-assigned model (or one that left the
+// pool, e.g. the removed Qwen-MT)
 export function getDefaultModel(): TranslationModel {
-  if (!process.env.OPENROUTER_API_KEY && process.env.DASHSCOPE_API_KEY) return QWEN_MT_DEFAULT_MODEL;
   return OPENROUTER_DEFAULT_MODEL;
 }
 
