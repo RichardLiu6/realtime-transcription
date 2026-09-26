@@ -1,3 +1,17 @@
+// Separators accepted when typing or pasting terms: ASCII / Chinese comma,
+// enumeration comma, semicolons, newlines
+export const TERM_SEPARATORS = /[,，、;；\n]+/;
+
+export function splitTermInput(text: string): string[] {
+  return text.split(TERM_SEPARATORS).map((t) => t.trim()).filter(Boolean);
+}
+
+// Selected presets + custom terms, deduplicated, in order
+export function combineTerms(presetKeys: Iterable<string>, customTerms: string[]): string[] {
+  const presetTerms = Array.from(presetKeys).flatMap((key) => INDUSTRY_PRESETS[key]?.terms ?? []);
+  return [...new Set([...presetTerms, ...customTerms])];
+}
+
 export interface IndustryPreset {
   label: string;
   terms: string[];
