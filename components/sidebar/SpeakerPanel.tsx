@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import type { SpeakerInfo, BilingualEntry } from "@/types/bilingual";
 import { useT } from "@/lib/i18n";
+import { speakerDisplayName } from "@/hooks/useSpeakerManager";
 
 interface SpeakerPanelProps {
   speakers: Map<string, SpeakerInfo>;
@@ -55,26 +56,20 @@ export default function SpeakerPanel({
 
   const handleStartEdit = (speaker: SpeakerInfo) => {
     setEditingId(speaker.id);
-    setEditValue(speaker.label);
+    setEditValue(speakerDisplayName(speaker.id, speaker.label, t));
   };
 
   const handleFinishEdit = () => {
-    if (editingId && editValue.trim()) {
+    // Unchanged: keep the default name, which follows the interface language
+    const info = editingId ? speakers.get(editingId) : undefined;
+    if (
+      editingId &&
+      editValue.trim() &&
+      editValue.trim() !== (info && speakerDisplayName(info.id, info.label, t))
+    ) {
       onRenameSpeaker(editingId, editValue.trim());
     }
     setEditingId(null);
-  };
-
-  // Map Tailwind bg class to a CSS color for the bar
-  const colorMap: Record<string, string> = {
-    "bg-indigo-500": "#6366f1",
-    "bg-pink-500": "#ec4899",
-    "bg-emerald-500": "#10b981",
-    "bg-amber-500": "#f59e0b",
-    "bg-cyan-500": "#06b6d4",
-    "bg-purple-500": "#a855f7",
-    "bg-rose-500": "#f43f5e",
-    "bg-teal-500": "#14b8a6",
   };
 
   return (
@@ -91,13 +86,14 @@ export default function SpeakerPanel({
         {speakerList.map((speaker) => {
           const count = speakerCounts.get(speaker.id) || 0;
           const pct = totalWords > 0 ? Math.round((count / totalWords) * 100) : 0;
-          const barColor = colorMap[speaker.color] || "#6366f1";
 
           return (
             <div key={speaker.id} className="space-y-1">
               <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-accent/50">
+                {/* Same color as the speaker's name in the transcript */}
                 <span
-                  className={`h-2.5 w-2.5 shrink-0 rounded-full ${speaker.color}`}
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: speaker.color }}
                 />
                 {editingId === speaker.id ? (
                   <input
@@ -117,7 +113,7 @@ export default function SpeakerPanel({
                     onClick={() => handleStartEdit(speaker)}
                     className="flex-1 text-left text-xs text-foreground hover:text-primary truncate"
                   >
-                    {speaker.label}
+                    {speakerDisplayName(speaker.id, speaker.label, t)}
                   </button>
                 )}
                 {totalWords > 0 && (
@@ -130,7 +126,7 @@ export default function SpeakerPanel({
                 <div className="mx-2 h-1 rounded-full bg-muted overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-500"
-                    style={{ width: `${pct}%`, backgroundColor: barColor }}
+                    style={{ width: `${pct}%`, backgroundColor: speaker.color }}
                   />
                 </div>
               )}

@@ -33,20 +33,31 @@ import type { MobileBottomProps } from "./types";
 import { INDUSTRY_PRESETS } from "@/lib/contextTerms";
 import { useT } from "@/lib/i18n";
 
+// Set once the settings sheet has opened by itself, so it does so only once
+const SETTINGS_SEEN_KEY = "mobileSettingsSeen";
+
 export default function MobileBottom(props: MobileBottomProps) {
   const t = useT();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Auto-open settings on mobile on first mount
+  // Open the settings by themselves only on first use (nothing chosen yet),
+  // not on every page load
   useEffect(() => {
-    if (window.innerWidth < 1024) setSettingsOpen(true);
+    if (window.innerWidth >= 1024) return;
+    try {
+      if (localStorage.getItem("translationMode") !== null) return;
+      if (localStorage.getItem(SETTINGS_SEEN_KEY) !== null) return;
+      localStorage.setItem(SETTINGS_SEEN_KEY, "1");
+    } catch {
+      return; // storage unavailable: can't tell a first visit, stay closed
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage is only readable after mount
+    setSettingsOpen(true);
   }, []);
   const [termsOpen, setTermsOpen] = useState(false);
   const isRecording = props.recordingState === "recording";
   const isConnecting = props.recordingState === "connecting";
   const isIdle = props.recordingState === "idle";
-  const minutes = String(Math.floor(props.elapsedSeconds / 60)).padStart(2, "0");
-  const seconds = String(props.elapsedSeconds % 60).padStart(2, "0");
 
   const totalTerms = useMemo(() => {
     const presetTerms = Array.from(props.selectedPresets).flatMap(
@@ -60,24 +71,15 @@ export default function MobileBottom(props: MobileBottomProps) {
       {/* Floating bottom bar */}
       <div className="mx-3 rounded-2xl bg-background/95 backdrop-blur-sm px-4 py-3 shadow-lg ring-1 ring-border/50 safe-area-bottom">
         {isRecording ? (
-          /* Recording state: timer + stop */
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 flex-1">
-              <span className="h-2.5 w-2.5 rounded-full bg-red-500 recording-pulse" />
-              <span className="font-mono text-base font-semibold">
-                {minutes}:{seconds}
-              </span>
-            </div>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={props.onStop}
-              className="gap-1.5"
-            >
-              <Square className="size-3.5" />
-              {t("stop")}
-            </Button>
-          </div>
+          /* Recording state: stop (the timer is in the status bar) */
+          <Button
+            variant="destructive"
+            onClick={props.onStop}
+            className="h-11 w-full gap-2"
+          >
+            <Square className="size-4" />
+            {t("stop_recording")}
+          </Button>
         ) : (
           /* Idle/connecting state: record button + terms + settings */
           <div className="flex items-center gap-2">
@@ -102,6 +104,7 @@ export default function MobileBottom(props: MobileBottomProps) {
                     <Button
                       variant="outline"
                       size="icon"
+                      aria-label={totalTerms > 0 ? `${t("terms")} (${totalTerms})` : t("terms")}
                       className="h-11 w-11 shrink-0 relative"
                     >
                       <BookOpen className="size-5" />
@@ -139,6 +142,7 @@ export default function MobileBottom(props: MobileBottomProps) {
                   variant="outline"
                   size="icon"
                   onClick={() => setSettingsOpen(true)}
+                  aria-label={t("settings")}
                   className="h-11 w-11 shrink-0"
                 >
                   <Settings className="size-5" />
@@ -155,6 +159,7 @@ export default function MobileBottom(props: MobileBottomProps) {
                       variant="outline"
                       size="icon"
                       onClick={props.onExport}
+                      aria-label={t("export")}
                       className="h-11 w-11 shrink-0"
                     >
                       <Download className="size-4" />
@@ -168,6 +173,7 @@ export default function MobileBottom(props: MobileBottomProps) {
                       variant="outline"
                       size="icon"
                       onClick={props.onNewMeeting}
+                      aria-label={t("new_meeting")}
                       className="h-11 w-11 shrink-0"
                     >
                       <FilePlus className="size-4" />
@@ -183,7 +189,11 @@ export default function MobileBottom(props: MobileBottomProps) {
 
       {/* Settings sheet (from bottom) */}
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <SheetContent side="bottom" showCloseButton={false} className="rounded-t-xl max-h-[75vh] p-0">
+        <SheetContent
+          side="bottom"
+          showCloseButton={false}
+          className="flex max-h-[75vh] flex-col gap-0 rounded-t-xl p-0"
+        >
           <VisuallyHidden.Root>
             <SheetTitle>{t("settings")}</SheetTitle>
           </VisuallyHidden.Root>
@@ -191,7 +201,15 @@ export default function MobileBottom(props: MobileBottomProps) {
           <div className="flex justify-center py-2">
             <div className="h-1 w-10 rounded-full bg-muted-foreground/30" />
           </div>
-          <MobileSettingsContent {...props} />
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <MobileSettingsContent {...props} />
+          </div>
+          {/* A clear way out (besides swiping down / tapping outside) */}
+          <div className="shrink-0 border-t border-border p-3 safe-area-bottom">
+            <Button className="h-11 w-full" onClick={() => setSettingsOpen(false)}>
+              {t("done")}
+            </Button>
+          </div>
         </SheetContent>
       </Sheet>
     </>

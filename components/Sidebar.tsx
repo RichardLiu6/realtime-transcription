@@ -58,7 +58,6 @@ export default function Sidebar({
   speakers,
   onRenameSpeaker,
   recordingState,
-  elapsedSeconds,
   onStart,
   onStop,
   audioAnalyser,
@@ -70,27 +69,17 @@ export default function Sidebar({
   const t = useT();
   const isRecording = recordingState === "recording";
   const isIdle = recordingState === "idle";
-  const minutes = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
-  const seconds = String(elapsedSeconds % 60).padStart(2, "0");
 
   return (
     <aside className="flex w-72 flex-col border-r border-border bg-background h-full overflow-hidden">
-      {/* Header: Record button + timer */}
-      <div className="shrink-0 px-4 py-3 border-b border-border space-y-2">
+      {/* Header: Record button (the timer is in the status bar) */}
+      <div className="shrink-0 px-4 py-3 border-b border-border">
         <AudioWaveButton
           recordingState={recordingState}
           onStart={onStart}
           onStop={onStop}
           audioAnalyser={audioAnalyser}
         />
-        {isRecording && (
-          <div className="flex items-center justify-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-red-500 recording-pulse" />
-            <span className="font-mono text-sm font-semibold text-foreground">
-              {minutes}:{seconds}
-            </span>
-          </div>
-        )}
       </div>
 
       {/* Scrollable content */}

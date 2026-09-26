@@ -1353,13 +1353,25 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     setRecordingState("idle");
   }, [finalizeSegment, teardownAudio]);
 
-  // Reassign a single entry's speaker (manual correction)
+  // Reassign a single (finalized) entry's speaker — a manual correction of
+  // one sentence; the speakers' other sentences stay where they are.
+  // `newSpeaker` is a "<recording>:<speaker>" id that is still in use
+  // (merged-away ids are no longer offered).
   const reassignSpeaker = useCallback(
     (entryId: string, newSpeaker: string) => {
+      // The next short segment may adopt the previous sentence's speaker
+      // (auto-merge): follow the correction
+      if (lastFinalizedDataRef.current?.entryId === entryId) {
+        lastFinalizedDataRef.current.speaker = newSpeaker;
+      }
       setEntries((prev) => {
         const existing = prev.get(entryId);
-        if (!existing) return prev;
-        return new Map(prev).set(entryId, { ...existing, speaker: newSpeaker });
+        if (!existing || existing.speaker === newSpeaker) return prev;
+        return new Map(prev).set(entryId, {
+          ...existing,
+          speaker: newSpeaker,
+          speakerLabel: defaultSpeakerLabel(newSpeaker),
+        });
       });
     },
     []
