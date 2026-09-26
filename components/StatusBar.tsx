@@ -9,7 +9,8 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/tooltip";
-import { useT } from "@/lib/i18n";
+import { useT, type TranslationKey } from "@/lib/i18n";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
 import type { DesktopLayout } from "@/app/page";
 import type { SttProvider, TranslationEngine } from "@/types/bilingual";
 
@@ -29,10 +30,10 @@ interface StatusBarProps {
   t3poEnabled?: boolean;
 }
 
-const LAYOUT_OPTIONS: { value: DesktopLayout; icon: typeof PanelLeft; label: string }[] = [
-  { value: "sidebar", icon: PanelLeft, label: "Sidebar" },
-  { value: "topbar", icon: LayoutDashboard, label: "Top Bar" },
-  { value: "floating", icon: Move, label: "Floating" },
+const LAYOUT_OPTIONS: { value: DesktopLayout; icon: typeof PanelLeft; label: TranslationKey }[] = [
+  { value: "sidebar", icon: PanelLeft, label: "layout_sidebar" },
+  { value: "topbar", icon: LayoutDashboard, label: "layout_topbar" },
+  { value: "floating", icon: Move, label: "layout_floating" },
 ];
 
 export default function StatusBar({
@@ -243,14 +244,16 @@ export default function StatusBar({
                       <Icon className="size-3.5" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom">{label}</TooltipContent>
+                  <TooltipContent side="bottom">{t(label)}</TooltipContent>
                 </Tooltip>
               ))}
             </div>
           )}
         </div>
 
-        {/* Right: user info + logout */}
+        {/* Right: interface language, user info + logout */}
+        <div className="flex items-center gap-3">
+        <LanguageSwitcher />
         {userName && (
           <div className="flex items-center gap-2">
             <User className="size-3.5 text-muted-foreground" />
@@ -261,7 +264,7 @@ export default function StatusBar({
                 size="icon-sm"
                 onClick={() => router.push("/admin")}
                 className="text-muted-foreground hover:text-foreground"
-                aria-label="Admin panel"
+                aria-label={t("admin_panel")}
               >
                 <Shield className="size-3.5" />
               </Button>
@@ -271,12 +274,13 @@ export default function StatusBar({
               size="icon-sm"
               onClick={handleLogout}
               className="text-muted-foreground hover:text-destructive"
-              aria-label="Logout"
+              aria-label={t("logout")}
             >
               <LogOut className="size-3.5" />
             </Button>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

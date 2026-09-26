@@ -46,7 +46,7 @@ import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
 import PresentationLanguages from "@/components/sidebar/PresentationLanguages";
 import type { TranslationMode, SpeakerInfo, BilingualEntry } from "@/types/bilingual";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
-import { INDUSTRY_PRESETS } from "@/lib/contextTerms";
+import { INDUSTRY_PRESETS, presetLabel } from "@/lib/contextTerms";
 import { useT } from "@/lib/i18n";
 
 interface DesktopTopBarProps {
@@ -322,7 +322,7 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
                   : "bg-muted/60 text-muted-foreground hover:bg-muted"
               } ${idx >= visibleCount ? "invisible" : ""}`}
             >
-              <span>{preset.label.split(" ")[0]}</span>
+              <span>{presetLabel(key, preset.label, t)}</span>
               {props.selectedPresets.has(key) && (
                 <span className="opacity-70 text-[10px]">{preset.terms.length}</span>
               )}

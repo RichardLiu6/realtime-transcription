@@ -3,6 +3,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import type { BilingualEntry, SpeakerInfo } from "@/types/bilingual";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
+import { useT } from "@/lib/i18n";
 
 interface PresentationPanelProps {
   entries: BilingualEntry[];
@@ -42,6 +43,7 @@ interface RowProps {
 
 // Memoized: while someone is speaking only the live row re-renders
 const Row = memo(function Row({ entry, index, targetLangs }: RowProps) {
+  const t = useT();
   return (
     <tr className="align-top">
       <td className="px-3 py-2 text-muted-foreground">
@@ -69,7 +71,7 @@ const Row = memo(function Row({ entry, index, targetLangs }: RowProps) {
                 {text}
               </span>
             ) : entry.isFinal ? (
-              <span className="text-gray-300 animate-pulse">翻译中...</span>
+              <span className="text-gray-300 animate-pulse">{t("translating")}</span>
             ) : null}
           </td>
         );
@@ -83,6 +85,7 @@ function PresentationPanel({
   isRecording,
   targetLangs,
 }: PresentationPanelProps) {
+  const t = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
 
@@ -114,7 +117,7 @@ function PresentationPanel({
   if (rows.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-        {isRecording ? "聆听中..." : "选择会议语言并开始录音"}
+        {isRecording ? t("listening") : t("presentation_empty")}
       </div>
     );
   }
@@ -126,7 +129,7 @@ function PresentationPanel({
           <tr>
             <th className="text-left px-3 py-2 font-medium text-muted-foreground w-8">#</th>
             <th className="text-left px-3 py-2 font-medium text-muted-foreground min-w-[200px]">
-              原文
+              {t("original_text")}
             </th>
             {targetLangs.map((lang) => (
               <th

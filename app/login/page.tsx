@@ -5,10 +5,23 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Mail, KeyRound, Shield, Users } from "lucide-react";
+import { useT, type TranslationKey } from "@/lib/i18n";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
+
+// Server error codes (/api/auth/*) → message in the interface language
+const AUTH_CODES = [
+  "email_required", "email_not_allowed", "code_required", "code_expired", "code_wrong",
+  "meeting_code_required", "meeting_invalid", "meeting_expired", "send_failed", "server_error",
+];
 
 type Stage = "email" | "code" | "meeting";
 
 export default function LoginPage() {
+  const t = useT();
+  const authError = (data: { code?: string; error?: string }, fallback: TranslationKey) =>
+    data.code && AUTH_CODES.includes(data.code)
+      ? t(`auth_${data.code}` as TranslationKey)
+      : data.error || t(fallback);
   const [stage, setStage] = useState<Stage>("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -28,12 +41,12 @@ export default function LoginPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "加入失败");
+        setError(authError(data, "login_join_failed"));
         return;
       }
       window.location.href = "/";
     } catch {
-      setError("网络错误，请重试");
+      setError(t("login_network_error"));
     } finally {
       setLoading(false);
     }
@@ -50,13 +63,13 @@ export default function LoginPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "发送失败");
+        setError(authError(data, "login_send_failed"));
         return;
       }
       setChallengeToken(data.challengeToken);
       setStage("code");
     } catch {
-      setError("网络错误，请重试");
+      setError(t("login_network_error"));
     } finally {
       setLoading(false);
     }
@@ -73,12 +86,12 @@ export default function LoginPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "验证失败");
+        setError(authError(data, "login_verify_failed"));
         return;
       }
       window.location.href = "/";
     } catch {
-      setError("网络错误，请重试");
+      setError(t("login_network_error"));
     } finally {
       setLoading(false);
     }
@@ -93,16 +106,17 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    <div className="relative flex min-h-screen items-center justify-center bg-background px-4">
+      <LanguageSwitcher className="absolute right-4 top-4" />
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center space-y-2">
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            实时转录
+            {t("login_title")}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {stage === "email" && "输入邮箱获取验证码"}
-            {stage === "code" && `验证码已发送至 ${email}`}
-            {stage === "meeting" && "输入会议码加入临时会议"}
+            {stage === "email" && t("login_email_prompt")}
+            {stage === "code" && t("login_code_sent", { email })}
+            {stage === "meeting" && t("login_meeting_prompt")}
           </p>
         </div>
 
@@ -129,7 +143,7 @@ export default function LoginPage() {
                 {loading ? (
                   <Loader2 className="size-4 animate-spin mr-2" />
                 ) : null}
-                发送验证码
+                {t("login_send_code")}
               </Button>
               <Button
                 variant="outline"
@@ -140,7 +154,7 @@ export default function LoginPage() {
                 className="w-full"
               >
                 <Users className="size-4 mr-2" />
-                加入临时会议
+                {t("login_join_temp_meeting")}
               </Button>
             </>
           )}
@@ -151,7 +165,7 @@ export default function LoginPage() {
                 <Input
                   type="text"
                   inputMode="numeric"
-                  placeholder="6 位验证码"
+                  placeholder={t("login_code_placeholder")}
                   value={code}
                   onChange={(e) =>
                     setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
@@ -169,7 +183,7 @@ export default function LoginPage() {
                 {loading ? (
                   <Loader2 className="size-4 animate-spin mr-2" />
                 ) : null}
-                登录
+                {t("login_submit")}
               </Button>
               <Button
                 variant="ghost"
@@ -181,7 +195,7 @@ export default function LoginPage() {
                 className="w-full"
                 disabled={loading}
               >
-                更换邮箱
+                {t("login_change_email")}
               </Button>
             </>
           )}
@@ -191,7 +205,7 @@ export default function LoginPage() {
                 <Users className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                 <Input
                   type="text"
-                  placeholder="6 位会议码"
+                  placeholder={t("login_meeting_code_placeholder")}
                   value={meetingCode}
                   onChange={(e) =>
                     setMeetingCode(
@@ -211,7 +225,7 @@ export default function LoginPage() {
                 {loading ? (
                   <Loader2 className="size-4 animate-spin mr-2" />
                 ) : null}
-                加入会议
+                {t("login_join_meeting")}
               </Button>
               <Button
                 variant="ghost"
@@ -223,7 +237,7 @@ export default function LoginPage() {
                 className="w-full"
                 disabled={loading}
               >
-                返回登录
+                {t("login_back")}
               </Button>
             </>
           )}

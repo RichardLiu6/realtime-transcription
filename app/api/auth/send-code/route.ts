@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
 
     if (!email || typeof email !== "string") {
       return NextResponse.json(
-        { error: "请输入邮箱地址" },
+        { error: "请输入邮箱地址", code: "email_required" },
         { status: 400 }
       );
     }
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     const authorized = await isAuthorizedEmail(normalizedEmail);
     if (!authorized) {
       return NextResponse.json(
-        { error: "该邮箱未被授权，请联系管理员" },
+        { error: "该邮箱未被授权，请联系管理员", code: "email_not_allowed" },
         { status: 403 }
       );
     }
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error("Resend error:", error);
       return NextResponse.json(
-        { error: "验证码发送失败，请稍后重试" },
+        { error: "验证码发送失败，请稍后重试", code: "send_failed" },
         { status: 500 }
       );
     }
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("Send code error:", err);
     return NextResponse.json(
-      { error: "服务异常，请稍后重试" },
+      { error: "服务异常，请稍后重试", code: "server_error" },
       { status: 500 }
     );
   }
