@@ -113,6 +113,11 @@ export const INDUSTRY_PRESETS: Record<string, IndustryPreset> = {
       "断货=Stockout", "GMV", "ROI", "SKU", "FBA",
     ],
   },
+};
+
+// Generic presets, hidden while the app serves the supplement business.
+// Move an entry back into INDUSTRY_PRESETS to show it again.
+export const ARCHIVED_PRESETS: Record<string, IndustryPreset> = {
   manufacturing: {
     label: "制造业 Manufacturing",
     terms: [
