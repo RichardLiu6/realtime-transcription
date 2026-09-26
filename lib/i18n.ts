@@ -80,6 +80,9 @@ const en = {
 
   // Speakers
   "speakers": "Speakers",
+  "rename_speaker": "Rename speaker",
+  "same_person_as": "Same person as",
+  "speaker_name_placeholder": "Name",
   "words": "words",
 
   // Transcript
@@ -191,6 +194,9 @@ const zh: Record<TranslationKey, string> = {
   "preset_ecommerce": "跨境电商",
 
   "speakers": "说话人",
+  "rename_speaker": "修改说话人名字",
+  "same_person_as": "同一人：",
+  "speaker_name_placeholder": "名字",
   "words": "字",
 
   "listening": "聆听中...",
@@ -296,6 +302,9 @@ const es: Record<TranslationKey, string> = {
   "preset_ecommerce": "Comercio electrónico",
 
   "speakers": "Hablantes",
+  "rename_speaker": "Renombrar hablante",
+  "same_person_as": "Misma persona que",
+  "speaker_name_placeholder": "Nombre",
   "words": "palabras",
 
   "listening": "Escuchando...",
@@ -401,6 +410,9 @@ const vi: Record<TranslationKey, string> = {
   "preset_ecommerce": "Thương mại điện tử",
 
   "speakers": "Người nói",
+  "rename_speaker": "Đổi tên người nói",
+  "same_person_as": "Cùng người với",
+  "speaker_name_placeholder": "Tên",
   "words": "từ",
 
   "listening": "Đang nghe...",

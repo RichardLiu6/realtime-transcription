@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { useSonioxTranscription } from "@/hooks/useSonioxTranscription";
+import { useSonioxTranscription, defaultSpeakerLabel } from "@/hooks/useSonioxTranscription";
 import { useSpeakerManager } from "@/hooks/useSpeakerManager";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
 import { useStoredState } from "@/lib/useStoredState";
@@ -165,10 +165,10 @@ export default function Home() {
     start,
     stop,
     clearEntries,
-    reassignSpeaker,
+    mergeSpeaker,
   } = useSonioxTranscription();
 
-  const { speakers, registerSpeaker, renameSpeaker, clearSpeakers } =
+  const { speakers, registerSpeaker, renameSpeaker, removeSpeaker, clearSpeakers } =
     useSpeakerManager();
 
   // Auto-register speakers from entries (distinct IDs only — entries change
@@ -179,7 +179,7 @@ export default function Home() {
   );
   useEffect(() => {
     if (!speakerIds) return;
-    for (const id of speakerIds.split(",")) registerSpeaker(id);
+    for (const id of speakerIds.split(",")) registerSpeaker(id, defaultSpeakerLabel(id));
   }, [speakerIds, registerSpeaker]);
 
   const handleStart = useCallback(() => {
@@ -217,9 +217,12 @@ export default function Home() {
     stop();
   }, [stop]);
 
+  // With the names the user gave, not the engine's "Speaker N"
   const handleExport = useCallback(() => {
-    triggerBilingualDownload(entries);
-  }, [entries]);
+    triggerBilingualDownload(
+      entries.map((e) => ({ ...e, speakerLabel: speakers.get(e.speaker)?.label ?? e.speakerLabel }))
+    );
+  }, [entries, speakers]);
 
   const handleNewMeeting = useCallback(() => {
     clearEntries();
@@ -282,11 +285,24 @@ export default function Home() {
     [recordingState, stop, setTranslationMode]
   );
 
+  // A name another speaker already has means the same person: after a
+  // stop/start Soniox numbers them afresh, so this is how a name carries
+  // over to the next recording (merged: one name, color and word count)
   const handleRenameSpeaker = useCallback(
     (speakerId: string, newLabel: string) => {
-      renameSpeaker(speakerId, newLabel);
+      const name = newLabel.trim();
+      if (!name) return;
+      const same = Array.from(speakers.values()).find(
+        (s) => s.id !== speakerId && s.label.trim().toLowerCase() === name.toLowerCase()
+      );
+      if (same) {
+        mergeSpeaker(speakerId, same.id);
+        removeSpeaker(speakerId);
+      } else {
+        renameSpeaker(speakerId, name);
+      }
     },
-    [renameSpeaker]
+    [speakers, mergeSpeaker, removeSpeaker, renameSpeaker]
   );
 
   const sharedProps = {
@@ -368,7 +384,7 @@ export default function Home() {
             isRecording={recordingState === "recording"}
             languageA={languageA}
             languageB={languageB}
-            onReassignSpeaker={reassignSpeaker}
+            onRenameSpeaker={handleRenameSpeaker}
           />
         )}
 

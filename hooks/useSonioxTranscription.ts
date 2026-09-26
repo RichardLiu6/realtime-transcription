@@ -202,6 +202,17 @@ interface TranscriptionOptions {
   onSegmentFinalized?: (entryId: string, text: string, sourceLang: string) => void;
 }
 
+// Speaker ids are "<recording>:<speaker>". The first recording reads as
+// before ("Speaker 1"); later ones carry the recording number
+// ("Speaker 1 (#2)") because Soniox restarted its count.
+export function defaultSpeakerLabel(speakerId: string): string {
+  const [recording, speaker] = speakerId.includes(":")
+    ? speakerId.split(":")
+    : ["1", speakerId];
+  const base = `Speaker ${speaker || "1"}`;
+  return recording === "1" ? base : `${base} (#${recording})`;
+}
+
 export function useSonioxTranscription(options?: TranscriptionOptions) {
   const [entries, setEntries] = useState<Map<string, BilingualEntry>>(new Map());
   const [recordingState, setRecordingState] = useState<RecordingState>("idle");
@@ -237,6 +248,13 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
   // start after the last entry instead of at 00:00
   const timeOffsetMsRef = useRef(0);
   const entryCounterRef = useRef(0);
+  // Soniox numbers speakers per WebSocket session, so "1" in the next
+  // recording may be someone else: each recording of the meeting gets its
+  // own speaker ids ("<recording>:<speaker>")
+  const recordingIndexRef = useRef(1);
+  // Speakers the user said are someone already known (same name): later
+  // tokens from them are filed under that person
+  const speakerAliasRef = useRef<Map<string, string>>(new Map());
   const configRef = useRef<SonioxConfig | null>(null);
 
   // Current segment: accumulates original tokens until finalized
@@ -257,6 +275,11 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     language: string;
     endMs: number;
   } | null>(null);
+
+  const speakerIdFor = useCallback((engineSpeaker: string) => {
+    const id = `${recordingIndexRef.current}:${engineSpeaker}`;
+    return speakerAliasRef.current.get(id) ?? id;
+  }, []);
 
   // Derive array from Map for external consumers
   const entriesArray = useMemo(() => Array.from(entries.values()), [entries]);
@@ -810,7 +833,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     const entry: BilingualEntry = {
       id: seg.entryId,
       speaker: effectiveSpeaker,
-      speakerLabel: `Speaker ${effectiveSpeaker || "1"}`,
+      speakerLabel: defaultSpeakerLabel(effectiveSpeaker),
       language: seg.language,
       originalText,
       translatedText: "",
@@ -867,10 +890,10 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       const finalTokens = tokens.filter((t) => t.is_final);
       const interimTokens = tokens.filter((t) => !t.is_final);
 
-      const batchSpeaker =
-        tokens.find((t) => t.speaker)?.speaker ||
-        currentSegmentRef.current?.speaker ||
-        "0";
+      const sonioxSpeaker = tokens.find((t) => t.speaker)?.speaker;
+      const batchSpeaker = sonioxSpeaker
+        ? speakerIdFor(sonioxSpeaker)
+        : currentSegmentRef.current?.speaker || speakerIdFor("0");
 
       const batchLanguage =
         tokens.find((t) => t.language)?.language || "";
@@ -951,7 +974,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         upsertEntry({
           id: seg.entryId,
           speaker: seg.speaker,
-          speakerLabel: `Speaker ${seg.speaker || "1"}`,
+          speakerLabel: defaultSpeakerLabel(seg.speaker),
           language: seg.language,
           originalText,
           translatedText: "",
@@ -964,7 +987,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         maybeTranslateProvisional(seg.entryId, originalText + interimOriginal, seg.language);
       }
     },
-    [finalizeSegment, upsertEntry, maybeTranslateProvisional, simulFeed]
+    [finalizeSegment, upsertEntry, maybeTranslateProvisional, simulFeed, speakerIdFor]
   );
 
   // Handle R2T2 WebSocket messages.
@@ -986,7 +1009,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       if (text) {
         if (!currentSegmentRef.current) {
           currentSegmentRef.current = {
-            speaker: "1",
+            speaker: speakerIdFor("1"),
             tokens: [],
             interimTokens: [],
             language: "",
@@ -1029,7 +1052,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
           upsertEntry({
             id: seg.entryId,
             speaker: seg.speaker,
-            speakerLabel: "Speaker 1",
+            speakerLabel: defaultSpeakerLabel(seg.speaker),
             language: seg.language,
             originalText,
             translatedText: "",
@@ -1048,7 +1071,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
 
       if (reset) finalizeSegment();
     },
-    [finalizeSegment, upsertEntry, maybeTranslateProvisional, simulFeed]
+    [finalizeSegment, upsertEntry, maybeTranslateProvisional, simulFeed, speakerIdFor]
   );
 
   // Release microphone and audio graph
@@ -1079,6 +1102,12 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       samplesSentRef.current = 0;
       const lastEnd = Math.max(0, ...Array.from(entriesRef.current.values()).map((e) => e.endMs || e.startMs || 0));
       timeOffsetMsRef.current = entriesRef.current.size > 0 ? lastEnd + 1000 : 0;
+      if (entriesRef.current.size > 0) {
+        recordingIndexRef.current++;
+      } else {
+        recordingIndexRef.current = 1;
+        speakerAliasRef.current.clear();
+      }
       configRef.current = config;
       currentSegmentRef.current = null;
       lastFinalizedDataRef.current = null;
@@ -1336,6 +1365,26 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     []
   );
 
+  // The user said `from` is the same person as `to` (named them alike):
+  // file their sentences, and whatever they say next, under `to`
+  const mergeSpeaker = useCallback((from: string, to: string) => {
+    if (from === to) return;
+    const aliases = speakerAliasRef.current;
+    for (const [k, v] of aliases) if (v === from) aliases.set(k, to);
+    aliases.set(from, to);
+    if (currentSegmentRef.current?.speaker === from) currentSegmentRef.current.speaker = to;
+    if (lastFinalizedDataRef.current?.speaker === from) lastFinalizedDataRef.current.speaker = to;
+    setEntries((prev) => {
+      const next = new Map(prev);
+      for (const [id, e] of prev) {
+        if (e.speaker === from) {
+          next.set(id, { ...e, speaker: to, speakerLabel: defaultSpeakerLabel(to) });
+        }
+      }
+      return next;
+    });
+  }, []);
+
   const clearEntries = useCallback(() => {
     setEntries(new Map());
     setElapsedSeconds(0);
@@ -1343,6 +1392,8 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     setCurrentInterim("");
     entryCounterRef.current = 0;
     timeOffsetMsRef.current = 0;
+    recordingIndexRef.current = 1;
+    speakerAliasRef.current.clear();
     currentSegmentRef.current = null;
     lastFinalizedDataRef.current = null;
     translationStateRef.current.clear();
@@ -1373,5 +1424,6 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     stop,
     clearEntries,
     reassignSpeaker,
+    mergeSpeaker,
   };
 }

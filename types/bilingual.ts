@@ -55,7 +55,7 @@ export const SONIOX_LANGUAGES: { code: string; name: string }[] = [
 
 export interface BilingualEntry {
   id: string;
-  speaker: string; // Soniox speaker ID ("1", "2", ...)
+  speaker: string; // "<recording>:<engine speaker>" ("1:1", "2:1", ...) — Soniox restarts its numbering each recording
   speakerLabel: string;
   language: string; // Language code of original text
   originalText: string;
