@@ -24,6 +24,7 @@ export interface LiveBatch {
   entries?: unknown[];
   info?: unknown;
   reset?: boolean; // the host started a new meeting: drop earlier entries
+  ended?: boolean; // the host stopped sharing
 }
 
 export type LiveRead =
@@ -33,17 +34,24 @@ export type LiveRead =
 
 interface LiveStore {
   publish(room: string, batch: LiveBatch, touch: boolean): Promise<number>;
-  read(room: string, since: number): Promise<LiveRead>;
-  remove(room: string): Promise<void>;
+  // `check`: also confirm the room still exists (a delta read alone can't
+  // tell "nothing new" from "deleted"; viewers ask every 15 s)
+  read(room: string, since: number, check: boolean): Promise<LiveRead>;
+  // Stop sharing: viewers already watching get an "ended" batch on their
+  // next poll; the room is gone (reads as missing) for everyone else and
+  // expires ENDED_TTL later
+  end(room: string): Promise<void>;
 }
 
 const INFO_FIELD = "_info";
+const ENDED_FIELD = "_ended";
+const ENDED_TTL_SECONDS = 60;
 const stateKey = (room: string) => `live:${room}:state`;
 const logKey = (room: string) => `live:${room}:log`;
 
 function entryId(entry: unknown): string | null {
   const id = (entry as { id?: unknown })?.id;
-  return typeof id === "string" && id !== INFO_FIELD ? id : null;
+  return typeof id === "string" && !id.startsWith("_") ? id : null;
 }
 
 // --- Upstash Redis (REST) ---
@@ -54,6 +62,20 @@ function redisConfig(): { url: string; token: string } | null {
   const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
   return url && token ? { url: url.replace(/\/$/, ""), token } : null;
+}
+
+// One command (the cheapest call: Upstash bills per command)
+async function command(cmd: (string | number)[]): Promise<unknown> {
+  const config = redisConfig()!;
+  const res = await fetch(config.url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${config.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(cmd),
+    cache: "no-store",
+  });
+  const body = (await res.json()) as { result?: unknown; error?: string };
+  if (!res.ok || body.error) throw new Error(`Redis: ${body.error ?? res.status}`);
+  return body.result;
 }
 
 // Commands in one MULTI/EXEC transaction; returns each command's result
@@ -96,7 +118,7 @@ const redisStore: LiveStore = {
     return Number(results[logIndex]);
   },
 
-  async read(room, since) {
+  async read(room, since, check) {
     if (since <= 0) {
       const [hash, length] = await transaction([
         ["HGETALL", stateKey(room)],
@@ -107,23 +129,35 @@ const redisStore: LiveStore = {
       let info: unknown = null;
       const entries: unknown[] = [];
       for (let i = 0; i + 1 < flat.length; i += 2) {
+        if (flat[i] === ENDED_FIELD) return { kind: "missing" };
         const value = JSON.parse(flat[i + 1]);
         if (flat[i] === INFO_FIELD) info = value;
         else entries.push(value);
       }
       return { kind: "snapshot", version: Number(length), entries, info };
     }
-    const [items, length] = await transaction([
-      ["LRANGE", logKey(room), since, since + MAX_BATCHES_PER_READ - 1],
-      ["LLEN", logKey(room)],
-    ]);
-    if (Number(length) === 0) return { kind: "missing" };
+    // Every second per viewer: one command, plus an existence check now
+    // and then
+    const range = ["LRANGE", logKey(room), since, since + MAX_BATCHES_PER_READ - 1];
+    let items: unknown;
+    if (check) {
+      const [list, exists] = await transaction([range, ["EXISTS", logKey(room)]]);
+      if (Number(exists) === 0) return { kind: "missing" };
+      items = list;
+    } else {
+      items = await command(range);
+    }
     const batches = ((items as string[] | null) ?? []).map((s) => JSON.parse(s) as LiveBatch);
     return { kind: "batches", version: since + batches.length, batches };
   },
 
-  async remove(room) {
-    await transaction([["DEL", stateKey(room), logKey(room)]]);
+  async end(room) {
+    await transaction([
+      ["HSET", stateKey(room), ENDED_FIELD, "1"],
+      ["RPUSH", logKey(room), JSON.stringify({ at: Date.now(), ended: true } satisfies LiveBatch)],
+      ["EXPIRE", stateKey(room), ENDED_TTL_SECONDS],
+      ["EXPIRE", logKey(room), ENDED_TTL_SECONDS],
+    ]);
   },
 };
 
@@ -134,6 +168,7 @@ interface MemoryRoom {
   info: unknown;
   log: LiveBatch[];
   expiresAt: number;
+  ended?: boolean;
 }
 
 // On globalThis so every route module of the process sees the same rooms
@@ -171,14 +206,19 @@ const memoryStore: LiveStore = {
     const r = memoryRoom(room);
     if (!r) return { kind: "missing" };
     if (since <= 0) {
+      if (r.ended) return { kind: "missing" };
       return { kind: "snapshot", version: r.log.length, entries: Array.from(r.entries.values()), info: r.info };
     }
     const batches = r.log.slice(since, since + MAX_BATCHES_PER_READ);
     return { kind: "batches", version: since + batches.length, batches };
   },
 
-  async remove(room) {
-    memoryRooms.delete(room);
+  async end(room) {
+    const r = memoryRoom(room);
+    if (!r) return;
+    r.ended = true;
+    r.log.push({ at: Date.now(), ended: true });
+    r.expiresAt = Date.now() + ENDED_TTL_SECONDS * 1000;
   },
 };
 

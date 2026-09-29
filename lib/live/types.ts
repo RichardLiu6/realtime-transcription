@@ -36,7 +36,7 @@ export interface LiveInfo {
 // Poll response (GET /api/live/<room>?since=<version>)
 export type LivePollResponse =
   | { snapshot: true; version: number; entries: LiveEntry[]; info: LiveInfo | null; now: number }
-  | { snapshot: false; version: number; batches: { at: number; entries?: LiveEntry[]; info?: LiveInfo; reset?: boolean }[]; now: number };
+  | { snapshot: false; version: number; batches: { at: number; entries?: LiveEntry[]; info?: LiveInfo; reset?: boolean; ended?: boolean }[]; now: number };
 
 // Room ids are the capability: 128 random bits, base64url
 export const ROOM_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;

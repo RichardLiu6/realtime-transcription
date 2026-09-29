@@ -17,7 +17,13 @@ import { fromLiveEntry, ROOM_ID_PATTERN, type LiveInfo, type LivePollResponse } 
 // shows the multilingual view with the columns this viewer picked — the
 // original and/or any of the host's languages.
 
+// Upstash bills per command: poll every second while people talk, every
+// 2 s after 30 s of silence, and confirm the room still exists every 15 s
+// (a plain delta read can't tell "nothing new" from "sharing stopped")
 const POLL_MS = 1000;
+const IDLE_POLL_MS = 2000;
+const IDLE_AFTER_MS = 30_000;
+const CHECK_EVERY_MS = 15_000;
 const RETRY_MS = 3000;
 // No heartbeat (every 15 s) for this long: the host has gone
 const OFFLINE_AFTER_MS = 45_000;
@@ -53,13 +59,17 @@ export default function LiveViewerPage() {
     }
     let version = 0;
     let everLoaded = false;
+    let lastActivity = Date.now();
+    let lastCheck = Date.now();
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const poll = async () => {
       let next = POLL_MS;
       try {
-        const res = await fetch(`/api/live/${room}?since=${version}`, { cache: "no-store" });
+        const check = version > 0 && Date.now() - lastCheck >= CHECK_EVERY_MS;
+        const res = await fetch(`/api/live/${room}?since=${version}${check ? "&check=1" : ""}`, { cache: "no-store" });
+        if (check) lastCheck = Date.now();
         if (res.status === 404) {
           // Deleted: the host stopped sharing (or the link was never valid)
           setStatus(everLoaded ? "ended" : "notfound");
@@ -93,9 +103,15 @@ export default function LiveViewerPage() {
           const withInfo = data.batches.filter((b) => b.info);
           if (withInfo.length > 0) setInfo(withInfo[withInfo.length - 1].info!);
           setLastAt(data.batches[data.batches.length - 1].at);
+          if (data.batches.some((b) => b.entries || b.reset)) lastActivity = Date.now();
+          if (data.batches.some((b) => b.ended)) {
+            setStatus("ended");
+            return;
+          }
           // Still catching up: fetch the rest right away
           if (data.batches.length >= 300) next = 0;
         }
+        if (next > 0 && Date.now() - lastActivity > IDLE_AFTER_MS) next = IDLE_POLL_MS;
         version = data.version;
         setStatus("live");
       } catch {
@@ -109,6 +125,7 @@ export default function LiveViewerPage() {
     // Back from the background (phone switched to the call app): catch up now
     const onVisible = () => {
       if (document.visibilityState === "visible" && !stopped) {
+        lastActivity = Date.now();
         clearTimeout(timer);
         poll();
       }

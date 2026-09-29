@@ -20,8 +20,9 @@ export async function GET(req: NextRequest, { params }: Params) {
   const { room } = await params;
   if (!ROOM_ID_PATTERN.test(room)) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const since = Math.max(0, Math.floor(Number(req.nextUrl.searchParams.get("since")) || 0));
+  const check = req.nextUrl.searchParams.get("check") === "1";
   try {
-    const r = await liveStore().read(room, since);
+    const r = await liveStore().read(room, since, check);
     const headers = { "Cache-Control": "no-store" };
     if (r.kind === "missing") return NextResponse.json({ error: "Not found" }, { status: 404, headers });
     const now = Date.now();
@@ -66,14 +67,14 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 }
 
-// Host: stop sharing — the link stops working
+// Host: stop sharing — viewers watching see it end, the link stops working
 export async function DELETE(req: NextRequest, { params }: Params) {
   const { room } = await params;
   if (!ROOM_ID_PATTERN.test(room) || !isHost(req, room)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   try {
-    await liveStore().remove(room);
+    await liveStore().end(room);
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[live] remove failed:", error);
