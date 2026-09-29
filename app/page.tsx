@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useSonioxTranscription, defaultSpeakerLabel } from "@/hooks/useSonioxTranscription";
 import { useSpeakerManager, speakerDisplayName } from "@/hooks/useSpeakerManager";
+import { useLiveShare } from "@/hooks/useLiveShare";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
 import { useStoredState } from "@/lib/useStoredState";
 import { combineTerms, INDUSTRY_PRESETS } from "@/lib/contextTerms";
@@ -14,6 +15,7 @@ import StatusBar from "@/components/StatusBar";
 import TranscriptPanel from "@/components/TranscriptPanel";
 import PresentationPanel from "@/components/PresentationPanel";
 import PresentationMode, { usePresentationMode } from "@/components/PresentationMode";
+import LiveShareButton from "@/components/LiveShareButton";
 import MobileBottom from "@/components/mobile/MobileBottom";
 import DesktopTopBar from "@/components/desktop/DesktopTopBar";
 import DesktopFloatingBar from "@/components/desktop/DesktopFloatingBar";
@@ -219,6 +221,20 @@ export default function Home() {
     stop();
   }, [stop]);
 
+  // Live caption sharing: multilingual mode only; viewers pick from its
+  // columns. Leaving the mode ends the share.
+  const liveShare = useLiveShare({
+    entries,
+    speakers,
+    targetLangs,
+    languageA,
+    recording: recordingState === "recording",
+  });
+  const { sharing: liveSharing, stop: stopLiveShare } = liveShare;
+  useEffect(() => {
+    if (liveSharing && translationMode !== "presentation") stopLiveShare();
+  }, [liveSharing, translationMode, stopLiveShare]);
+
   // Projector view of the same state (button in the status bar, or F);
   // recording carries on across entering and leaving it
   const presentation = usePresentationMode();
@@ -379,6 +395,18 @@ export default function Home() {
           onTranslationEngineChange={handleTranslationEngineChange}
           t3poEnabled={t3poEnabled}
           onPresent={presentation.enter}
+          shareButton={
+            translationMode === "presentation" && liveShare.available ? (
+              <LiveShareButton
+                sharing={liveShare.sharing}
+                starting={liveShare.starting}
+                failing={liveShare.failing}
+                viewerUrl={liveShare.viewerUrl}
+                onStart={liveShare.start}
+                onStop={liveShare.stop}
+              />
+            ) : undefined
+          }
         />
 
         {/* Desktop top bar (only in topbar layout) */}

@@ -87,7 +87,7 @@ Audio goes directly from browser to the STT engine — the server never touches 
 - Admin gets both tokens: access to main app + admin panel
 - Main page displays "admin" as username
 
-**Middleware** (`middleware.ts`): All routes require `auth_token` except `/login`, `/admin/login`, `/api/auth/*`, `/api/admin/auth`, `/api/eval` (404 outside preview deployments). Admin routes require `admin_token`.
+**Middleware** (`middleware.ts`): All routes require `auth_token` except `/login`, `/admin/login`, `/api/auth/*`, `/api/admin/auth`, `/api/eval` (404 outside preview deployments), and shared captions: `/live/*` and `GET /api/live/*`. Admin routes require `admin_token`.
 
 ### Core Hook: useSonioxTranscription.ts
 
@@ -125,6 +125,14 @@ Central logic for the entire app:
 - **presentation** (UI label "多语言 / Multilingual"): table with an always-present **原文** column (the transcript, shown exactly once) plus one column per `targetLangs` entry (default 中文 + English). Every sentence is translated into **every** column, including the spoken language — that column keeps the utterance as said; foreign words may stay but get their meaning in brackets on first use (`这个 batch（批次）的 yield（良率）`; SAME_LANGUAGE_RULES — chat models only; Hy-MT can't take the instruction and just translate). Costs one extra target per sentence by design. Works with 整句, 分句 and 同传. Soniox `language_hints` = source languages ∪ `targetLangs`.
   - `components/PresentationPanel.tsx`: the # column shows the speaker (display name, speaker color). A column whose text equals the original (ignoring punctuation / case, `sameText` in `lib/meetingLanguages.ts`) is muted with a "= 原文" marker. When the panel is narrower than (columns × 250 px + 72) — ResizeObserver on the panel, so the sidebar counts — it switches to **cards** (speaker + original, then each language with its name) with a 显示 filter (全部 / 原文 / one language; localStorage `multiFilter`). Scroll-to-latest button as in TranscriptPanel.
 
+### Live caption sharing (multilingual mode only)
+
+- The host (logged in, multilingual mode) clicks 分享字幕 in the status bar (`components/LiveShareButton.tsx`) → `POST /api/live` creates a room (128-bit random id = the access; host key = HMAC of the room id with `JWT_SECRET`, not a JWT so it can't pass as a login) → link `/live/<room>`. Leaving multilingual mode or 停止分享 deletes the room.
+- `hooks/useLiveShare.ts`: once a second publishes the entries whose object changed since the last publish (`toLiveEntry`, ≤ 150 per publish) plus the room info (`targetLangs`, `languageA`, speakers with given names and colors, recording) when it changed; a heartbeat every 15 s refreshes the room's expiry and tells viewers the host is there. 新会议 publishes a `reset`. Failed publishes are retried on the next tick.
+- Viewer `app/live/[room]/page.tsx` (no login; `/live/*` and `GET /api/live/*` are public in middleware): polls `GET /api/live/<room>?since=<version>` every second (3 s after errors, immediately when the tab becomes visible) — a snapshot first, then the batches since its version. Picks columns among 原文 + the host's `targetLangs` (at least one; localStorage `liveLangs`; default 原文 + the interface language), rendered by `PresentationPanel` (`viewer`, `showOriginal`) — table or cards. Status: 直播中 / 已暂停 / 发起人已离线 (no heartbeat for 45 s, server clock) / 重试中 / 已结束 (room gone; keeps what it has) / not found. Export writes the picked columns; presentation mode works (no start/stop).
+- Storage (`lib/live/store.ts`): Upstash Redis over REST (`/multi-exec`; `KV_REST_API_URL`/`KV_REST_API_TOKEN` from the Vercel integration, or `UPSTASH_REDIS_REST_*`). Per room a hash (latest entry per id + `_info`) and a list of batches (version = list length), written in one transaction; 24 h expiry refreshed by the heartbeat. Without Redis a local server keeps rooms in memory; on Vercel (`VERCEL=1`) sharing is then unavailable (`GET /api/live` → `available: false`, button hidden) — Vercel instances share no memory.
+- Translation happens once on the host (every column), so viewers cost nothing extra; a viewer can only pick languages the host has.
+
 ### Presentation (projector) mode (`components/PresentationMode.tsx`)
 
 - Not the multilingual mode above: a full-screen caption view of the page's state for a meeting-room projector. Opened by the 演示模式 button in the status bar (the one bar every layout, incl. mobile, shows) or `F` (ignored while typing in a text field); Esc / F / the exit button close it. `usePresentationMode()` requests the Fullscreen API when available (else a full-viewport overlay) and leaves the mode when the browser leaves full screen (its Esc never reaches the page). Only displays: recording keeps running when entering or leaving; Start/Stop in the strip call the page's handlers.
@@ -146,6 +154,8 @@ Central logic for the entire app:
 | `/api/usage` | POST | Record STT seconds (Soniox only) |
 | `/api/translate` | POST | LLM translation (single or multi-target; `provisional` requests skip usage tracking) |
 | `/api/summarize` | POST | Meeting summary generation |
+| `/api/live` | GET/POST | Sharing available? / start sharing (new room + host key) |
+| `/api/live/[room]` | GET/POST/DELETE | Viewer poll (public) / host publish / stop sharing |
 | `/api/auth/send-code` | POST | Email OTP |
 | `/api/auth/verify-code` | POST | Verify OTP, issue JWT |
 | `/api/auth/me` | GET | Current user info (email, name, role) |
@@ -171,7 +181,7 @@ Central logic for the entire app:
 ├── <DesktopTopBar>          # topbar layout: preset chips that fit + "+N", always a Terms (N) button
 ├── <TranscriptPanel>        # Memoized rows (role=log); translation in a ruled, indented block,
 │                            #   upright and ≥ 4.5:1 contrast; <ReadyCard> when empty
-├── <PresentationPanel>      # Multilingual table / cards (instead of TranscriptPanel)
+├── <PresentationPanel>      # Multilingual table / cards (instead of TranscriptPanel); also the /live viewer
 └── <PresentationMode>       # Full-screen projector captions (overlay, F / Esc)
 ```
 
@@ -186,6 +196,8 @@ T3PO_BASE_URL=https://.../v1 # OpenAI-compatible server running Confucius4-T3PO 
 T3PO_API_KEY=...             # Optional bearer token (vLLM --api-key)
 T3PO_MODEL=Confucius4-T3PO   # Served model name
 T3PO_LATENCY_MODE=native     # low | native | high
+KV_REST_API_URL=...          # Upstash Redis (Vercel Marketplace) — live caption sharing; or UPSTASH_REDIS_REST_URL
+KV_REST_API_TOKEN=...        #   ...and its token; or UPSTASH_REDIS_REST_TOKEN
 JWT_SECRET=...               # JWT signing secret
 ADMIN_PASSWORD=...           # Admin login password
 RESEND_API_KEY=...           # Email OTP delivery

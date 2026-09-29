@@ -172,6 +172,27 @@ const en = {
   "ready_tip_terms": "Pick a terms preset (or add your own) for more accurate names and jargon.",
   "ready_tip_rename": "Click a speaker's name in the transcript to rename them.",
   "ready_tip_present": "Press F for full-screen presentation mode on a projector.",
+
+  // Live caption sharing
+  "share_captions": "Share captions",
+  "sharing_captions": "Sharing",
+  "share_title": "Let others follow this meeting's captions online",
+  "share_hint": "Viewers don't need an account and pick the languages they want. The link stops working when you stop sharing.",
+  "copy_link": "Copy link",
+  "link_copied": "Copied",
+  "stop_sharing": "Stop sharing",
+  "share_failing": "Captions aren't reaching viewers — retrying…",
+  "share_error": "Couldn't start sharing. Try again.",
+  "live_title": "Live captions",
+  "live_status_live": "Live",
+  "live_status_paused": "Recording paused",
+  "live_status_offline": "Host is offline",
+  "live_status_reconnecting": "Connection lost — retrying…",
+  "live_status_ended": "Sharing has ended",
+  "live_not_found": "This link is invalid or has expired.",
+  "live_languages": "Show",
+  "live_waiting": "Waiting for someone to speak…",
+  "live_pick_one": "Pick at least one",
 };
 
 export type TranslationKey = keyof typeof en;
@@ -321,6 +342,27 @@ const zh: Record<TranslationKey, string> = {
   "ready_tip_terms": "选择术语预设（或添加自定义术语），人名和专业词汇识别更准确。",
   "ready_tip_rename": "点击记录里的说话人名字即可改名。",
   "ready_tip_present": "按 F 进入全屏演示模式，适合投影。",
+
+  // Live caption sharing
+  "share_captions": "分享字幕",
+  "sharing_captions": "分享中",
+  "share_title": "让其他人在线查看这场会议的多语言字幕",
+  "share_hint": "观看者无需登录，可自选要看的语言。停止分享后链接失效。",
+  "copy_link": "复制链接",
+  "link_copied": "已复制",
+  "stop_sharing": "停止分享",
+  "share_failing": "字幕没能同步给观看者，正在重试…",
+  "share_error": "分享没能开始，请重试。",
+  "live_title": "实时字幕",
+  "live_status_live": "直播中",
+  "live_status_paused": "发起人已暂停录音",
+  "live_status_offline": "发起人已离线",
+  "live_status_reconnecting": "连接中断，正在重试…",
+  "live_status_ended": "分享已结束",
+  "live_not_found": "链接无效或已过期。",
+  "live_languages": "显示",
+  "live_waiting": "等待发言…",
+  "live_pick_one": "至少选一项",
 };
 
 const es: Record<TranslationKey, string> = {
@@ -468,6 +510,27 @@ const es: Record<TranslationKey, string> = {
   "ready_tip_terms": "Elija un conjunto de términos (o añada los suyos) para reconocer mejor nombres y jerga.",
   "ready_tip_rename": "Haga clic en el nombre de un hablante en la transcripción para cambiarlo.",
   "ready_tip_present": "Pulse F para el modo presentación a pantalla completa en un proyector.",
+
+  // Live caption sharing
+  "share_captions": "Compartir subtítulos",
+  "sharing_captions": "Compartiendo",
+  "share_title": "Permite que otros sigan los subtítulos de esta reunión en línea",
+  "share_hint": "Los espectadores no necesitan cuenta y eligen los idiomas que quieren ver. El enlace deja de funcionar al dejar de compartir.",
+  "copy_link": "Copiar enlace",
+  "link_copied": "Copiado",
+  "stop_sharing": "Dejar de compartir",
+  "share_failing": "Los subtítulos no llegan a los espectadores; reintentando…",
+  "share_error": "No se pudo empezar a compartir. Inténtelo de nuevo.",
+  "live_title": "Subtítulos en vivo",
+  "live_status_live": "En vivo",
+  "live_status_paused": "Grabación en pausa",
+  "live_status_offline": "El anfitrión está desconectado",
+  "live_status_reconnecting": "Conexión perdida; reintentando…",
+  "live_status_ended": "La transmisión ha terminado",
+  "live_not_found": "Este enlace no es válido o ha caducado.",
+  "live_languages": "Mostrar",
+  "live_waiting": "Esperando a que alguien hable…",
+  "live_pick_one": "Elija al menos uno",
 };
 
 const vi: Record<TranslationKey, string> = {
@@ -615,6 +678,27 @@ const vi: Record<TranslationKey, string> = {
   "ready_tip_terms": "Chọn bộ thuật ngữ (hoặc tự thêm) để nhận dạng tên riêng và thuật ngữ chính xác hơn.",
   "ready_tip_rename": "Nhấn vào tên người nói trong bản ghi để đổi tên.",
   "ready_tip_present": "Nhấn F để vào chế độ trình chiếu toàn màn hình cho máy chiếu.",
+
+  // Live caption sharing
+  "share_captions": "Chia sẻ phụ đề",
+  "sharing_captions": "Đang chia sẻ",
+  "share_title": "Cho người khác xem phụ đề cuộc họp này trực tuyến",
+  "share_hint": "Người xem không cần tài khoản và tự chọn ngôn ngữ muốn xem. Liên kết sẽ ngừng hoạt động khi bạn dừng chia sẻ.",
+  "copy_link": "Sao chép liên kết",
+  "link_copied": "Đã sao chép",
+  "stop_sharing": "Dừng chia sẻ",
+  "share_failing": "Phụ đề chưa đến được người xem — đang thử lại…",
+  "share_error": "Không thể bắt đầu chia sẻ. Vui lòng thử lại.",
+  "live_title": "Phụ đề trực tiếp",
+  "live_status_live": "Đang phát",
+  "live_status_paused": "Đã tạm dừng ghi âm",
+  "live_status_offline": "Người chủ trì đang ngoại tuyến",
+  "live_status_reconnecting": "Mất kết nối — đang thử lại…",
+  "live_status_ended": "Đã kết thúc chia sẻ",
+  "live_not_found": "Liên kết không hợp lệ hoặc đã hết hạn.",
+  "live_languages": "Hiển thị",
+  "live_waiting": "Đang chờ người nói…",
+  "live_pick_one": "Chọn ít nhất một mục",
 };
 
 const translations: Record<Locale, Record<TranslationKey, string>> = { en, zh, es, vi };

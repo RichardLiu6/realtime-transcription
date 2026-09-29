@@ -19,6 +19,11 @@ export async function middleware(request: NextRequest) {
     // Model evaluation: the route itself 404s outside preview deployments,
     // which are behind Vercel Authentication
     pathname === "/api/eval" ||
+    // Shared live captions: the viewer page and its polling are for people
+    // without an account (the unguessable room id is the access); the
+    // host's publish / stop (POST, DELETE) still need a login
+    pathname.startsWith("/live/") ||
+    (pathname.startsWith("/api/live/") && request.method === "GET") ||
     pathname === "/favicon.ico"
   ) {
     return NextResponse.next();

@@ -19,6 +19,10 @@ interface PresentationPanelProps {
   languageA: string[];
   targetLangs: string[];
   onStart: () => void;
+  // Shared-captions viewer (/live): the columns it picked, whether the
+  // original is one of them, and no recording controls or card filter
+  showOriginal?: boolean;
+  viewer?: boolean;
 }
 
 // Below this width per column (原文 + one per language, plus the # column)
@@ -102,12 +106,13 @@ interface RowProps {
   entry: BilingualEntry;
   index: number;
   targetLangs: string[];
+  showOriginal: boolean;
   speakerName: string;
   speakerColor: string;
 }
 
 // Memoized: while someone is speaking only the live row re-renders
-const Row = memo(function Row({ entry, index, targetLangs, speakerName, speakerColor }: RowProps) {
+const Row = memo(function Row({ entry, index, targetLangs, showOriginal, speakerName, speakerColor }: RowProps) {
   return (
     <tr className="align-top">
       <td className="px-3 py-2 text-muted-foreground">
@@ -120,10 +125,13 @@ const Row = memo(function Row({ entry, index, targetLangs, speakerName, speakerC
           <LanguageChip code={entry.language} />
         </div>
       </td>
-      {/* The transcript is always shown once, whatever the columns */}
-      <td className="px-3 py-2 bg-blue-50/40">
-        <OriginalText entry={entry} />
-      </td>
+      {/* The transcript is always shown once, whatever the columns (a
+          viewer may leave it out) */}
+      {showOriginal && (
+        <td className="px-3 py-2 bg-blue-50/40">
+          <OriginalText entry={entry} />
+        </td>
+      )}
       {/* Every column is a translation — including the spoken language's,
           which gets a clean version fully in that language */}
       {targetLangs.map((lang) => (
@@ -141,7 +149,7 @@ interface CardProps extends RowProps {
 
 // Narrow screens: one card per sentence — speaker and original on top, then
 // each language with its name. A filter shows just one language.
-const Card = memo(function Card({ entry, index, targetLangs, speakerName, speakerColor, filter }: CardProps) {
+const Card = memo(function Card({ entry, index, targetLangs, showOriginal, speakerName, speakerColor, filter }: CardProps) {
   const t = useT();
   const langName = useLanguageName();
   const single = filter !== FILTER_ALL && filter !== FILTER_ORIGINAL ? filter : null;
@@ -175,9 +183,11 @@ const Card = memo(function Card({ entry, index, targetLangs, speakerName, speake
         </p>
       ) : (
         <>
-          <p className="rounded bg-blue-50/60 px-2 py-1 leading-relaxed">
-            <OriginalText entry={entry} />
-          </p>
+          {showOriginal && (
+            <p className="rounded bg-blue-50/60 px-2 py-1 leading-relaxed">
+              <OriginalText entry={entry} />
+            </p>
+          )}
           {filter === FILTER_ALL &&
             targetLangs.map((lang) => (
               <div key={lang} className="mt-2 border-l-2 border-gray-200 pl-2.5 leading-relaxed">
@@ -204,6 +214,8 @@ function PresentationPanel({
   languageA,
   targetLangs,
   onStart,
+  showOriginal = true,
+  viewer = false,
 }: PresentationPanelProps) {
   const t = useT();
   const langName = useLanguageName();
@@ -212,9 +224,10 @@ function PresentationPanel({
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [width, setWidth] = useState(0);
   const [storedFilter, setFilter] = useStoredState("multiFilter", FILTER_ALL, isString);
-  // A language that is no longer a column falls back to everything
+  // A language that is no longer a column falls back to everything; a
+  // viewer has already picked its columns
   const filter =
-    storedFilter === FILTER_ORIGINAL || targetLangs.includes(storedFilter) ? storedFilter : FILTER_ALL;
+    !viewer && (storedFilter === FILTER_ORIGINAL || targetLangs.includes(storedFilter)) ? storedFilter : FILTER_ALL;
 
   // The panel's own width (the sidebar takes part of the window)
   useEffect(() => {
@@ -224,7 +237,8 @@ function PresentationPanel({
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  const cards = width > 0 && width < (targetLangs.length + 1) * MIN_COLUMN_WIDTH + INDEX_COLUMN_WIDTH;
+  const columns = targetLangs.length + (showOriginal ? 1 : 0);
+  const cards = width > 0 && width < columns * MIN_COLUMN_WIDTH + INDEX_COLUMN_WIDTH;
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -270,7 +284,7 @@ function PresentationPanel({
 
   return (
     <div ref={rootRef} className="relative flex flex-1 flex-col overflow-hidden">
-      {cards && rows.length > 0 && (
+      {cards && !viewer && rows.length > 0 && (
         <div
           role="radiogroup"
           aria-label={t("multi_filter")}
@@ -296,7 +310,9 @@ function PresentationPanel({
       <div ref={scrollRef} role="log" aria-live="polite" className="flex-1 overflow-auto">
         {rows.length === 0 ? (
           <div className="flex min-h-full items-center justify-center px-4 py-6">
-            {isRecording ? (
+            {viewer ? (
+              <p className="text-sm text-gray-600">{t("live_waiting")}</p>
+            ) : isRecording ? (
               <p className="text-sm text-muted-foreground">{t("listening")}</p>
             ) : (
               <ReadyCard
@@ -317,6 +333,7 @@ function PresentationPanel({
                 entry={entry}
                 index={idx}
                 targetLangs={targetLangs}
+                showOriginal={showOriginal}
                 filter={filter}
                 {...speakerOf(entry)}
               />
@@ -327,9 +344,11 @@ function PresentationPanel({
             <thead className="sticky top-0 bg-background border-b border-border z-10">
               <tr>
                 <th scope="col" className="text-left px-3 py-2 font-medium text-muted-foreground w-24">#</th>
-                <th scope="col" className="text-left px-3 py-2 font-medium text-muted-foreground min-w-[200px]">
-                  {t("original_text")}
-                </th>
+                {showOriginal && (
+                  <th scope="col" className="text-left px-3 py-2 font-medium text-muted-foreground min-w-[200px]">
+                    {t("original_text")}
+                  </th>
+                )}
                 {targetLangs.map((lang) => (
                   <th
                     key={lang}
@@ -348,6 +367,7 @@ function PresentationPanel({
                   entry={entry}
                   index={idx}
                   targetLangs={targetLangs}
+                  showOriginal={showOriginal}
                   {...speakerOf(entry)}
                 />
               ))}

@@ -47,6 +47,8 @@ interface StatusBarProps {
   // Presentation (projector) mode: here because the status bar is the one
   // place every layout (sidebar, top bar, floating, mobile) shows
   onPresent?: () => void;
+  // Live caption sharing button (multilingual mode only)
+  shareButton?: ReactNode;
 }
 
 const LAYOUT_OPTIONS: { value: DesktopLayout; icon: typeof PanelLeft; label: TranslationKey }[] = [
@@ -144,6 +146,7 @@ export default function StatusBar({
   onTranslationEngineChange,
   t3poEnabled = false,
   onPresent,
+  shareButton,
 }: StatusBarProps) {
   const t = useT();
   const router = useRouter();
@@ -215,6 +218,7 @@ export default function StatusBar({
         </div>
 
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+          {shareButton}
           {onPresent && (
             <Tooltip>
               <TooltipTrigger asChild>

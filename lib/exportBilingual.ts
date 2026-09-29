@@ -8,7 +8,14 @@ function formatTime(ms: number): string {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-export function buildBilingualText(entries: BilingualEntry[]): string {
+export interface ExportOptions {
+  // Multilingual entries: which languages to write (default: every one the
+  // entry has) and whether to write the original (default: yes)
+  languages?: string[];
+  original?: boolean;
+}
+
+export function buildBilingualText(entries: BilingualEntry[], options: ExportOptions = {}): string {
   return entries
     .filter((e) => e.isFinal && e.originalText.trim())
     .map((e) => {
@@ -16,18 +23,25 @@ export function buildBilingualText(entries: BilingualEntry[]): string {
       const time = `(${formatTime(e.startMs)})`;
       const header = [speaker, time].filter(Boolean).join(" ");
 
-      const originalLine = `[${e.language}] ${e.originalText}`;
-      const translatedLine = e.translatedText ? `[translated] ${e.translatedText}` : "";
+      const originalLine = options.original === false ? "" : `[${e.language}] ${e.originalText}`;
+      // Multilingual mode: one line per language column
+      const translatedLines = e.translations
+        ? (options.languages ?? Object.keys(e.translations))
+            .filter((lang) => e.translations?.[lang])
+            .map((lang) => `[→${lang}] ${e.translations![lang]}`)
+        : e.translatedText
+        ? [`[translated] ${e.translatedText}`]
+        : [];
 
-      return [header, originalLine, translatedLine, "---"].filter(Boolean).join("\n");
+      return [header, originalLine, ...translatedLines, "---"].filter(Boolean).join("\n");
     })
     .join("\n\n");
 }
 
-export function triggerBilingualDownload(entries: BilingualEntry[]): void {
+export function triggerBilingualDownload(entries: BilingualEntry[], options?: ExportOptions): void {
   if (entries.length === 0) return;
 
-  const content = buildBilingualText(entries);
+  const content = buildBilingualText(entries, options);
   const now = new Date();
   const filename = `bilingual-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}.txt`;
 
