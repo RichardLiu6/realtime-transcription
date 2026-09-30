@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { upload } from "@vercel/blob/client";
+import { uploadPresigned } from "@vercel/blob/client";
 import fixWebmDuration from "fix-webm-duration";
 import {
   addChunk,
@@ -16,7 +16,8 @@ import {
 // recording is switched on, MediaRecorder encodes Opus at 32 kbps (~15 MB
 // an hour); chunks go to IndexedDB every 5 s. Each start/stop is one
 // segment, uploaded when it ends — straight from the browser to the
-// private Blob store (or a local file on a dev server) — then registered
+// private Blob store through a presigned URL (or a local file on a dev
+// server) — then registered
 // with its place on the transcript timeline.
 
 const CHUNK_MS = 5000;
@@ -52,7 +53,7 @@ async function uploadSegment(meta: SegmentMeta, mode: RecordingsMode): Promise<v
 
   let url = "";
   if (mode === "blob") {
-    const result = await upload(pathname, blob, {
+    const result = await uploadPresigned(pathname, blob, {
       access: "private",
       handleUploadUrl: `/api/meetings/${meta.meetingId}/recordings/upload`,
       contentType,

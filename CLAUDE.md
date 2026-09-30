@@ -137,10 +137,10 @@ Central logic for the entire app:
 
 - Rules (decided with the owner): the recorder owns a meeting; they can share it by email (read-only); admins see only a content-free list (`/api/admin/saved-meetings`: owner, time, duration, sentences, audio size, share count); meetings are deleted 1 year after they start; audio is opt-in per meeting (off by default, consent `confirm`, red indicator while recording); text is always autosaved. Guests (meeting-code logins, `role: "guest"`) can't save.
 - `hooks/useMeetingAutosave.ts`: a meeting is created (`POST /api/meetings`) when a recording starts; every 3 s the finalized entries whose object changed go to `PUT /api/meetings/<id>/entries` (`toSavedEntry`, ≤ 200 per call) with speakers, settings and duration; also on tab hide (keepalive) and right after stopping. Stop/start continues the meeting; 新会议 (a transcript that had entries is cleared) ends it and the next recording starts a new one. An empty transcript never overwrites saved speakers.
-- `hooks/useMeetingRecorder.ts`: MediaRecorder on the hook's live `mediaStream` (Opus 32 kbps, webm; mp4 on Safari), 5 s chunks into IndexedDB (`lib/meetings/recordingCache.ts`). Each start/stop is a segment `meetings/<id>/<idx>.<ext>` with `offsetMs` = `getTranscriptTimeMs()` at its start; when it ends it is duration-fixed (`fix-webm-duration`), uploaded straight from the browser (`@vercel/blob/client` `upload()`, private, token from `/api/meetings/<id>/recordings/upload`; or `PUT …/recordings/local` on a dev server), registered (`POST …/recordings`), then removed from IndexedDB. Leftovers (crash, closed tab) upload on the next page load.
+- `hooks/useMeetingRecorder.ts`: MediaRecorder on the hook's live `mediaStream` (Opus 32 kbps, webm; mp4 on Safari), 5 s chunks into IndexedDB (`lib/meetings/recordingCache.ts`). Each start/stop is a segment `meetings/<id>/<idx>.<ext>` with `offsetMs` = `getTranscriptTimeMs()` at its start; when it ends it is duration-fixed (`fix-webm-duration`), uploaded straight from the browser (`@vercel/blob/client` `uploadPresigned()`, private, presigned URL from `/api/meetings/<id>/recordings/upload` via `issueSignedToken` + `handleUploadPresigned` — works with OIDC-connected stores, which have no read-write token; or `PUT …/recordings/local` on a dev server), registered (`POST …/recordings`), then removed from IndexedDB. Leftovers (crash, closed tab) upload on the next page load.
 - Timeline: a new recording starts 1 s after both the last sentence and the previous recording's audio (`useSonioxTranscription` start), so segments never overlap and `entry.startMs − segment.offsetMs` is the position in that segment's audio.
 - Pages: `/meetings` (own + shared, search over title and text incl. translations, empty meetings hidden) and `/meetings/[id]` (transcript with column picker for multilingual — localStorage `meetingLangs` —, click a time to play from there across segments, playing sentence highlighted; owner: title, speaker names, summary via `/api/summarize`, sharing, delete; export). Opened in a new tab from the status bar (save status link) and the user menu (我的会议), so the recording page keeps its state. Status bar: `components/MeetingSaveControls.tsx`.
-- Server: `lib/meetings/db.ts` (`pg` Pool + `attachDatabasePool`; `DATABASE_URL`/`POSTGRES_URL` from the Neon integration; tables created on first use), `repo.ts` (queries, access: owner / shared / none — none answers 404), `guard.ts`, `audio.ts` (Blob when `BLOB_READ_WRITE_TOKEN`, else local files outside Vercel; playback = redirect to a 1 h signed URL (`issueSignedToken` + `presignUrl`), local files served with Range). Recording pathnames are validated against the meeting (`recordingPath.ts`).
+- Server: `lib/meetings/db.ts` (`pg` Pool + `attachDatabasePool`; `DATABASE_URL`/`POSTGRES_URL` from the Neon integration; tables created on first use), `repo.ts` (queries, access: owner / shared / none — none answers 404), `guard.ts`, `audio.ts` (Blob when `BLOB_STORE_ID` (OIDC) or `BLOB_READ_WRITE_TOKEN`, else local files outside Vercel; playback = redirect to a 1 h signed URL (`issueSignedToken` + `presignUrl`), local files served with Range). Recording pathnames are validated against the meeting (`recordingPath.ts`).
 - Cleanup: Vercel Cron (`vercel.json`, daily) → `/api/cron/cleanup-meetings` (needs `CRON_SECRET`; public in middleware) deletes expired meetings and day-old empty ones with their audio.
 
 ### Presentation (projector) mode (`components/PresentationMode.tsx`)
@@ -167,12 +167,12 @@ Central logic for the entire app:
 | `/api/live` | GET/POST | Sharing available? / start sharing (new room + host key) |
 | `/api/live/[room]` | GET/POST/DELETE | Viewer poll (public) / host publish / stop sharing |
 | `/api/meetings` | GET/POST | My + shared meetings (`?q=`) / new meeting |
-| `/api/meetings/config` | GET | Saving available? recordings `blob` / `local` / null |
+| `/api/meetings/config` | GET | Saving available? recordings `blob` / `local` / null; admins also get `missing` env vars |
 | `/api/meetings/[id]` | GET/PATCH/DELETE | Meeting (owner or shared) / title, speakers, summary / delete with audio |
 | `/api/meetings/[id]/entries` | PUT | Autosave sentences + speakers + settings |
 | `/api/meetings/[id]/shares` | POST/DELETE | Share by email / unshare |
 | `/api/meetings/[id]/recordings` | POST | Register an uploaded segment |
-| `/api/meetings/[id]/recordings/upload` | POST | Blob client-upload token (private) |
+| `/api/meetings/[id]/recordings/upload` | POST | Presigned Blob upload URL (private) |
 | `/api/meetings/[id]/recordings/[idx]` | GET | Play: signed Blob URL redirect / local file with Range |
 | `/api/admin/saved-meetings` | GET | Admin: content-free list of meetings |
 | `/api/cron/cleanup-meetings` | GET | Daily cleanup (CRON_SECRET) |
@@ -220,7 +220,8 @@ T3PO_LATENCY_MODE=native     # low | native | high
 KV_REST_API_URL=...          # Upstash Redis (Vercel Marketplace) — live caption sharing; or UPSTASH_REDIS_REST_URL
 KV_REST_API_TOKEN=...        #   ...and its token; or UPSTASH_REDIS_REST_TOKEN
 DATABASE_URL=postgres://...  # Neon (Vercel Marketplace) — saved meetings; or POSTGRES_URL
-BLOB_READ_WRITE_TOKEN=...    # Vercel Blob (private store) — meeting audio
+BLOB_STORE_ID=...            # Vercel Blob (private store) — meeting audio; newer stores (OIDC auth, no token)
+BLOB_READ_WRITE_TOKEN=...    #   or this, on older stores
 CRON_SECRET=...              # Vercel Cron auth for /api/cron/cleanup-meetings
 JWT_SECRET=...               # JWT signing secret
 ADMIN_PASSWORD=...           # Admin login password

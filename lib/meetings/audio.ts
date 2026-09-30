@@ -1,6 +1,13 @@
-// Meeting recordings: files in a private Vercel Blob store (BLOB_READ_WRITE_TOKEN
-// from the Vercel integration); on a local server without Blob, files in a
-// local directory (development and tests). Server only.
+// Meeting recordings: files in a private Vercel Blob store; on a local
+// server without Blob, files in a local directory (development and tests).
+// Server only.
+//
+// A Blob store connected to the project authenticates one of two ways:
+// BLOB_READ_WRITE_TOKEN (older stores), or BLOB_STORE_ID plus the Vercel
+// OIDC token the platform provides at runtime (newer stores — no
+// read-write token at all). Everything here works with both: uploads use
+// presigned URLs (issueSignedToken), not client tokens (which need the
+// read-write token).
 
 import { promises as fs } from "fs";
 import os from "os";
@@ -10,7 +17,7 @@ import { del, issueSignedToken, presignUrl } from "@vercel/blob";
 export type AudioMode = "blob" | "local";
 
 export function audioMode(): AudioMode | null {
-  if (process.env.BLOB_READ_WRITE_TOKEN) return "blob";
+  if (process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID) return "blob";
   return process.env.VERCEL === "1" ? null : "local";
 }
 
