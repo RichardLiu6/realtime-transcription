@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import { useSonioxTranscription, defaultSpeakerLabel } from "@/hooks/useSonioxTranscription";
 import { useSpeakerManager, speakerDisplayName } from "@/hooks/useSpeakerManager";
 import { useLiveShare } from "@/hooks/useLiveShare";
+import { useMeetingAutosave } from "@/hooks/useMeetingAutosave";
+import { useMeetingRecorder } from "@/hooks/useMeetingRecorder";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
 import { useStoredState } from "@/lib/useStoredState";
 import { combineTerms, INDUSTRY_PRESETS } from "@/lib/contextTerms";
@@ -16,6 +18,7 @@ import TranscriptPanel from "@/components/TranscriptPanel";
 import PresentationPanel from "@/components/PresentationPanel";
 import PresentationMode, { usePresentationMode } from "@/components/PresentationMode";
 import LiveShareButton from "@/components/LiveShareButton";
+import MeetingSaveControls from "@/components/MeetingSaveControls";
 import MobileBottom from "@/components/mobile/MobileBottom";
 import DesktopTopBar from "@/components/desktop/DesktopTopBar";
 import DesktopFloatingBar from "@/components/desktop/DesktopFloatingBar";
@@ -165,6 +168,8 @@ export default function Home() {
     error,
     elapsedSeconds,
     audioAnalyser,
+    mediaStream,
+    getTranscriptTimeMs,
     start,
     stop,
     clearEntries,
@@ -234,6 +239,34 @@ export default function Home() {
   useEffect(() => {
     if (liveSharing && translationMode !== "presentation") stopLiveShare();
   }, [liveSharing, translationMode, stopLiveShare]);
+
+  // Saved meetings: the text is saved automatically once a recording
+  // starts; the audio only when switched on for this meeting (off by
+  // default, and off again for the next meeting)
+  const meetingSettings = useMemo(
+    () => ({ translationMode, languageA, languageB, targetLangs }),
+    [translationMode, languageA, languageB, targetLangs]
+  );
+  const autosave = useMeetingAutosave({
+    entries,
+    speakers,
+    settings: meetingSettings,
+    recording: recordingState === "recording",
+  });
+  const [archiveOn, setArchiveOn] = useState(false);
+  const [archivedMeeting, setArchivedMeeting] = useState<string | null>(null);
+  // A new meeting starts with the audio switch off
+  if (archivedMeeting !== autosave.meetingId) {
+    setArchivedMeeting(autosave.meetingId);
+    if (archivedMeeting !== null) setArchiveOn(false);
+  }
+  const recorder = useMeetingRecorder({
+    meetingId: autosave.meetingId,
+    stream: mediaStream,
+    enabled: archiveOn,
+    mode: autosave.recordingsMode,
+    getTranscriptTimeMs,
+  });
 
   // Projector view of the same state (button in the status bar, or F);
   // recording carries on across entering and leaving it
@@ -395,6 +428,22 @@ export default function Home() {
           onTranslationEngineChange={handleTranslationEngineChange}
           t3poEnabled={t3poEnabled}
           onPresent={presentation.enter}
+          meetingsLink={autosave.available}
+          saveControls={
+            autosave.available ? (
+              <MeetingSaveControls
+                status={autosave.status}
+                meetingId={autosave.meetingId}
+                canArchive={!!autosave.recordingsMode}
+                archiveOn={archiveOn}
+                onArchiveChange={setArchiveOn}
+                archiving={recorder.active}
+                uploading={recorder.uploading}
+                uploadFailed={recorder.failed}
+                unsupported={recorder.unsupported}
+              />
+            ) : undefined
+          }
           shareButton={
             translationMode === "presentation" && liveShare.available ? (
               <LiveShareButton

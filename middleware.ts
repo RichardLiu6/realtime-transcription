@@ -24,6 +24,8 @@ export async function middleware(request: NextRequest) {
     // host's publish / stop (POST, DELETE) still need a login
     pathname.startsWith("/live/") ||
     (pathname.startsWith("/api/live/") && request.method === "GET") ||
+    // Vercel Cron: the route checks CRON_SECRET itself
+    pathname.startsWith("/api/cron/") ||
     pathname === "/favicon.ico"
   ) {
     return NextResponse.next();
