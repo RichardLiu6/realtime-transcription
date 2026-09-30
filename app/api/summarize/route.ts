@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOpenRouter } from "@/lib/openrouter";
+import { openRouterUsage, trackUsage } from "@/lib/usage";
 
 // Via OpenRouter, from the same ≤ $0.5 / M pool as translation; the second
 // model (another vendor) covers a rate-limited first
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
       .join("\n");
 
     let completion;
+    let usedModel = SUMMARY_MODELS[0];
     for (const [i, model] of SUMMARY_MODELS.entries()) {
       try {
         completion = await getOpenRouter().chat.completions.create({
@@ -56,6 +58,7 @@ export async function POST(req: NextRequest) {
           // @ts-expect-error OpenRouter extension: skip thinking
           reasoning: { enabled: false },
         });
+        usedModel = model;
         break;
       } catch (error) {
         if (i === SUMMARY_MODELS.length - 1) throw error;
@@ -64,6 +67,7 @@ export async function POST(req: NextRequest) {
     }
 
     const summary = completion?.choices[0]?.message?.content?.trim() || "";
+    trackUsage(req, { kind: "summary", model: usedModel, ...openRouterUsage(completion?.usage) });
 
     return NextResponse.json({ summary });
   } catch (error) {
