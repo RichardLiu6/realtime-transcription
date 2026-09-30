@@ -1,5 +1,5 @@
-// Saved meetings: Postgres (Neon via the Vercel integration, or any
-// Postgres — a local server in development and tests). Server only.
+// Postgres (Neon via the Vercel integration, or any Postgres — a local
+// server in development and tests): saved meetings and usage. Server only.
 //
 // Tables are created on first use (CREATE ... IF NOT EXISTS), once per
 // instance; there are no other migrations yet.
@@ -75,6 +75,18 @@ CREATE TABLE IF NOT EXISTS meeting_shares (
   PRIMARY KEY (meeting_id, email)
 );
 CREATE INDEX IF NOT EXISTS meeting_shares_email ON meeting_shares (email);
+CREATE TABLE IF NOT EXISTS usage_monthly (
+  email text NOT NULL,
+  month text NOT NULL,
+  kind text NOT NULL,
+  model text NOT NULL DEFAULT '',
+  calls integer NOT NULL DEFAULT 0,
+  input_tokens bigint NOT NULL DEFAULT 0,
+  output_tokens bigint NOT NULL DEFAULT 0,
+  cost_usd numeric(14, 6) NOT NULL DEFAULT 0,
+  seconds bigint NOT NULL DEFAULT 0,
+  PRIMARY KEY (email, month, kind, model)
+);
 `;
 
 async function ready(): Promise<Pool> {

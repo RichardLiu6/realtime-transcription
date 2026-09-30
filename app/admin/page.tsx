@@ -22,6 +22,29 @@ const SUPPORTED_MODELS = [
   ...MODEL_POOL.map((m) => ({ value: m.id, label: `${m.label} · $${m.price}/M` })),
 ];
 
+interface UsageUser {
+  email: string;
+  sttSeconds: number;
+  translateCalls: number;
+  provisionalCalls: number;
+  summaryCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  llmCostUsd: number;
+  sttCostUsd: number;
+  totalUsd: number;
+  models: { model: string; calls: number; inputTokens: number; outputTokens: number; costUsd: number }[];
+}
+
+interface UsageResponse {
+  month: string;
+  months: string[];
+  users: UsageUser[];
+  sonioxUsdPerHour: number;
+}
+
+const usd = (n: number) => (n > 0 && n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`);
+
 interface SavedMeetingRow {
   ownerEmail: string;
   createdAt: string;
@@ -52,11 +75,6 @@ interface Meeting {
   active: boolean;
 }
 
-function getCurrentMonthKey(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
-
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -77,6 +95,16 @@ export default function AdminPage() {
   const [meetingHours, setMeetingHours] = useState("4");
   const [creatingMeeting, setCreatingMeeting] = useState(false);
   const [deactivating, setDeactivating] = useState<string | null>(null);
+
+  // Usage and cost per user and month (Postgres, lib/usage.ts)
+  const [usageMonth, setUsageMonth] = useState("");
+  const [usage, setUsage] = useState<UsageResponse | null>(null);
+  useEffect(() => {
+    fetch(`/api/admin/usage${usageMonth ? `?month=${usageMonth}` : ""}`)
+      .then((r) => r.json())
+      .then((d) => setUsage(d.available ? d : null))
+      .catch(() => {});
+  }, [usageMonth]);
 
   // Saved meetings: a content-free overview (who, when, how long, how big)
   const [savedMeetings, setSavedMeetings] = useState<SavedMeetingRow[] | null>(null);
@@ -240,7 +268,7 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-background px-4 py-8">
-      <div className="mx-auto max-w-lg space-y-8">
+      <div className="mx-auto max-w-2xl space-y-8">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-foreground">用户管理</h1>
           <div className="flex gap-2">
@@ -404,11 +432,6 @@ export default function AdminPage() {
           ) : (
             <div className="divide-y divide-border rounded-lg border border-border">
               {users.map((user) => {
-                const monthKey = getCurrentMonthKey();
-                const mu = user.usage?.[monthKey];
-                const sttMin = mu ? Math.round(mu.stt_seconds / 60) : 0;
-                const llmIn = mu?.llm_input_tokens ?? 0;
-                const llmOut = mu?.llm_output_tokens ?? 0;
                 return (
                   <div
                     key={user.email}
@@ -421,11 +444,6 @@ export default function AdminPage() {
                       <p className="text-xs text-muted-foreground truncate">
                         {user.email}
                       </p>
-                      {(sttMin > 0 || llmIn > 0) && (
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
-                          本月: 转录 {sttMin}分 · LLM {formatTokens(llmIn)}↑ {formatTokens(llmOut)}↓
-                        </p>
-                      )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0 ml-4">
                       <select
@@ -459,6 +477,95 @@ export default function AdminPage() {
             </div>
           )}
         </div>
+
+        {/* Usage and cost: translation cost as reported by OpenRouter,
+            transcription estimated from Soniox's list price */}
+        {usage && (
+          <div className="space-y-3" data-admin-usage>
+            <div className="flex items-end justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold">用量与费用</h2>
+                <p className="text-xs text-muted-foreground">
+                  翻译费用为 OpenRouter 返回的实际金额（含说话中的临时翻译和会议纪要）；转录按 Soniox ${usage.sonioxUsdPerHour}/小时估算。按 UTC 月份统计，2026 年 9 月起。
+                </p>
+              </div>
+              <select
+                value={usage.month}
+                onChange={(e) => setUsageMonth(e.target.value)}
+                aria-label="月份"
+                className="h-8 shrink-0 rounded border border-input bg-background px-2 text-xs"
+              >
+                {usage.months.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {usage.users.length === 0 ? (
+              <p className="text-sm text-muted-foreground">本月暂无用量</p>
+            ) : (
+              <div className="overflow-x-auto rounded-md border border-border">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50 text-left text-muted-foreground">
+                    <tr>
+                      <th className="px-2 py-1.5 font-medium">用户</th>
+                      <th className="px-2 py-1.5 text-right font-medium">转录</th>
+                      <th className="px-2 py-1.5 text-right font-medium" title="整句 / 临时 / 纪要">翻译调用</th>
+                      <th className="px-2 py-1.5 text-right font-medium" title="输入 / 输出">Tokens</th>
+                      <th className="px-2 py-1.5 text-right font-medium">翻译</th>
+                      <th className="px-2 py-1.5 text-right font-medium">转录≈</th>
+                      <th className="px-2 py-1.5 text-right font-medium">合计</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {usage.users.map((u) => (
+                      <tr key={u.email} data-usage-user={u.email}>
+                        <td
+                          className="max-w-36 truncate px-2 py-1.5"
+                          title={u.models
+                            .map((m) => `${m.model}: ${m.calls} 次, ${formatTokens(m.inputTokens)}↑ ${formatTokens(m.outputTokens)}↓, ${usd(m.costUsd)}`)
+                            .join("\n")}
+                        >
+                          {u.email === "guest" ? "访客（会议码）" : u.email}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">{Math.round(u.sttSeconds / 60)} 分</td>
+                        <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
+                          {u.translateCalls} / {u.provisionalCalls} / {u.summaryCalls}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
+                          {formatTokens(u.inputTokens)}↑ {formatTokens(u.outputTokens)}↓
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{usd(u.llmCostUsd)}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{usd(u.sttCostUsd)}</td>
+                        <td className="px-2 py-1.5 text-right font-medium tabular-nums">{usd(u.totalUsd)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="border-t border-border bg-muted/30 font-medium">
+                    <tr data-usage-total>
+                      <td className="px-2 py-1.5">合计</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {Math.round(usage.users.reduce((n, u) => n + u.sttSeconds, 0) / 60)} 分
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {usage.users.reduce((n, u) => n + u.translateCalls + u.provisionalCalls + u.summaryCalls, 0)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {formatTokens(usage.users.reduce((n, u) => n + u.inputTokens, 0))}↑{" "}
+                        {formatTokens(usage.users.reduce((n, u) => n + u.outputTokens, 0))}↓
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{usd(usage.users.reduce((n, u) => n + u.llmCostUsd, 0))}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{usd(usage.users.reduce((n, u) => n + u.sttCostUsd, 0))}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{usd(usage.users.reduce((n, u) => n + u.totalUsd, 0))}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground">鼠标停在用户上可以看到按模型的明细。</p>
+          </div>
+        )}
 
         {/* Saved meetings: overview only — titles, text and audio stay private */}
         {savedMeetings && (

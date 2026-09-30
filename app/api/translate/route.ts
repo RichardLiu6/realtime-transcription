@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOpenRouter } from "@/lib/openrouter";
 import { verifyToken } from "@/lib/auth";
-import { getUserModel, getDefaultModel, incrementUsage } from "@/lib/edge-config";
+import { getUserModel, getDefaultModel } from "@/lib/edge-config";
+import { openRouterUsage, trackUsage } from "@/lib/usage";
 import { FALLBACK_CHAIN, isSupportedModel, modelLabel } from "@/lib/models";
 import { jwtVerify } from "jose";
 
@@ -79,7 +80,12 @@ async function resolveModel(req: NextRequest, requestedModel?: string): Promise<
   if (authToken) {
     const payload = await verifyToken(authToken);
     if (payload?.email && typeof payload.email === "string") {
-      return getUserModel(payload.email);
+      // Edge Config unreachable: translate with the default model rather
+      // than not at all
+      return getUserModel(payload.email).catch((error) => {
+        console.error("User model lookup failed, using the default:", error instanceof Error ? error.message : error);
+        return getDefaultModel();
+      });
     }
   }
 
@@ -143,19 +149,11 @@ function multiContinuationMessage(c: Continuation, next: string, targetLangs: st
 // may stay — but the reader gets their meaning in brackets
 const SAME_LANGUAGE_RULES = `- A target language may be the same as the spoken language. For it, keep the utterance as said (do not paraphrase). Words or phrases from other languages may stay as spoken, but follow each one — on its first occurrence — with its meaning in that language in brackets, using the bracket style of that language (Chinese: full-width （）, others: ( )). Examples: "这个 batch 的 yield 太低了" → "这个 batch（批次）的 yield（良率）太低了"; "Vamos a revisar el budget" → "Vamos a revisar el budget (presupuesto)". Do not gloss acronyms or brand names normally written as-is in that language (FDA, Qwen)`;
 
-// Track usage asynchronously (fire-and-forget)
-function trackUsage(req: NextRequest, inputTokens: number, outputTokens: number) {
-  const authToken = req.cookies.get("auth_token")?.value;
-  if (authToken && (inputTokens > 0 || outputTokens > 0)) {
-    verifyToken(authToken).then((payload) => {
-      if (payload?.email && typeof payload.email === "string") {
-        incrementUsage(payload.email, {
-          llm_input_tokens: inputTokens,
-          llm_output_tokens: outputTokens,
-        }).catch(() => {});
-      }
-    }).catch(() => {});
-  }
+// Usage per user (lib/usage.ts): tokens and the cost OpenRouter reports,
+// provisional (partial-sentence) calls counted separately — they are most
+// of the calls
+function recordTranslation(req: NextRequest, model: string, provisional: boolean, usage: unknown) {
+  trackUsage(req, { kind: provisional ? "provisional" : "translate", model, ...openRouterUsage(usage) });
 }
 
 // Build context messages (shared between single and multi-target)
@@ -242,10 +240,7 @@ ${SPEECH_INPUT_RULES}`;
 
   const latencyMs = Date.now() - start;
   logTiming(model, latencyMs, r.usage, provisional);
-  // Provisional (partial-sentence) requests are not recorded: usage lives in
-  // Edge Config, which is rewritten wholesale per call and can't take the
-  // extra write rate. See incrementUsage in lib/edge-config.ts.
-  if (!provisional) trackUsage(req, r.usage?.prompt_tokens ?? 0, r.usage?.completion_tokens ?? 0);
+  recordTranslation(req, model, provisional, r.usage);
 
   return NextResponse.json({ translations, model, latencyMs });
 }
@@ -300,7 +295,7 @@ ${SPEECH_INPUT_RULES}`;
 
   const latencyMs = Date.now() - start;
   logTiming(model, latencyMs, r.usage, provisional);
-  if (!provisional) trackUsage(req, r.usage?.prompt_tokens ?? 0, r.usage?.completion_tokens ?? 0);
+  recordTranslation(req, model, provisional, r.usage);
 
   return NextResponse.json({
     translatedText,
@@ -349,7 +344,9 @@ function memoryPairs(memory: MemoryItem[] | undefined, src: string | undefined, 
   return pairs;
 }
 
-type PerTargetFn = (targetLang: string) => Promise<{ text: string; inputTokens: number; outputTokens: number }>;
+type PerTargetFn = (
+  targetLang: string
+) => Promise<{ text: string; inputTokens: number; outputTokens: number; costUsd: number }>;
 
 // Single- or multi-target via a dedicated translation model (Hy-MT): one call per target language, in parallel. Same response shape as
 // the chat-model paths.
@@ -367,8 +364,9 @@ async function handlePerTarget(
   const latencyMs = Date.now() - start;
   const inputTokens = results.reduce((n, r) => n + r.inputTokens, 0);
   const outputTokens = results.reduce((n, r) => n + r.outputTokens, 0);
+  const cost = results.reduce((n, r) => n + r.costUsd, 0);
   logTiming(model, latencyMs, { prompt_tokens: inputTokens, completion_tokens: outputTokens }, provisional);
-  if (!provisional) trackUsage(req, inputTokens, outputTokens);
+  recordTranslation(req, model, provisional, { prompt_tokens: inputTokens, completion_tokens: outputTokens, cost });
 
   if (multi) {
     const translations = Object.fromEntries(targetLangs.map((t, i) => [t, results[i].text]));
@@ -471,8 +469,7 @@ function hyMTTranslator(
     const r = await getOpenRouter().chat.completions.create(params as any);
     return {
       text: r.choices[0]?.message?.content?.trim() || "",
-      inputTokens: r.usage?.prompt_tokens ?? 0,
-      outputTokens: r.usage?.completion_tokens ?? 0,
+      ...openRouterUsage(r.usage),
     };
   };
 }

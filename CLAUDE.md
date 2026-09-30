@@ -21,7 +21,7 @@ npm run lint     # ESLint
 
 ## Tech Stack
 
-Next.js 16.3 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4 + shadcn/ui (Radix). Soniox stt-rt-v5 or Confucius4-R2T2 for real-time STT. Neon Postgres (`pg`) + Vercel Blob for saved meetings, Upstash Redis for live sharing. Translation and summary via OpenRouter (Seed / Gemini / GPT / DeepSeek / Qwen / Hy-MT; per-user, configured in admin). Vercel Edge Config for user database. jose for JWT. Resend for email OTP. Transcript rows are memoized (no virtualization).
+Next.js 16.3 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4 + shadcn/ui (Radix). Soniox stt-rt-v5 or Confucius4-R2T2 for real-time STT. Neon Postgres (`pg`) + Vercel Blob for saved meetings, Upstash Redis for live sharing. Translation and summary via OpenRouter (Seed / Gemini / GPT / DeepSeek / Qwen / Hy-MT; per-user, configured in admin). Vercel Edge Config for the user whitelist and assigned models. jose for JWT. Resend for email OTP. Transcript rows are memoized (no virtualization).
 
 ## Architecture
 
@@ -56,6 +56,13 @@ Audio goes directly from browser to the STT engine — the server never touches 
 - `/api/summarize` uses Seed 2.0 Mini, falling back to Gemini Flash-Lite.
 - **`/api/eval`** (preview deployments only, 404 elsewhere; preview URLs are behind Vercel Authentication so it skips the app login): runs a fixed zh/en/es sentence set (code-switching, unfinished speech, terms, multilingual columns, clause continuation) through each model via the real handler; `?models=a,b&rounds=2&cases=a,b`. Results are also logged as `[eval] case=… model=…` lines.
 - Every translation logs `[translate] model=… ms=… in=… out=… reasoning=…` to the Vercel runtime logs (reasoning > 0 means the model thought anyway).
+- If the user's assigned model can't be read (Edge Config down), the route translates with the default model instead of failing.
+
+### Usage and cost (`lib/usage.ts`, admin only)
+
+- Postgres `usage_monthly` (same database as saved meetings, created on first use): one row per user × UTC month × kind × model, incremented atomically (`INSERT … ON CONFLICT DO UPDATE`), written with Next's `after()` so it completes after the response. Emails lower-cased; meeting-code guests are `guest`.
+- Kinds: `translate` (sentence), `provisional` (partial-sentence re-translations — most of the calls), `summary`, each with input/output tokens and the exact USD cost OpenRouter returns in `usage.cost`; attributed to the model that answered (after fallback); Hy-MT sums its per-target calls. `stt`: Soniox seconds reported by the page on stop (`/api/usage`, capped at a day per report); its cost is estimated at display time ($0.12/h, `SONIOX_USD_PER_HOUR`).
+- Admin page 用量与费用: month picker, per user (most expensive first) transcription minutes, calls (整句 / 临时 / 纪要), tokens, translation cost, transcription estimate, total; per-model breakdown on hover; totals row. Users don't see usage. Counting started 2026-09; the old Edge Config `usage` (racy read-modify-write, no provisional calls, no cost) is no longer written.
 
 ### Streaming translation (translate while the sentence is spoken)
 
@@ -161,8 +168,8 @@ Central logic for the entire app:
 | `/api/soniox-token` | POST | 10-min ephemeral Soniox token |
 | `/api/r2t2-config` | GET/POST | R2T2 availability / connection details |
 | `/api/simul` | GET/POST | T3PO availability / one simultaneous-translation step |
-| `/api/usage` | POST | Record STT seconds (Soniox only) |
-| `/api/translate` | POST | LLM translation (single or multi-target; `provisional` requests skip usage tracking) |
+| `/api/usage` | POST | Record STT seconds (Soniox only; Postgres usage table) |
+| `/api/translate` | POST | LLM translation (single or multi-target; usage recorded per call, provisional separately) |
 | `/api/summarize` | POST | Meeting summary generation |
 | `/api/live` | GET/POST | Sharing available? / start sharing (new room + host key) |
 | `/api/live/[room]` | GET/POST/DELETE | Viewer poll (public) / host publish / stop sharing |
@@ -175,6 +182,7 @@ Central logic for the entire app:
 | `/api/meetings/[id]/recordings/upload` | POST | Presigned Blob upload URL (private) |
 | `/api/meetings/[id]/recordings/[idx]` | GET | Play: signed Blob URL redirect / local file with Range |
 | `/api/admin/saved-meetings` | GET | Admin: content-free list of meetings |
+| `/api/admin/usage` | GET | Admin: usage and cost per user (`?month=YYYY-MM`) |
 | `/api/cron/cleanup-meetings` | GET | Daily cleanup (CRON_SECRET) |
 | `/api/auth/send-code` | POST | Email OTP |
 | `/api/auth/verify-code` | POST | Verify OTP, issue JWT |
