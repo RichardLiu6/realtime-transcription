@@ -236,6 +236,8 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  // The live microphone stream while recording (for the meeting recorder)
+  const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1083,7 +1085,15 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     audioContextRef.current = null;
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
     mediaStreamRef.current = null;
+    setMediaStream(null);
   }, []);
+
+  // Transcript time now (ms): where audio recorded from this moment lines
+  // up with the entries' startMs / endMs
+  const getTranscriptTimeMs = useCallback(
+    () => timeOffsetMsRef.current + Math.round((samplesSentRef.current / TARGET_SAMPLE_RATE) * 1000),
+    []
+  );
 
   // Start recording
   const start = useCallback(
@@ -1098,9 +1108,12 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       stoppingRef.current = false;
       // Entry ids keep counting (only clearEntries resets them), so a new
       // recording appends to the transcript instead of overwriting entry-0…
+      // ...and continues the timeline after the previous recording's audio
+      // (not just its last sentence), so saved recordings never overlap
+      const previousEnd = timeOffsetMsRef.current + Math.round((samplesSentRef.current / TARGET_SAMPLE_RATE) * 1000);
       samplesSentRef.current = 0;
       const lastEnd = Math.max(0, ...Array.from(entriesRef.current.values()).map((e) => e.endMs || e.startMs || 0));
-      timeOffsetMsRef.current = entriesRef.current.size > 0 ? lastEnd + 1000 : 0;
+      timeOffsetMsRef.current = entriesRef.current.size > 0 ? Math.max(lastEnd, previousEnd) + 1000 : 0;
       if (entriesRef.current.size > 0) {
         recordingIndexRef.current++;
       } else {
@@ -1293,6 +1306,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
           setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
         }, 1000);
 
+        setMediaStream(stream);
         setRecordingState("recording");
       } catch (err) {
         console.error(`[${provider}] Failed to start:`, err);
@@ -1431,6 +1445,8 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     elapsedSeconds,
     config: configRef.current,
     audioAnalyser,
+    mediaStream,
+    getTranscriptTimeMs,
     start,
     stop,
     clearEntries,

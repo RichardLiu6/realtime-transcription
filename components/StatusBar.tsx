@@ -14,6 +14,7 @@ import {
   Settings2,
   ChevronDown,
   MonitorPlay,
+  FolderClock,
 } from "lucide-react";
 import {
   Popover,
@@ -49,6 +50,9 @@ interface StatusBarProps {
   onPresent?: () => void;
   // Live caption sharing button (multilingual mode only)
   shareButton?: ReactNode;
+  // Saved meetings: save status + audio switch, and the "My meetings" link
+  saveControls?: ReactNode;
+  meetingsLink?: boolean;
 }
 
 const LAYOUT_OPTIONS: { value: DesktopLayout; icon: typeof PanelLeft; label: TranslationKey }[] = [
@@ -147,6 +151,8 @@ export default function StatusBar({
   t3poEnabled = false,
   onPresent,
   shareButton,
+  saveControls,
+  meetingsLink = false,
 }: StatusBarProps) {
   const t = useT();
   const router = useRouter();
@@ -218,6 +224,7 @@ export default function StatusBar({
         </div>
 
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+          {saveControls}
           {shareButton}
           {onPresent && (
             <Tooltip>
@@ -378,6 +385,19 @@ export default function StatusBar({
               </PopoverTrigger>
               <PopoverContent side="bottom" align="end" className="w-52 p-1">
                 <p className="truncate px-2 py-1.5 text-xs text-muted-foreground">{userName}</p>
+                {meetingsLink && (
+                  // New tab: leaving this page would lose the live transcript
+                  <a
+                    href="/meetings"
+                    target="_blank"
+                    rel="noopener"
+                    data-meetings-link
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                  >
+                    <FolderClock className="size-3.5" aria-hidden />
+                    {t("my_meetings")}
+                  </a>
+                )}
                 {isAdmin && (
                   <button
                     type="button"

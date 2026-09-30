@@ -21,7 +21,7 @@ npm run lint     # ESLint
 
 ## Tech Stack
 
-Next.js 16.3 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4 + shadcn/ui (Radix). Soniox stt-rt-v5 or Confucius4-R2T2 for real-time STT. Translation and summary via OpenRouter (Seed / Gemini / GPT / DeepSeek / Qwen / Hy-MT; per-user, configured in admin). Vercel Edge Config for user database. jose for JWT. Resend for email OTP. Transcript rows are memoized (no virtualization).
+Next.js 16.3 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4 + shadcn/ui (Radix). Soniox stt-rt-v5 or Confucius4-R2T2 for real-time STT. Neon Postgres (`pg`) + Vercel Blob for saved meetings, Upstash Redis for live sharing. Translation and summary via OpenRouter (Seed / Gemini / GPT / DeepSeek / Qwen / Hy-MT; per-user, configured in admin). Vercel Edge Config for user database. jose for JWT. Resend for email OTP. Transcript rows are memoized (no virtualization).
 
 ## Architecture
 
@@ -87,7 +87,7 @@ Audio goes directly from browser to the STT engine — the server never touches 
 - Admin gets both tokens: access to main app + admin panel
 - Main page displays "admin" as username
 
-**Middleware** (`middleware.ts`): All routes require `auth_token` except `/login`, `/admin/login`, `/api/auth/*`, `/api/admin/auth`, `/api/eval` (404 outside preview deployments), and shared captions: `/live/*` and `GET /api/live/*`. Admin routes require `admin_token`.
+**Middleware** (`middleware.ts`): All routes require `auth_token` except `/login`, `/admin/login`, `/api/auth/*`, `/api/admin/auth`, `/api/eval` (404 outside preview deployments), shared captions (`/live/*` and `GET /api/live/*`) and `/api/cron/*` (checks `CRON_SECRET` itself). Admin routes require `admin_token`.
 
 ### Core Hook: useSonioxTranscription.ts
 
@@ -133,6 +133,16 @@ Central logic for the entire app:
 - Storage (`lib/live/store.ts`): Upstash Redis over REST (`/multi-exec`; `KV_REST_API_URL`/`KV_REST_API_TOKEN` from the Vercel integration, or `UPSTASH_REDIS_REST_*`). Per room a hash (latest entry per id + `_info`) and a list of batches (version = list length), written in one transaction; 24 h expiry refreshed by the heartbeat. Without Redis a local server keeps rooms in memory; on Vercel (`VERCEL=1`) sharing is then unavailable (`GET /api/live` → `available: false`, button hidden) — Vercel instances share no memory.
 - Translation happens once on the host (every column), so viewers cost nothing extra; a viewer can only pick languages the host has.
 
+### Saved meetings (text autosave + optional audio)
+
+- Rules (decided with the owner): the recorder owns a meeting; they can share it by email (read-only); admins see only a content-free list (`/api/admin/saved-meetings`: owner, time, duration, sentences, audio size, share count); meetings are deleted 1 year after they start; audio is opt-in per meeting (off by default, consent `confirm`, red indicator while recording); text is always autosaved. Guests (meeting-code logins, `role: "guest"`) can't save.
+- `hooks/useMeetingAutosave.ts`: a meeting is created (`POST /api/meetings`) when a recording starts; every 3 s the finalized entries whose object changed go to `PUT /api/meetings/<id>/entries` (`toSavedEntry`, ≤ 200 per call) with speakers, settings and duration; also on tab hide (keepalive) and right after stopping. Stop/start continues the meeting; 新会议 (a transcript that had entries is cleared) ends it and the next recording starts a new one. An empty transcript never overwrites saved speakers.
+- `hooks/useMeetingRecorder.ts`: MediaRecorder on the hook's live `mediaStream` (Opus 32 kbps, webm; mp4 on Safari), 5 s chunks into IndexedDB (`lib/meetings/recordingCache.ts`). Each start/stop is a segment `meetings/<id>/<idx>.<ext>` with `offsetMs` = `getTranscriptTimeMs()` at its start; when it ends it is duration-fixed (`fix-webm-duration`), uploaded straight from the browser (`@vercel/blob/client` `upload()`, private, token from `/api/meetings/<id>/recordings/upload`; or `PUT …/recordings/local` on a dev server), registered (`POST …/recordings`), then removed from IndexedDB. Leftovers (crash, closed tab) upload on the next page load.
+- Timeline: a new recording starts 1 s after both the last sentence and the previous recording's audio (`useSonioxTranscription` start), so segments never overlap and `entry.startMs − segment.offsetMs` is the position in that segment's audio.
+- Pages: `/meetings` (own + shared, search over title and text incl. translations, empty meetings hidden) and `/meetings/[id]` (transcript with column picker for multilingual — localStorage `meetingLangs` —, click a time to play from there across segments, playing sentence highlighted; owner: title, speaker names, summary via `/api/summarize`, sharing, delete; export). Opened in a new tab from the status bar (save status link) and the user menu (我的会议), so the recording page keeps its state. Status bar: `components/MeetingSaveControls.tsx`.
+- Server: `lib/meetings/db.ts` (`pg` Pool + `attachDatabasePool`; `DATABASE_URL`/`POSTGRES_URL` from the Neon integration; tables created on first use), `repo.ts` (queries, access: owner / shared / none — none answers 404), `guard.ts`, `audio.ts` (Blob when `BLOB_READ_WRITE_TOKEN`, else local files outside Vercel; playback = redirect to a 1 h signed URL (`issueSignedToken` + `presignUrl`), local files served with Range). Recording pathnames are validated against the meeting (`recordingPath.ts`).
+- Cleanup: Vercel Cron (`vercel.json`, daily) → `/api/cron/cleanup-meetings` (needs `CRON_SECRET`; public in middleware) deletes expired meetings and day-old empty ones with their audio.
+
 ### Presentation (projector) mode (`components/PresentationMode.tsx`)
 
 - Not the multilingual mode above: a full-screen caption view of the page's state for a meeting-room projector. Opened by the 演示模式 button in the status bar (the one bar every layout, incl. mobile, shows) or `F` (ignored while typing in a text field); Esc / F / the exit button close it. `usePresentationMode()` requests the Fullscreen API when available (else a full-viewport overlay) and leaves the mode when the browser leaves full screen (its Esc never reaches the page). Only displays: recording keeps running when entering or leaving; Start/Stop in the strip call the page's handlers.
@@ -156,6 +166,16 @@ Central logic for the entire app:
 | `/api/summarize` | POST | Meeting summary generation |
 | `/api/live` | GET/POST | Sharing available? / start sharing (new room + host key) |
 | `/api/live/[room]` | GET/POST/DELETE | Viewer poll (public) / host publish / stop sharing |
+| `/api/meetings` | GET/POST | My + shared meetings (`?q=`) / new meeting |
+| `/api/meetings/config` | GET | Saving available? recordings `blob` / `local` / null |
+| `/api/meetings/[id]` | GET/PATCH/DELETE | Meeting (owner or shared) / title, speakers, summary / delete with audio |
+| `/api/meetings/[id]/entries` | PUT | Autosave sentences + speakers + settings |
+| `/api/meetings/[id]/shares` | POST/DELETE | Share by email / unshare |
+| `/api/meetings/[id]/recordings` | POST | Register an uploaded segment |
+| `/api/meetings/[id]/recordings/upload` | POST | Blob client-upload token (private) |
+| `/api/meetings/[id]/recordings/[idx]` | GET | Play: signed Blob URL redirect / local file with Range |
+| `/api/admin/saved-meetings` | GET | Admin: content-free list of meetings |
+| `/api/cron/cleanup-meetings` | GET | Daily cleanup (CRON_SECRET) |
 | `/api/auth/send-code` | POST | Email OTP |
 | `/api/auth/verify-code` | POST | Verify OTP, issue JWT |
 | `/api/auth/me` | GET | Current user info (email, name, role) |
@@ -182,6 +202,7 @@ Central logic for the entire app:
 ├── <TranscriptPanel>        # Memoized rows (role=log); translation in a ruled, indented block,
 │                            #   upright and ≥ 4.5:1 contrast; <ReadyCard> when empty
 ├── <PresentationPanel>      # Multilingual table / cards (instead of TranscriptPanel); also the /live viewer
+├── <MeetingSaveControls>    # Status bar: save status (link to the meeting) + 录音存档 switch
 └── <PresentationMode>       # Full-screen projector captions (overlay, F / Esc)
 ```
 
@@ -198,6 +219,9 @@ T3PO_MODEL=Confucius4-T3PO   # Served model name
 T3PO_LATENCY_MODE=native     # low | native | high
 KV_REST_API_URL=...          # Upstash Redis (Vercel Marketplace) — live caption sharing; or UPSTASH_REDIS_REST_URL
 KV_REST_API_TOKEN=...        #   ...and its token; or UPSTASH_REDIS_REST_TOKEN
+DATABASE_URL=postgres://...  # Neon (Vercel Marketplace) — saved meetings; or POSTGRES_URL
+BLOB_READ_WRITE_TOKEN=...    # Vercel Blob (private store) — meeting audio
+CRON_SECRET=...              # Vercel Cron auth for /api/cron/cleanup-meetings
 JWT_SECRET=...               # JWT signing secret
 ADMIN_PASSWORD=...           # Admin login password
 RESEND_API_KEY=...           # Email OTP delivery

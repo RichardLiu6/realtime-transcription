@@ -22,6 +22,15 @@ const SUPPORTED_MODELS = [
   ...MODEL_POOL.map((m) => ({ value: m.id, label: `${m.label} · $${m.price}/M` })),
 ];
 
+interface SavedMeetingRow {
+  ownerEmail: string;
+  createdAt: string;
+  durationMs: number;
+  entryCount: number;
+  recordingBytes: number;
+  sharedWith: number;
+}
+
 interface MonthlyUsage {
   stt_seconds: number;
   llm_input_tokens: number;
@@ -68,6 +77,15 @@ export default function AdminPage() {
   const [meetingHours, setMeetingHours] = useState("4");
   const [creatingMeeting, setCreatingMeeting] = useState(false);
   const [deactivating, setDeactivating] = useState<string | null>(null);
+
+  // Saved meetings: a content-free overview (who, when, how long, how big)
+  const [savedMeetings, setSavedMeetings] = useState<SavedMeetingRow[] | null>(null);
+  useEffect(() => {
+    fetch("/api/admin/saved-meetings")
+      .then((r) => r.json())
+      .then((d) => setSavedMeetings(d.available ? d.meetings : null))
+      .catch(() => {});
+  }, []);
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -441,6 +459,50 @@ export default function AdminPage() {
             </div>
           )}
         </div>
+
+        {/* Saved meetings: overview only — titles, text and audio stay private */}
+        {savedMeetings && (
+          <div className="space-y-3" data-admin-saved-meetings>
+            <div>
+              <h2 className="text-sm font-semibold">已保存的会议</h2>
+              <p className="text-xs text-muted-foreground">
+                仅显示概况（发起人、时间、时长、大小），看不到标题、文字和录音；会议 1 年后自动删除。
+              </p>
+            </div>
+            {savedMeetings.length === 0 ? (
+              <p className="text-sm text-muted-foreground">暂无</p>
+            ) : (
+              <div className="overflow-x-auto rounded-md border border-border">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50 text-left text-muted-foreground">
+                    <tr>
+                      <th className="px-2 py-1.5 font-medium">发起人</th>
+                      <th className="px-2 py-1.5 font-medium">时间</th>
+                      <th className="px-2 py-1.5 font-medium">时长</th>
+                      <th className="px-2 py-1.5 font-medium">句数</th>
+                      <th className="px-2 py-1.5 font-medium">录音</th>
+                      <th className="px-2 py-1.5 font-medium">分享</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {savedMeetings.map((m, i) => (
+                      <tr key={i}>
+                        <td className="max-w-40 truncate px-2 py-1.5">{m.ownerEmail}</td>
+                        <td className="whitespace-nowrap px-2 py-1.5">{new Date(m.createdAt).toLocaleString("zh-CN")}</td>
+                        <td className="px-2 py-1.5 tabular-nums">{Math.round(m.durationMs / 60000)} 分</td>
+                        <td className="px-2 py-1.5 tabular-nums">{m.entryCount}</td>
+                        <td className="px-2 py-1.5 tabular-nums">
+                          {m.recordingBytes > 0 ? `${(m.recordingBytes / 1024 / 1024).toFixed(1)} MB` : "—"}
+                        </td>
+                        <td className="px-2 py-1.5 tabular-nums">{m.sharedWith || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
