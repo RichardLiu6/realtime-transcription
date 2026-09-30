@@ -179,8 +179,9 @@ interface PresentationModeProps {
   targetLangs: string[];
   recordingState: "idle" | "connecting" | "recording";
   elapsedSeconds: number;
-  onStart: () => void;
-  onStop: () => void;
+  // Absent for a shared-captions viewer: nothing to record
+  onStart?: () => void;
+  onStop?: () => void;
   onExit: () => void;
 }
 
@@ -510,12 +511,14 @@ export default function PresentationMode({
             <>
               <span className="size-2.5 shrink-0 rounded-full bg-red-500 recording-pulse" />
               <span className="sr-only">{t("recording_status")}</span>
-              <span className="font-mono font-semibold tabular-nums">
-                {minutes}:{seconds}
-              </span>
+              {onStop && (
+                <span className="font-mono font-semibold tabular-nums">
+                  {minutes}:{seconds}
+                </span>
+              )}
             </>
           )}
-          {isRecording ? (
+          {!onStart || !onStop ? null : isRecording ? (
             <button
               type="button"
               onClick={onStop}
