@@ -238,6 +238,10 @@ const en = {
   "meeting_share_bad_email": "Not a valid email",
   "meeting_share_own_email": "That's your own email",
   "meeting_read_only": "Shared with you — read only",
+
+  // Presentation mode, multilingual layouts
+  "view_stacked": "Stacked",
+  "view_columns": "Side by side",
 };
 
 export type TranslationKey = keyof typeof en;
@@ -453,6 +457,10 @@ const zh: Record<TranslationKey, string> = {
   "meeting_share_bad_email": "邮箱格式不对",
   "meeting_share_own_email": "不能分享给自己",
   "meeting_read_only": "他人分享给你（只读）",
+
+  // Presentation mode, multilingual layouts
+  "view_stacked": "上下排列",
+  "view_columns": "左右并排",
 };
 
 const es: Record<TranslationKey, string> = {
@@ -666,6 +674,10 @@ const es: Record<TranslationKey, string> = {
   "meeting_share_bad_email": "Correo no válido",
   "meeting_share_own_email": "Es su propio correo",
   "meeting_read_only": "Compartida con usted: solo lectura",
+
+  // Presentation mode, multilingual layouts
+  "view_stacked": "Apilado",
+  "view_columns": "En columnas",
 };
 
 const vi: Record<TranslationKey, string> = {
@@ -879,6 +891,10 @@ const vi: Record<TranslationKey, string> = {
   "meeting_share_bad_email": "Email không hợp lệ",
   "meeting_share_own_email": "Đó là email của bạn",
   "meeting_read_only": "Được chia sẻ với bạn — chỉ xem",
+
+  // Presentation mode, multilingual layouts
+  "view_stacked": "Xếp chồng",
+  "view_columns": "Song song",
 };
 
 const translations: Record<Locale, Record<TranslationKey, string>> = { en, zh, es, vi };
