@@ -92,6 +92,10 @@ const isTheme = (v: unknown): v is PresentTheme => v === "dark" || v === "contra
 const isView = (v: unknown): v is PresentView => v === "both" || v === "single" || v === "side";
 const isString = (v: unknown): v is string => typeof v === "string";
 const isBoolean = (v: unknown): v is boolean => typeof v === "boolean";
+const isStringList = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
+const NO_PICKS: string[] = [];
+// Multilingual: the original transcript, as one of the pickable lines
+const ORIGINAL = "original";
 
 // Typing in a field: F is a letter there, not the shortcut (a checkbox or
 // button takes no text, so F still works there)
@@ -294,8 +298,6 @@ export default function PresentationMode({
   const colors = THEMES[theme];
 
   const langs = meetingLanguages(translationMode, languageA, languageB, targetLangs, entries);
-  // Side by side needs exactly two languages (A left, B right)
-  const view: PresentView = storedView === "side" && langs.length !== 2 ? "both" : storedView;
   // "My language": the stored choice, else the interface language when the
   // meeting has it, else the second language (usually the translation)
   const lang = langs.includes(storedLang)
@@ -303,6 +305,34 @@ export default function PresentationMode({
     : langs.includes(locale)
       ? locale
       : (langs[1] ?? langs[0] ?? "en");
+
+  // Multilingual: any set of lines — the original and/or any columns —
+  // stacked under each other or side by side. Until picked, what the
+  // earlier one-language views showed.
+  const multi = translationMode === "presentation";
+  const [storedPicks, setPicks] = useStoredState("presentLangs", NO_PICKS, isStringList);
+  const pickOptions = multi ? [ORIGINAL, ...langs] : [];
+  const validPicks = pickOptions.filter((p) => storedPicks.includes(p));
+  const picks = !multi
+    ? []
+    : validPicks.length > 0
+      ? validPicks
+      : storedView === "single"
+        ? [lang]
+        : [ORIGINAL, lang];
+  const togglePick = (p: string) => {
+    const next = picks.includes(p) ? picks.filter((x) => x !== p) : pickOptions.filter((x) => picks.includes(x) || x === p);
+    if (next.length > 0) setPicks(next); // at least one line
+  };
+  // Side by side: exactly two languages (A left, B right); multilingual:
+  // 2–4 picked lines, one column each
+  const view: PresentView = multi
+    ? storedView === "side" && picks.length >= 2 && picks.length <= 4
+      ? "side"
+      : "both"
+    : storedView === "side" && langs.length !== 2
+      ? "both"
+      : storedView;
 
   // --- Controls: shown on activity, hidden after a few idle seconds
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -380,9 +410,86 @@ export default function PresentationMode({
 
   const items: ReactNode[] = [];
   let lastSpeaker: string | null = null;
+  // One multilingual line: the original, or a column (a sentence spoken in
+  // a single picked language shows as that language — sentenceIn)
+  const lineOf = (e: BilingualEntry, p: string): SentenceText | null => {
+    if (p === ORIGINAL) return originalOf(e);
+    if (picks.length === 1) return inLang(e, p);
+    const text = e.translations?.[p];
+    return text ? settled({ text, interim: "", provisional: !!e.translationProvisional, isOriginal: false }) : null;
+  };
+  // Multilingual columns: 3 → 85 %, 4 → 75 % of the chosen size
+  const columnScale = multi && view === "side" ? (picks.length >= 4 ? 0.75 : picks.length === 3 ? 0.85 : 1) : 1;
+  // Several translation lines under each other: say which is which
+  const labelLines = picks.filter((p) => p !== ORIGINAL).length > 1;
+  const translationStyle: CSSProperties = {
+    color: colors.translation,
+    fontSize: "0.9em",
+    borderLeft: `0.08em solid ${colors.rule}`,
+    paddingLeft: "0.5em",
+    marginTop: "0.1em",
+  };
+
   for (const e of visible) {
     let body: ReactNode = null;
-    if (view === "both") {
+    if (multi && picks.length === 1) {
+      const s = lineOf(e, picks[0]);
+      if (!s) continue;
+      body = (
+        <p data-present-text style={s.isOriginal ? undefined : { color: colors.translation }}>
+          <Caption s={s} colors={colors} />
+        </p>
+      );
+    } else if (multi && view === "side") {
+      const cells = picks.map((p) => lineOf(e, p));
+      if (cells.every((c) => !c)) continue;
+      // The speaker's own language column just repeats the original: muted,
+      // so the eye skips it (it stays there to keep the columns aligned)
+      const said = e.originalText;
+      body = (
+        <div className="grid" style={{ gridTemplateColumns: `repeat(${picks.length}, minmax(0, 1fr))`, columnGap: "2em" }}>
+          {cells.map((c, i) => {
+            const repeat = !!c && !c.isOriginal && e.isFinal && sameText(c.text, said);
+            return (
+              <p
+                key={picks[i]}
+                data-col={picks[i]}
+                data-same-as-original={repeat || undefined}
+                style={repeat ? { color: colors.muted } : c && !c.isOriginal ? { color: colors.translation } : undefined}
+              >
+                {c && <Caption s={c} colors={colors} />}
+              </p>
+            );
+          })}
+        </div>
+      );
+    } else if (multi) {
+      const original = picks.includes(ORIGINAL) ? originalOf(e) : null;
+      const lines = picks
+        .map((p) => ({ p, s: lineOf(e, p) }))
+        .filter(({ p, s }) => s && !(p !== ORIGINAL && original && sameText(s.text, original.text)));
+      if (lines.length === 0) continue;
+      body = (
+        <>
+          {lines.map(({ p, s }, i) =>
+            i === 0 && p === ORIGINAL ? (
+              <p key={p} data-present-original data-line={p}>
+                <Caption s={s!} colors={colors} />
+              </p>
+            ) : (
+              <p key={p} data-present-translation data-line={p} style={i === 0 ? { color: colors.translation } : translationStyle}>
+                {labelLines && (
+                  <span style={{ color: colors.muted, fontSize: "0.55em", marginRight: "0.6em", verticalAlign: "middle" }}>
+                    {p.toUpperCase()}
+                  </span>
+                )}
+                <Caption s={s!} colors={colors} />
+              </p>
+            )
+          )}
+        </>
+      );
+    } else if (view === "both") {
       const original = originalOf(e);
       const translation = translationOf(e);
       if (!original) continue;
@@ -454,13 +561,19 @@ export default function PresentationMode({
   const seconds = String(elapsedSeconds % 60).padStart(2, "0");
   const sizeIndex = FONT_SIZES.indexOf(fontSize);
 
-  const viewOptions = (["both", "single", "side"] as const)
-    .filter((v) => v !== "side" || langs.length === 2)
-    .map((v) => ({ value: v, label: t(VIEW_LABEL[v]) }));
-  // Which language: for one language, or the column shown under the
-  // original in multilingual mode
-  const showLanguagePicker =
-    langs.length > 1 && (view === "single" || (view === "both" && translationMode === "presentation"));
+  const viewOptions = multi
+    ? // One line needs no layout; columns for 2–4 lines
+      picks.length === 1
+      ? []
+      : ([
+          { value: "both", label: t("view_stacked") },
+          ...(picks.length <= 4 ? [{ value: "side", label: t("view_columns") }] : []),
+        ] as { value: PresentView; label: string }[])
+    : (["both", "single", "side"] as const)
+        .filter((v) => v !== "side" || langs.length === 2)
+        .map((v) => ({ value: v, label: t(VIEW_LABEL[v]) }));
+  // Which language: for the one-language view (multilingual picks lines)
+  const showLanguagePicker = !multi && langs.length > 1 && view === "single";
 
   const style = {
     backgroundColor: colors.bg,
@@ -578,7 +691,27 @@ export default function PresentationMode({
           onChange={setTheme}
         />
 
-        <Choice label={t("present_view")} value={view} options={viewOptions} onChange={setView} />
+        {multi && (
+          <div role="group" aria-label={t("present_language")} data-present-picks className="flex flex-wrap items-center gap-1">
+            <span className="mr-1 hidden text-xs opacity-80 xl:inline">{t("present_language")}</span>
+            {pickOptions.map((p) => (
+              <button
+                key={p}
+                type="button"
+                aria-pressed={picks.includes(p)}
+                data-pick={p}
+                onClick={() => togglePick(p)}
+                className="rounded-md border border-current/30 px-2 py-1 text-xs whitespace-nowrap hover:border-current aria-pressed:bg-[var(--p-text)] aria-pressed:text-[var(--p-bg)] aria-pressed:border-[var(--p-text)]"
+              >
+                {p === ORIGINAL ? t("original_text") : langName(p)}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {viewOptions.length > 0 && (
+          <Choice label={t("present_view")} value={view} options={viewOptions} onChange={setView} />
+        )}
 
         {showLanguagePicker && (
           <label className="flex items-center gap-1.5 text-xs">
@@ -627,22 +760,32 @@ export default function PresentationMode({
         <div
           className="mx-auto flex h-full w-full min-w-0 flex-col"
           style={{
-            fontSize: `${fontSize}px`,
+            // Columns get narrow: 3 and 4 columns scale the chosen size down
+            fontSize: `${Math.round(fontSize * columnScale)}px`,
             lineHeight: 1.45,
             // ~70 characters, and at most ~68% of a wide screen (BBC
             // subtitle guidance); the full width on a phone
-            maxWidth: view === "side" ? "calc(140ch + 2em)" : "min(70ch, max(68vw, min(100%, 640px)))",
+            maxWidth:
+              view === "side"
+                ? `calc(${multi ? picks.length * 70 : 140}ch + ${(multi ? picks.length - 1 : 1) * 2}em)`
+                : "min(70ch, max(68vw, min(100%, 640px)))",
           }}
         >
           {/* Side by side: which language is which, above the captions */}
           {view === "side" && (
             <div
               data-side-headers
-              className="grid shrink-0 grid-cols-2 font-semibold"
-              style={{ columnGap: "2em", fontSize: "max(14px, 0.45em)", color: colors.muted }}
+              className="grid shrink-0 font-semibold"
+              style={{
+                gridTemplateColumns: `repeat(${multi ? picks.length : 2}, minmax(0, 1fr))`,
+                columnGap: "2em",
+                fontSize: "max(14px, 0.45em)",
+                color: colors.muted,
+              }}
             >
-              <span>{langName(langs[0])}</span>
-              <span>{langName(langs[1])}</span>
+              {(multi ? picks : langs.slice(0, 2)).map((p) => (
+                <span key={p}>{p === ORIGINAL ? t("original_text") : langName(p)}</span>
+              ))}
             </div>
           )}
           <div
