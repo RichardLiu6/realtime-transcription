@@ -418,6 +418,8 @@ export default function PresentationMode({
     const text = e.translations?.[p];
     return text ? settled({ text, interim: "", provisional: !!e.translationProvisional, isOriginal: false }) : null;
   };
+  // Multilingual columns: 3 → 85 %, 4 → 75 % of the chosen size
+  const columnScale = multi && view === "side" ? (picks.length >= 4 ? 0.75 : picks.length === 3 ? 0.85 : 1) : 1;
   // Several translation lines under each other: say which is which
   const labelLines = picks.filter((p) => p !== ORIGINAL).length > 1;
   const translationStyle: CSSProperties = {
@@ -441,13 +443,24 @@ export default function PresentationMode({
     } else if (multi && view === "side") {
       const cells = picks.map((p) => lineOf(e, p));
       if (cells.every((c) => !c)) continue;
+      // The speaker's own language column just repeats the original: muted,
+      // so the eye skips it (it stays there to keep the columns aligned)
+      const said = e.originalText;
       body = (
         <div className="grid" style={{ gridTemplateColumns: `repeat(${picks.length}, minmax(0, 1fr))`, columnGap: "2em" }}>
-          {cells.map((c, i) => (
-            <p key={picks[i]} data-col={picks[i]} style={c && !c.isOriginal ? { color: colors.translation } : undefined}>
-              {c && <Caption s={c} colors={colors} />}
-            </p>
-          ))}
+          {cells.map((c, i) => {
+            const repeat = !!c && !c.isOriginal && e.isFinal && sameText(c.text, said);
+            return (
+              <p
+                key={picks[i]}
+                data-col={picks[i]}
+                data-same-as-original={repeat || undefined}
+                style={repeat ? { color: colors.muted } : c && !c.isOriginal ? { color: colors.translation } : undefined}
+              >
+                {c && <Caption s={c} colors={colors} />}
+              </p>
+            );
+          })}
         </div>
       );
     } else if (multi) {
@@ -747,7 +760,8 @@ export default function PresentationMode({
         <div
           className="mx-auto flex h-full w-full min-w-0 flex-col"
           style={{
-            fontSize: `${fontSize}px`,
+            // Columns get narrow: 3 and 4 columns scale the chosen size down
+            fontSize: `${Math.round(fontSize * columnScale)}px`,
             lineHeight: 1.45,
             // ~70 characters, and at most ~68% of a wide screen (BBC
             // subtitle guidance); the full width on a phone
