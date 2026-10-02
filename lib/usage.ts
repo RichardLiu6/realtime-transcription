@@ -3,9 +3,9 @@
 //
 // - translate / provisional / summary: one row per model; tokens and the
 //   exact cost OpenRouter reports with every response (`usage.cost`, USD)
-// - stt: seconds of Soniox audio; its cost is estimated at display time
-//   (list price per hour — context terms can make Soniox bill slightly
-//   differently)
+// - stt: seconds of Soniox audio reported by the page on stop. Shown with a
+//   list-price estimate only for months without Soniox's own per-user
+//   figures (lib/sonioxUsage.ts), which replace it from attribution on
 //
 // Rows are incremented atomically (INSERT … ON CONFLICT DO UPDATE), and
 // recorded with after() so the write completes after the response is sent.
@@ -13,6 +13,7 @@
 import { after, type NextRequest } from "next/server";
 import { verifyToken } from "@/lib/auth";
 import { meetingsAvailable, query } from "@/lib/meetings/db";
+import type { SonioxMonth } from "@/lib/sonioxUsage";
 
 export type UsageKind = "translate" | "provisional" | "summary" | "stt";
 
@@ -90,13 +91,34 @@ export interface UserUsage {
   inputTokens: number;
   outputTokens: number;
   llmCostUsd: number;
-  sttCostUsd: number; // estimate
+  sttCostUsd: number; // Soniox's figure, or the list-price estimate
   totalUsd: number;
   models: { model: string; calls: number; inputTokens: number; outputTokens: number; costUsd: number }[];
 }
 
-// Admin: one month, per user, most expensive first
-export async function usageForMonth(month: string): Promise<{ months: string[]; users: UserUsage[] }> {
+function emptyUser(email: string): UserUsage {
+  return {
+    email,
+    sttSeconds: 0,
+    translateCalls: 0,
+    provisionalCalls: 0,
+    summaryCalls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    llmCostUsd: 0,
+    sttCostUsd: 0,
+    totalUsd: 0,
+    models: [],
+  };
+}
+
+// Admin: one month, per user, most expensive first. With Soniox figures
+// for the month (`soniox.attributed`), transcription minutes and cost are
+// Soniox's, and requests without a user show as the email "" row.
+export async function usageForMonth(
+  month: string,
+  soniox: SonioxMonth | null = null
+): Promise<{ months: string[]; users: UserUsage[] }> {
   const [months, rows] = await Promise.all([
     query<{ month: string }>(`SELECT DISTINCT month FROM usage_monthly ORDER BY month DESC LIMIT 36`),
     query<{
@@ -114,19 +136,7 @@ export async function usageForMonth(month: string): Promise<{ months: string[]; 
   for (const r of rows) {
     let u = byUser.get(r.email);
     if (!u) {
-      u = {
-        email: r.email,
-        sttSeconds: 0,
-        translateCalls: 0,
-        provisionalCalls: 0,
-        summaryCalls: 0,
-        inputTokens: 0,
-        outputTokens: 0,
-        llmCostUsd: 0,
-        sttCostUsd: 0,
-        totalUsd: 0,
-        models: [],
-      };
+      u = emptyUser(r.email);
       byUser.set(r.email, u);
     }
     const inTok = Number(r.input_tokens);
@@ -152,17 +162,21 @@ export async function usageForMonth(month: string): Promise<{ months: string[]; 
       u.models.push({ model: r.model, calls: r.calls, inputTokens: inTok, outputTokens: outTok, costUsd: cost });
     }
   }
+  const actual = soniox?.attributed ? soniox.byRef : null;
+  if (actual) {
+    for (const email of actual.keys()) if (!byUser.has(email)) byUser.set(email, emptyUser(email));
+  }
   const users = Array.from(byUser.values()).map((u) => {
-    const sttCostUsd = (u.sttSeconds / 3600) * SONIOX_USD_PER_HOUR;
+    const billed = actual?.get(u.email);
+    const sttCostUsd = actual ? (billed?.costUsd ?? 0) : (u.sttSeconds / 3600) * SONIOX_USD_PER_HOUR;
     return {
       ...u,
+      sttSeconds: actual ? Math.round((billed?.audioMs ?? 0) / 1000) : u.sttSeconds,
       sttCostUsd,
       totalUsd: u.llmCostUsd + sttCostUsd,
       models: u.models.sort((a, b) => b.costUsd - a.costUsd),
     };
   });
   users.sort((a, b) => b.totalUsd - a.totalUsd);
-  const list = months.map((m) => m.month);
-  if (!list.includes(month)) list.unshift(month);
-  return { months: list.sort().reverse(), users };
+  return { months: months.map((m) => m.month), users };
 }

@@ -61,7 +61,8 @@ Audio goes directly from browser to the STT engine — the server never touches 
 ### Usage and cost (`lib/usage.ts`, admin only)
 
 - Postgres `usage_monthly` (same database as saved meetings, created on first use): one row per user × UTC month × kind × model, incremented atomically (`INSERT … ON CONFLICT DO UPDATE`), written with Next's `after()` so it completes after the response. Emails lower-cased; meeting-code guests are `guest`.
-- Kinds: `translate` (sentence), `provisional` (partial-sentence re-translations — most of the calls), `summary`, each with input/output tokens and the exact USD cost OpenRouter returns in `usage.cost`; attributed to the model that answered (after fallback); Hy-MT sums its per-target calls. `stt`: Soniox seconds reported by the page on stop (`/api/usage`, capped at a day per report); its cost is estimated at display time ($0.12/h, `SONIOX_USD_PER_HOUR`).
+- Kinds: `translate` (sentence), `provisional` (partial-sentence re-translations — most of the calls), `summary`, each with input/output tokens and the exact USD cost OpenRouter returns in `usage.cost`; attributed to the model that answered (after fallback); Hy-MT sums its per-target calls. `stt`: Soniox seconds reported by the page on stop (`/api/usage`, capped at a day per report); shown with a list-price estimate ($0.12/h, `SONIOX_USD_PER_HOUR`) only for months without Soniox's own figures.
+- **Soniox actual cost** (`lib/sonioxUsage.ts`): `/api/soniox-token` binds the user's email (lower-cased; guests `guest`) to each temporary key as `client_reference_id`, so Soniox's usage logs (`GET /v1/usage-logs`: per request, audio duration and exact `cost_usd`) say who transcribed. The logs reach only 91 days back (31-day windows), so they are copied into Postgres `soniox_usage` (one row per request uuid; `sync_state` remembers how far): daily by Vercel Cron (`/api/cron/sync-soniox-usage`) and when the admin table opens if the last copy is over 5 min old (re-reads 2 days of overlap). A month with requests carrying a user shows Soniox's minutes and cost per user, plus a 未标记转录 row for requests without one (before attribution started, Soniox console); earlier months keep the estimate with Soniox's month total beside it. If Soniox can't be read, the stored copy is shown with the error. `SONIOX_API_BASE_URL` overrides the API host (tests).
 - Admin page 用量与费用: month picker, per user (most expensive first) transcription minutes, calls (整句 / 临时 / 纪要), tokens, translation cost, transcription estimate, total; per-model breakdown on hover; totals row. Users don't see usage. Counting started 2026-09; the old Edge Config `usage` (racy read-modify-write, no provisional calls, no cost) is no longer written.
 
 ### Streaming translation (translate while the sentence is spoken)
@@ -185,6 +186,7 @@ Central logic for the entire app:
 | `/api/admin/saved-meetings` | GET | Admin: content-free list of meetings |
 | `/api/admin/usage` | GET | Admin: usage and cost per user (`?month=YYYY-MM`) |
 | `/api/cron/cleanup-meetings` | GET | Daily cleanup (CRON_SECRET) |
+| `/api/cron/sync-soniox-usage` | GET | Daily copy of Soniox usage logs (CRON_SECRET) |
 | `/api/auth/send-code` | POST | Email OTP |
 | `/api/auth/verify-code` | POST | Verify OTP, issue JWT |
 | `/api/auth/me` | GET | Current user info (email, name, role) |
@@ -231,7 +233,7 @@ KV_REST_API_TOKEN=...        #   ...and its token; or UPSTASH_REDIS_REST_TOKEN
 DATABASE_URL=postgres://...  # Neon (Vercel Marketplace) — saved meetings; or POSTGRES_URL
 BLOB_STORE_ID=...            # Vercel Blob (private store) — meeting audio; newer stores (OIDC auth, no token)
 BLOB_READ_WRITE_TOKEN=...    #   or this, on older stores
-CRON_SECRET=...              # Vercel Cron auth for /api/cron/cleanup-meetings
+CRON_SECRET=...              # Vercel Cron auth for /api/cron/* (meeting cleanup, Soniox usage copy)
 JWT_SECRET=...               # JWT signing secret
 ADMIN_PASSWORD=...           # Admin login password
 RESEND_API_KEY=...           # Email OTP delivery

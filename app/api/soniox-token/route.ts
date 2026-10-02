@@ -1,6 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { verifyToken } from "@/lib/auth";
+import { sonioxClientRef } from "@/lib/sonioxUsage";
 
-export async function POST() {
+// A 10-minute key for the browser's WebSocket. It carries the user's email
+// as client_reference_id, so Soniox's usage logs (lib/sonioxUsage.ts)
+// attribute each transcription's cost to them
+export async function POST(req: NextRequest) {
   try {
     const apiKey = process.env.SONIOX_API_KEY;
     if (!apiKey) {
@@ -10,8 +15,11 @@ export async function POST() {
       );
     }
 
+    const payload = await verifyToken(req.cookies.get("auth_token")?.value ?? "");
+    const email = typeof payload?.email === "string" ? payload.email : "";
+
     const res = await fetch(
-      "https://api.soniox.com/v1/auth/temporary-api-key",
+      `${process.env.SONIOX_API_BASE_URL || "https://api.soniox.com"}/v1/auth/temporary-api-key`,
       {
         method: "POST",
         headers: {
@@ -21,6 +29,7 @@ export async function POST() {
         body: JSON.stringify({
           usage_type: "transcribe_websocket",
           expires_in_seconds: 600,
+          ...(email ? { client_reference_id: sonioxClientRef(email) } : {}),
         }),
       }
     );
