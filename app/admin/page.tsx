@@ -41,6 +41,12 @@ interface UsageResponse {
   months: string[];
   users: UsageUser[];
   sonioxUsdPerHour: number;
+  stt?: {
+    source: "soniox" | "estimate";
+    sonioxTotalUsd: number | null;
+    syncedAt: string | null;
+    error: string | null;
+  };
 }
 
 const usd = (n: number) => (n > 0 && n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`);
@@ -479,14 +485,19 @@ export default function AdminPage() {
         </div>
 
         {/* Usage and cost: translation cost as reported by OpenRouter,
-            transcription estimated from Soniox's list price */}
+            transcription as billed by Soniox (its usage logs), or estimated
+            from its list price for months before per-user attribution */}
         {usage && (
           <div className="space-y-3" data-admin-usage>
             <div className="flex items-end justify-between gap-2">
               <div>
                 <h2 className="text-sm font-semibold">用量与费用</h2>
                 <p className="text-xs text-muted-foreground">
-                  翻译费用为 OpenRouter 返回的实际金额（含说话中的临时翻译和会议纪要）；转录按 Soniox ${usage.sonioxUsdPerHour}/小时估算。按 UTC 月份统计，2026 年 9 月起。
+                  翻译费用为 OpenRouter 返回的实际金额（含说话中的临时翻译和会议纪要）；
+                  {usage.stt?.source === "soniox"
+                    ? "转录时长和费用为 Soniox 用量记录中的实际值。"
+                    : `转录按 Soniox $${usage.sonioxUsdPerHour}/小时估算（这个月份还没有按用户的 Soniox 记录）。`}
+                  按 UTC 月份统计，2026 年 9 月起。
                 </p>
               </div>
               <select
@@ -514,7 +525,7 @@ export default function AdminPage() {
                       <th className="px-2 py-1.5 text-right font-medium" title="整句 / 临时 / 纪要">翻译调用</th>
                       <th className="px-2 py-1.5 text-right font-medium" title="输入 / 输出">Tokens</th>
                       <th className="px-2 py-1.5 text-right font-medium">翻译</th>
-                      <th className="px-2 py-1.5 text-right font-medium">转录≈</th>
+                      <th className="px-2 py-1.5 text-right font-medium">{usage.stt?.source === "soniox" ? "转录" : "转录≈"}</th>
                       <th className="px-2 py-1.5 text-right font-medium">合计</th>
                     </tr>
                   </thead>
@@ -527,7 +538,11 @@ export default function AdminPage() {
                             .map((m) => `${m.model}: ${m.calls} 次, ${formatTokens(m.inputTokens)}↑ ${formatTokens(m.outputTokens)}↓, ${usd(m.costUsd)}`)
                             .join("\n")}
                         >
-                          {u.email === "guest" ? "访客（会议码）" : u.email}
+                          {u.email === "guest"
+                            ? "访客（会议码）"
+                            : u.email === ""
+                              ? "未标记转录"
+                              : u.email}
                         </td>
                         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">{Math.round(u.sttSeconds / 60)} 分</td>
                         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
@@ -563,7 +578,15 @@ export default function AdminPage() {
                 </table>
               </div>
             )}
-            <p className="text-[11px] text-muted-foreground">鼠标停在用户上可以看到按模型的明细。</p>
+            <p className="text-[11px] text-muted-foreground" data-usage-stt-note>
+              鼠标停在用户上可以看到按模型的明细。
+              {usage.users.some((u) => u.email === "") && <> “未标记转录”是没有带用户的 Soniox 请求：按用户统计开始之前的，或在 Soniox 控制台里用的。</>}
+              {usage.stt?.source === "estimate" && usage.stt.sonioxTotalUsd !== null && usage.stt.sonioxTotalUsd > 0 && (
+                <> Soniox 本月实际账单 {usd(usage.stt.sonioxTotalUsd)}（未按用户区分）。</>
+              )}
+              {usage.stt?.syncedAt && <> Soniox 数据更新于 {new Date(usage.stt.syncedAt).toLocaleString("zh-CN")}。</>}
+              {usage.stt?.error && <span className="text-destructive"> Soniox 用量读取失败：{usage.stt.error}</span>}
+            </p>
           </div>
         )}
 

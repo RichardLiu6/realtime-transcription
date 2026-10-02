@@ -87,6 +87,19 @@ CREATE TABLE IF NOT EXISTS usage_monthly (
   seconds bigint NOT NULL DEFAULT 0,
   PRIMARY KEY (email, month, kind, model)
 );
+CREATE TABLE IF NOT EXISTS soniox_usage (
+  uuid text PRIMARY KEY,
+  client_ref text,
+  model text NOT NULL DEFAULT '',
+  end_time timestamptz NOT NULL,
+  audio_ms bigint NOT NULL DEFAULT 0,
+  cost_usd numeric(14, 6) NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS soniox_usage_end ON soniox_usage (end_time);
+CREATE TABLE IF NOT EXISTS sync_state (
+  key text PRIMARY KEY,
+  synced_to timestamptz NOT NULL
+);
 `;
 
 async function ready(): Promise<Pool> {
