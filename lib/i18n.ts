@@ -78,6 +78,7 @@ const en = {
   "preset_supplements": "Supplement Manufacturing",
   "preset_supplement_sales": "Supplement Sales",
   "preset_ecommerce": "E-commerce",
+  "preset_accounting": "Finance & Accounting",
 
   // Speakers
   "speakers": "Speakers",
@@ -303,6 +304,7 @@ const zh: Record<TranslationKey, string> = {
   "preset_supplements": "保健品生产",
   "preset_supplement_sales": "保健品销售",
   "preset_ecommerce": "跨境电商",
+  "preset_accounting": "财务",
 
   "speakers": "说话人",
   "rename_speaker": "修改说话人名字",
@@ -520,6 +522,7 @@ const es: Record<TranslationKey, string> = {
   "preset_supplements": "Fabricación de suplementos",
   "preset_supplement_sales": "Ventas de suplementos",
   "preset_ecommerce": "Comercio electrónico",
+  "preset_accounting": "Finanzas y contabilidad",
 
   "speakers": "Hablantes",
   "rename_speaker": "Renombrar hablante",
@@ -737,6 +740,7 @@ const vi: Record<TranslationKey, string> = {
   "preset_supplements": "Sản xuất thực phẩm bổ sung",
   "preset_supplement_sales": "Kinh doanh thực phẩm bổ sung",
   "preset_ecommerce": "Thương mại điện tử",
+  "preset_accounting": "Tài chính kế toán",
 
   "speakers": "Người nói",
   "rename_speaker": "Đổi tên người nói",
