@@ -121,6 +121,63 @@ export const INDUSTRY_PRESETS: Record<string, IndustryPreset> = {
       "断货=Stockout", "GMV", "ROI", "SKU", "FBA",
     ],
   },
+  // A US supplement manufacturer's finance team: US GAAP books and taxes,
+  // manufacturing cost accounting, plus China VAT / export for cross-border
+  // trade. English sides follow US usage. No pair whose English side is an
+  // everyday word with another meaning here (check, credit, account, aging,
+  // audit, voucher, interest): either side pulls a pair into the prompt, and
+  // Hy-MT applies pairs literally.
+  accounting: {
+    label: "财务 Finance & Accounting",
+    terms: [
+      ...COMPANY,
+      // 报表 / 科目
+      "财务报表=Financial Statements", "资产负债表=Balance Sheet", "利润表=Income Statement",
+      "损益表=Profit and Loss Statement", "现金流量表=Cash Flow Statement", "科目表=Chart of Accounts",
+      "总账=General Ledger", "明细账=Subsidiary Ledger", "会计分录=Journal Entry",
+      "试算平衡表=Trial Balance",
+      "资产=Assets", "负债=Liabilities", "所有者权益=Owner's Equity", "留存收益=Retained Earnings",
+      "营业收入=Revenue", "销售收入=Sales Revenue", "营业成本=Cost of Goods Sold", "COGS",
+      "毛利=Gross Profit", "毛利率=Gross Margin", "营业费用=Operating Expenses",
+      "销售费用=Selling Expenses", "管理费用=General and Administrative Expenses",
+      "研发费用=R&D Expenses", "财务费用=Financial Expenses", "营业利润=Operating Income",
+      "净利润=Net Income", "净利率=Net Margin", "EBITDA", "P&L",
+      // 往来 / 资金
+      "应收账款=Accounts Receivable", "应付账款=Accounts Payable", "AR", "AP",
+      "预付款=Prepayment", "预收账款=Advances from Customers", "账龄分析=Aging Report",
+      "坏账=Bad Debt", "坏账准备=Allowance for Doubtful Accounts",
+      "回款=Payment Collection", "对账=Reconciliation", "银行对账=Bank Reconciliation",
+      "对账单=Account Statement", "银行流水=Bank Statement", "现金流=Cash Flow",
+      "电汇=Wire Transfer", "信用证=Letter of Credit", "汇率=Exchange Rate",
+      "汇兑损益=Foreign Exchange Gain or Loss", "授信额度=Credit Line", "贷款=Loan",
+      "发票=Invoice", "开票=Invoicing", "付款申请=Payment Request",
+      "报销=Reimbursement", "费用报销单=Expense Report", "备用金=Petty Cash", "工资单=Payroll",
+      // 成本 / 存货 / 资产
+      "存货=Inventory", "原材料=Raw Materials", "在产品=Work in Process", "WIP",
+      "产成品=Finished Goods", "成本核算=Cost Accounting", "标准成本=Standard Cost",
+      "单位成本=Unit Cost", "直接材料=Direct Materials", "直接人工=Direct Labor",
+      "制造费用=Manufacturing Overhead", "成本差异=Cost Variance", "盘点=Physical Count",
+      "存货跌价=Inventory Write-down", "存货周转率=Inventory Turnover", "先进先出=FIFO",
+      "加权平均=Weighted Average", "固定资产=Fixed Assets", "折旧=Depreciation",
+      "摊销=Amortization", "资本支出=CapEx",
+      // 结账 / 预算 / 审计
+      "月结=Month-end Close", "年结=Year-end Close", "计提=Accrual",
+      "应计费用=Accrued Expenses", "权责发生制=Accrual Basis", "收付实现制=Cash Basis",
+      "预算=Budget", "预算差异=Budget Variance", "预测=Forecast", "同比=Year over Year",
+      "环比=Month over Month", "财年=Fiscal Year", "审计报告=Audit Report",
+      "内部控制=Internal Control", "会计准则=Accounting Standards", "美国通用会计准则=US GAAP",
+      "注册会计师=CPA",
+      // 美国税务
+      "报税=Tax Return", "销售税=Sales Tax", "使用税=Use Tax", "联邦税=Federal Tax",
+      "州税=State Tax", "企业所得税=Corporate Income Tax", "工资税=Payroll Tax",
+      "预扣税=Withholding Tax", "转售证明=Resale Certificate", "免税=Tax Exempt",
+      "W-9", "W-2", "1099", "EIN", "IRS",
+      // 中国税务 / 跨境
+      "增值税=VAT", "增值税专用发票=Special VAT Invoice", "进项税=Input VAT", "销项税=Output VAT",
+      "出口退税=Export Tax Rebate", "关税=Customs Duty", "转移定价=Transfer Pricing",
+      "关联交易=Related-party Transaction",
+    ],
+  },
 };
 
 // Generic presets, hidden while the app serves the supplement business.
