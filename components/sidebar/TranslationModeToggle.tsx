@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftRight, ArrowRight, Monitor } from "lucide-react";
+import { ArrowLeftRight, ArrowRight, Captions, Monitor } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { TranslationMode } from "@/types/bilingual";
 import { useT } from "@/lib/i18n";
@@ -33,7 +33,7 @@ export default function TranslationModeToggle({
         }}
         disabled={disabled}
         variant="outline"
-        className="w-full"
+        className="w-full items-stretch"
       >
         <ToggleGroupItem value="two_way" className="h-auto min-w-0 flex-1 flex-col gap-0.5 whitespace-normal px-1 py-1.5 text-center text-xs leading-tight">
           <ArrowLeftRight className="size-3.5" />
@@ -47,13 +47,19 @@ export default function TranslationModeToggle({
           <Monitor className="size-3.5" />
           {t("mode_presentation")}
         </ToggleGroupItem>
+        <ToggleGroupItem value="transcribe" className="h-auto min-w-0 flex-1 flex-col gap-0.5 whitespace-normal px-1 py-1.5 text-center text-xs leading-tight">
+          <Captions className="size-3.5" />
+          {t("mode_transcribe")}
+        </ToggleGroupItem>
       </ToggleGroup>
       <p className="mt-1.5 text-xs text-muted-foreground">
         {mode === "two_way"
           ? t("mode_between_desc")
           : mode === "one_way"
             ? t("mode_from_to_desc")
-            : t("mode_presentation_desc")}
+            : mode === "transcribe"
+              ? t("mode_transcribe_desc")
+              : t("mode_presentation_desc")}
       </p>
     </div>
   );

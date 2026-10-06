@@ -26,6 +26,8 @@ interface FromToLanguagesProps {
   onLanguageAChange: (codes: string[]) => void;
   onLanguageBChange: (code: string) => void;
   disabled?: boolean;
+  // 仅转录: only the spoken languages (hints for the speech engine)
+  sourceOnly?: boolean;
 }
 
 export default function FromToLanguages({
@@ -34,6 +36,7 @@ export default function FromToLanguages({
   onLanguageAChange,
   onLanguageBChange,
   disabled,
+  sourceOnly,
 }: FromToLanguagesProps) {
   const t = useT();
   const langName = useLanguageName();
@@ -81,7 +84,7 @@ export default function FromToLanguages({
       <div className="space-y-2">
         <div>
           <label className="mb-1 block text-xs text-muted-foreground">
-            {t("source_language")}
+            {t(sourceOnly ? "spoken_languages" : "source_language")}
           </label>
           <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
@@ -170,31 +173,35 @@ export default function FromToLanguages({
           </Popover>
         </div>
 
-        <div className="flex justify-center">
-          <ArrowDown className="size-4 text-muted-foreground" />
-        </div>
+        {!sourceOnly && (
+          <>
+            <div className="flex justify-center">
+              <ArrowDown className="size-4 text-muted-foreground" />
+            </div>
 
-        <div>
-          <label className="mb-1 block text-xs text-muted-foreground">
-            {t("target_language")}
-          </label>
-          <Select
-            value={languageB}
-            onValueChange={onLanguageBChange}
-            disabled={disabled}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SONIOX_LANGUAGES.map((lang) => (
-                <SelectItem key={lang.code} value={lang.code}>
-                  {langName(lang.code)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">
+                {t("target_language")}
+              </label>
+              <Select
+                value={languageB}
+                onValueChange={onLanguageBChange}
+                disabled={disabled}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SONIOX_LANGUAGES.map((lang) => (
+                    <SelectItem key={lang.code} value={lang.code}>
+                      {langName(lang.code)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

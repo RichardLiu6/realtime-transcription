@@ -326,13 +326,17 @@ export default function PresentationMode({
   };
   // Side by side: exactly two languages (A left, B right); multilingual:
   // 2–4 picked lines, one column each
-  const view: PresentView = multi
-    ? storedView === "side" && picks.length >= 2 && picks.length <= 4
-      ? "side"
-      : "both"
-    : storedView === "side" && langs.length !== 2
-      ? "both"
-      : storedView;
+  // Transcribe only: the original, nothing to arrange
+  const transcribeOnly = translationMode === "transcribe";
+  const view: PresentView = transcribeOnly
+    ? "both"
+    : multi
+      ? storedView === "side" && picks.length >= 2 && picks.length <= 4
+        ? "side"
+        : "both"
+      : storedView === "side" && langs.length !== 2
+        ? "both"
+        : storedView;
 
   // --- Controls: shown on activity, hidden after a few idle seconds
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -561,19 +565,21 @@ export default function PresentationMode({
   const seconds = String(elapsedSeconds % 60).padStart(2, "0");
   const sizeIndex = FONT_SIZES.indexOf(fontSize);
 
-  const viewOptions = multi
-    ? // One line needs no layout; columns for 2–4 lines
-      picks.length === 1
-      ? []
-      : ([
-          { value: "both", label: t("view_stacked") },
-          ...(picks.length <= 4 ? [{ value: "side", label: t("view_columns") }] : []),
-        ] as { value: PresentView; label: string }[])
-    : (["both", "single", "side"] as const)
-        .filter((v) => v !== "side" || langs.length === 2)
-        .map((v) => ({ value: v, label: t(VIEW_LABEL[v]) }));
+  const viewOptions = transcribeOnly
+    ? []
+    : multi
+      ? // One line needs no layout; columns for 2–4 lines
+        picks.length === 1
+        ? []
+        : ([
+            { value: "both", label: t("view_stacked") },
+            ...(picks.length <= 4 ? [{ value: "side", label: t("view_columns") }] : []),
+          ] as { value: PresentView; label: string }[])
+      : (["both", "single", "side"] as const)
+          .filter((v) => v !== "side" || langs.length === 2)
+          .map((v) => ({ value: v, label: t(VIEW_LABEL[v]) }));
   // Which language: for the one-language view (multilingual picks lines)
-  const showLanguagePicker = !multi && langs.length > 1 && view === "single";
+  const showLanguagePicker = !multi && !transcribeOnly && langs.length > 1 && view === "single";
 
   const style = {
     backgroundColor: colors.bg,

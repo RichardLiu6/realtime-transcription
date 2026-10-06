@@ -60,6 +60,9 @@ const en = {
   "mode_from_to_desc": "Fixed source language, translate to target",
   "mode_presentation": "Multilingual",
   "mode_presentation_desc": "Original transcript plus a translation into every selected language, side by side",
+  "mode_transcribe": "Transcribe",
+  "mode_transcribe_desc": "Transcript only, no translation",
+  "spoken_languages": "Spoken languages",
   "target_languages": "Translate into (one column each)",
 
   // Languages
@@ -288,6 +291,9 @@ const zh: Record<TranslationKey, string> = {
   "mode_from_to_desc": "固定源语言，翻译到目标语言",
   "mode_presentation": "多语言",
   "mode_presentation_desc": "原文转录 + 翻译成所选的每种语言，分列对照",
+  "mode_transcribe": "仅转录",
+  "mode_transcribe_desc": "只转写原文，不翻译",
+  "spoken_languages": "说话语言",
   "target_languages": "翻译成（每种一列）",
 
   "languages": "语言",
@@ -506,6 +512,9 @@ const es: Record<TranslationKey, string> = {
   "mode_from_to_desc": "Idioma de origen fijo, traducido al idioma de destino",
   "mode_presentation": "Multilingüe",
   "mode_presentation_desc": "Transcripción original más una traducción a cada idioma seleccionado, en columnas",
+  "mode_transcribe": "Solo transcribir",
+  "mode_transcribe_desc": "Solo la transcripción, sin traducción",
+  "spoken_languages": "Idiomas hablados",
   "target_languages": "Traducir a (una columna por idioma)",
 
   "languages": "Idiomas",
@@ -724,6 +733,9 @@ const vi: Record<TranslationKey, string> = {
   "mode_from_to_desc": "Ngôn ngữ nguồn cố định, dịch sang ngôn ngữ đích",
   "mode_presentation": "Đa ngôn ngữ",
   "mode_presentation_desc": "Bản ghi gốc kèm bản dịch sang từng ngôn ngữ đã chọn, đặt cạnh nhau",
+  "mode_transcribe": "Chỉ ghi lời",
+  "mode_transcribe_desc": "Chỉ ghi lại lời nói, không dịch",
+  "spoken_languages": "Ngôn ngữ nói",
   "target_languages": "Dịch sang (mỗi ngôn ngữ một cột)",
 
   "languages": "Ngôn ngữ",

@@ -87,7 +87,8 @@ export interface SonioxToken {
   source_language?: string;
 }
 
-export type TranslationMode = "two_way" | "one_way" | "presentation";
+// transcribe: the transcript only, nothing is translated
+export type TranslationMode = "two_way" | "one_way" | "presentation" | "transcribe";
 
 // Speech-to-text engine: Soniox cloud, or self-hosted NetEase Youdao Confucius4-R2T2
 export type SttProvider = "soniox" | "r2t2";

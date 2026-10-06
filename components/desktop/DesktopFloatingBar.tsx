@@ -148,8 +148,9 @@ export default function DesktopFloatingBar(props: DesktopFloatingBarProps) {
                 onLanguageBChange={props.onLanguageBChange}
                 disabled={isRecording}
               />
-            ) : props.translationMode === "one_way" ? (
+            ) : props.translationMode === "one_way" || props.translationMode === "transcribe" ? (
               <FromToLanguages
+                sourceOnly={props.translationMode === "transcribe"}
                 languageA={props.languageA}
                 languageB={props.languageB}
                 onLanguageAChange={props.onLanguageAChange}

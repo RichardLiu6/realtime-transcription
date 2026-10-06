@@ -98,8 +98,9 @@ export default function Sidebar({
             onLanguageBChange={onLanguageBChange}
             disabled={isRecording}
           />
-        ) : translationMode === "one_way" ? (
+        ) : translationMode === "one_way" || translationMode === "transcribe" ? (
           <FromToLanguages
+            sourceOnly={translationMode === "transcribe"}
             languageA={languageA}
             languageB={languageB}
             onLanguageAChange={onLanguageAChange}
