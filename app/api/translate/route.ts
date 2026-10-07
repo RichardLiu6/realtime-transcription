@@ -368,7 +368,7 @@ function formFits(pair: TermPair, lang: string): boolean {
 function splitTerms(terms: string[] | undefined): TermPair[] {
   const pairs: TermPair[] = [];
   for (const raw of terms ?? []) {
-    const forms = raw.split("=").map((x) => x.trim()).filter(Boolean);
+    const forms = raw.split("=").map((x) => x.trim()).filter(Boolean).slice(0, MAX_TERM_FORMS);
     const latinForms = forms.filter((f) => formLanguage(f) === "latin").length;
     for (const a of forms) for (const b of forms) if (a !== b) pairs.push({ source: a, target: b, latinForms });
   }
@@ -647,6 +647,14 @@ function describeFailure(
 // Single terms (names, acronyms) are few and always kept — they also help
 // the model repair misrecognized words, which by definition don't match.
 const MAX_SINGLE_TERMS = 60;
+// Bounds on what a request can send: an entry is one term in at most a few
+// languages (the term suggestions allow 5), short; and only so many pairs
+// are kept per sentence (pairs between forms grow with the square)
+const MAX_TERM_FORMS = 6;
+const MAX_TERM_ENTRY_LENGTH = 400;
+const MAX_TERMS_IN = 2000;
+const MAX_PAIRS = 200;
+const MAX_TEXT_LENGTH = 5000;
 
 function termOccurs(term: string, text: string): boolean {
   if (/^[\x20-\x7e]+$/.test(term)) {
@@ -661,11 +669,12 @@ function relevantTerms(terms: unknown, text: string): string[] | undefined {
   if (!Array.isArray(terms)) return undefined;
   const pairs: string[] = [];
   const singles: string[] = [];
-  for (const raw of terms) {
-    if (typeof raw !== "string" || !raw.trim()) continue;
+  for (const raw of terms.slice(0, MAX_TERMS_IN)) {
+    if (typeof raw !== "string" || !raw.trim() || raw.length > MAX_TERM_ENTRY_LENGTH) continue;
     const sides = raw.split("=").map((x) => x.trim()).filter(Boolean);
+    if (sides.length > MAX_TERM_FORMS) continue;
     if (sides.length >= 2) {
-      if (sides.some((side) => termOccurs(side, text))) pairs.push(raw);
+      if (pairs.length < MAX_PAIRS && sides.some((side) => termOccurs(side, text))) pairs.push(raw);
     } else if (singles.length < MAX_SINGLE_TERMS) {
       singles.push(raw);
     }
@@ -687,6 +696,10 @@ export async function POST(req: NextRequest) {
 
     if (!text || typeof text !== "string") {
       return NextResponse.json({ error: "Missing text" }, { status: 400 });
+    }
+    // A sentence (plus, in clause mode, what came before) is far shorter
+    if (text.length + (continuation?.sourceSoFar.length ?? 0) > MAX_TEXT_LENGTH) {
+      return NextResponse.json({ error: "Text too long" }, { status: 413 });
     }
     const terms = relevantTerms(rawTerms, continuation ? continuation.sourceSoFar + text : text);
 
