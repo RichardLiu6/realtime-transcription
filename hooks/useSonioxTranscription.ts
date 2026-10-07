@@ -7,6 +7,7 @@ import { SimulEngine } from "@/lib/t3po/engine";
 import { ClauseEngine } from "@/lib/clause/engine";
 import { getLocale, t } from "@/lib/i18n";
 import { singleTargetLanguage } from "@/lib/meetingLanguages";
+import { NativeSocket, nativeStt, type SocketLike } from "@/lib/native/stt";
 
 const TARGET_SAMPLE_RATE = 16000;
 
@@ -239,7 +240,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     entriesRef.current = entries;
   }, [entries]);
 
-  const wsRef = useRef<WebSocket | null>(null);
+  const wsRef = useRef<SocketLike | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   // The live microphone stream while recording (for the meeting recorder)
@@ -1192,6 +1193,11 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
           });
         }
 
+        // In the mobile app, native code captures the microphone and talks
+        // to the engine (so recording survives a locked screen); the page
+        // only gets the engine's messages
+        const native = nativeStt();
+
         // 2. Microphone
         // Browser voice processing is tuned for human listeners, not speech
         // recognition: it can suppress quiet or distant speakers, cancel
@@ -1199,36 +1205,58 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         // pump the level (Chrome ties auto-gain to echoCancellation). Raw
         // audio by default; the engines do their own noise handling.
         const processing = config.audioProcessing === true;
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: processing,
-            noiseSuppression: processing,
-            autoGainControl: processing,
-            sampleRate: TARGET_SAMPLE_RATE,
-          },
-        });
+        const stream = native
+          ? null
+          : await navigator.mediaDevices.getUserMedia({
+              audio: {
+                echoCancellation: processing,
+                noiseSuppression: processing,
+                autoGainControl: processing,
+                sampleRate: TARGET_SAMPLE_RATE,
+              },
+            });
         mediaStreamRef.current = stream;
 
         // 3. WebSocket
-        const ws = new WebSocket(wsUrl);
+        const ws: SocketLike = native
+          ? new NativeSocket(
+              native,
+              {
+                url: wsUrl,
+                openMessage,
+                sampleRate: TARGET_SAMPLE_RATE,
+                frameMs: FRAME_MS[provider],
+                audioProcessing: processing,
+                notificationTitle: "ABL Translate",
+                notificationText: t("native_recording_notice"),
+                ...(provider === "soniox" ? { keepaliveMessage: JSON.stringify({ type: "keepalive" }) } : {}),
+              },
+              (samples) => {
+                samplesSentRef.current = samples;
+              }
+            )
+          : new WebSocket(wsUrl);
         ws.binaryType = "arraybuffer";
         wsRef.current = ws;
 
         await new Promise<void>((resolve, reject) => {
+          // Native: the first start may wait for the microphone permission
           const timeout = setTimeout(() => {
             ws.close();
             reject(new Error(`${provider === "r2t2" ? "R2T2" : "Soniox"} connection timeout`));
-          }, 10000);
+          }, native ? 60000 : 10000);
 
           ws.onopen = () => {
             clearTimeout(timeout);
-            ws.send(openMessage);
+            // Native sends the opening message itself
+            if (!native) ws.send(openMessage);
             resolve();
           };
 
           ws.onerror = () => {
             clearTimeout(timeout);
-            reject(new Error(`${provider === "r2t2" ? "R2T2" : "Soniox"} WebSocket error`));
+            const nativeError = ws instanceof NativeSocket ? ws.errorMessage : null;
+            reject(new Error(nativeError ?? `${provider === "r2t2" ? "R2T2" : "Soniox"} WebSocket error`));
           };
         });
 
@@ -1271,7 +1299,16 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
           }
         };
 
-        // 4. Audio graph
+        // 4. Audio graph (browser only)
+        if (!stream) {
+          startedAtRef.current = Date.now();
+          setElapsedSeconds(0);
+          timerRef.current = setInterval(() => {
+            setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
+          }, 1000);
+          setRecordingState("recording");
+          return;
+        }
         const audioContext = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
         audioContextRef.current = audioContext;
 

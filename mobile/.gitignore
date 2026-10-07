@@ -1,0 +1,16 @@
+node_modules/
+# Capacitor copies these on sync
+ios/App/App/public/
+android/app/src/main/assets/public/
+ios/App/App/capacitor.config.json
+android/app/src/main/assets/capacitor.config.json
+# Build output and local settings
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+ios/App/build/
+ios/DerivedData/
+*.xcuserstate
+xcuserdata/

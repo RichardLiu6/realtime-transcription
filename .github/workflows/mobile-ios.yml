@@ -1,0 +1,33 @@
+# Compiles the iOS app (mobile/) for the simulator, unsigned: checks the
+# Swift code. Signed builds for TestFlight come from Xcode with the Apple
+# developer account (see mobile/README.md).
+name: Mobile · iOS
+
+on:
+  push:
+    paths: ["mobile/**", ".github/workflows/mobile-ios.yml"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install and sync
+        working-directory: mobile
+        run: |
+          npm ci
+          npx cap sync ios
+      - name: Build (simulator, unsigned)
+        working-directory: mobile/ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build | tail -40
+          exit ${PIPESTATUS[0]}
