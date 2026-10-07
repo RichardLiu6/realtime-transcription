@@ -261,3 +261,10 @@ VERCEL_TEAM_ID=...           # Vercel team
 | WebSocket disconnect | Shows error, recording stops (no auto-reconnect) |
 | AudioContext not 16kHz | Linear interpolation resampling on the main thread |
 | Next.js 16 Turbopack errors | `turbopack: {}` in next.config.ts |
+
+## Second Brain
+
+- `second-brain/TODO.md`（进行中的任务）、`DONE.md`（已完成）、`long-term.md`（长期事实，每条 2–3 行）；详细内容放 `docs/` 并从这些文件链接过去，second-brain 只放索引级摘要
+- 判断：会完成的 → TODO；不会完成/长期事实 → long-term；完成或过时 → 移到 DONE；不确定 → long-term
+- TODO 每项一个小节：`## #序号 [日期] 标题 — 状态`（无标记=待办、进行中、暂停）；序号全局递增不复用；超过 5–6 行把细节移到 docs/
+- 同一主题改原条目，不追加重复条目
