@@ -161,6 +161,13 @@ Central logic for the entire app:
 - Multilingual: a 语言 picker of lines instead — 原文 and/or any columns, at least one (localStorage `presentLangs`; until picked, what the old view showed: 原文 + the chosen language, or that language alone). One line = the one-language view (`sentenceIn`); several: 上下排列 (stacked under the original, a column identical to the original skipped, translation lines labelled with the language code when there are 2+) or 左右并排 (2–4 lines, one column each, with headers; 3 columns scale the chosen text size to 85 %, 4 to 75 %; the speaker's own-language cell, which repeats the original, is muted).
 - Captions are bottom-anchored (older sentences scroll off the top under a fade, the latest 30 rendered), left-aligned, `min(70ch, 68vw)` wide (BBC guidance), line height 1.45; provisional = dotted underline, live tail lighter. Settings in localStorage: `presentFontSize`, `presentTheme`, `presentView`, `presentLanguage`, `presentLangs`, `presentFinalOnly`.
 
+### Installable app (PWA)
+
+- `app/manifest.ts` (`/manifest.webmanifest`: standalone, icons in `public/icons/` incl. maskable), `public/apple-touch-icon.png` + `appleWebApp` metadata in `app/layout.tsx` (iPhone 添加到主屏幕), favicon from the same icon. Icons are generated (dark tile, "ABL", blue waveform).
+- `public/sw.js`, registered by `components/ServiceWorker.tsx` in production only: caches nothing; it only answers page loads that fail offline with a bilingual retry page. Needed for Chrome / Edge installability.
+- The manifest, `sw.js`, icons and apple-touch icon are public in middleware (browsers fetch them without cookies).
+- Plan beyond this (internal use, ~20 people): Electron desktop app (Windows + macOS: system audio + mic, floating captions, auto-update, download page) loading the live site; later Capacitor mobile shells (background recording; Android APK, iPhone via TestFlight internal testing).
+
 ### Idle screen
 
 `components/ReadyCard.tsx` (TranscriptPanel and PresentationPanel when there are no entries): 准备就绪 + mode and languages, a large Start button, one-line tips (terms presets, rename by clicking a name, F for presentation mode — hidden on touch screens). Text ≥ 4.5:1.

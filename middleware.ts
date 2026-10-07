@@ -26,7 +26,12 @@ export async function middleware(request: NextRequest) {
     (pathname.startsWith("/api/live/") && request.method === "GET") ||
     // Vercel Cron: the route checks CRON_SECRET itself
     pathname.startsWith("/api/cron/") ||
-    pathname === "/favicon.ico"
+    pathname === "/favicon.ico" ||
+    // Installable app: the browser fetches these without cookies
+    pathname === "/manifest.webmanifest" ||
+    pathname === "/sw.js" ||
+    pathname === "/apple-touch-icon.png" ||
+    pathname.startsWith("/icons/")
   ) {
     return NextResponse.next();
   }
