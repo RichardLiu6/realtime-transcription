@@ -152,7 +152,14 @@ export async function saveEntries(
         `INSERT INTO meeting_entries (meeting_id, id, start_ms, data)
          SELECT $1, e->>'id', COALESCE((e->>'startMs')::numeric::integer, 0), e
            FROM jsonb_array_elements($2::jsonb) e
-         ON CONFLICT (meeting_id, id) DO UPDATE SET start_ms = EXCLUDED.start_ms, data = EXCLUDED.data`,
+         ON CONFLICT (meeting_id, id) DO UPDATE SET
+           start_ms = EXCLUDED.start_ms,
+           -- Translations added later (补翻译) survive the recording page
+           -- re-saving the sentence without them; incoming ones win
+           data = CASE WHEN meeting_entries.data ? 'translations'
+             THEN EXCLUDED.data || jsonb_build_object('translations',
+               (meeting_entries.data->'translations') || COALESCE(EXCLUDED.data->'translations', '{}'::jsonb))
+             ELSE EXCLUDED.data END`,
         [id, JSON.stringify(entries)]
       );
     }

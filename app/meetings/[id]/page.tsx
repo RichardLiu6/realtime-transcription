@@ -11,6 +11,7 @@ import { triggerBilingualDownload } from "@/lib/exportBilingual";
 import { FALLBACK_SPEAKER_COLOR, speakerDisplayName } from "@/hooks/useSpeakerManager";
 import { formatClock, formatDate, formatDateTime } from "@/lib/meetings/format";
 import { fromSavedEntry, type MeetingDetail, type SavedEntry, type SavedSpeaker } from "@/lib/meetings/types";
+import BackfillTranslation from "@/components/meetings/BackfillTranslation";
 
 // One saved meeting: the transcript with its translations, the recording
 // (click a sentence's time to play from there; the playing sentence is
@@ -64,7 +65,16 @@ export default function MeetingPage() {
 
   // --- Languages shown ---
   const mode = meeting?.settings.translationMode;
-  const multi = mode === "presentation";
+  // Columns: multilingual meetings, and transcribe-only ones once 补翻译
+  // added translations
+  const multi =
+    mode === "presentation" ||
+    (mode === "transcribe" && !!meeting?.entries.some((e) => e.translations && Object.keys(e.translations).length > 0));
+  const canBackfill = !!meeting?.isOwner && (mode === "presentation" || mode === "transcribe");
+  const mergeTranslated = useCallback((updated: SavedEntry[]) => {
+    const byId = new Map(updated.map((e) => [e.id, e]));
+    setMeeting((m) => (m ? { ...m, entries: m.entries.map((e) => byId.get(e.id) ?? e) } : m));
+  }, []);
   const targetLangs = useMemo(() => {
     if (!meeting || !multi) return [];
     const fromSettings = meeting.settings.targetLangs ?? [];
@@ -382,6 +392,14 @@ export default function MeetingPage() {
               ) : (
                 <span />
               )}
+              {canBackfill && (
+                <BackfillTranslation
+                  meetingId={meeting.id}
+                  entries={entries}
+                  existing={targetLangs}
+                  onTranslated={mergeTranslated}
+                />
+              )}
               <button
                 type="button"
                 onClick={exportText}
@@ -577,6 +595,13 @@ function Sentence({
                 <p key={l} className="mt-1 border-l-2 border-gray-200 pl-2.5 leading-relaxed text-gray-800">
                   <span className="mr-1.5 text-xs text-gray-600">{langName(l)}</span>
                   {entry.translations[l]}
+                </p>
+              ) : entry.language === l && !showOriginal ? (
+                // Spoken in this language and not translated into it: the
+                // original is its text here
+                <p key={l} className="mt-1 border-l-2 border-gray-200 pl-2.5 leading-relaxed text-gray-800">
+                  <span className="mr-1.5 text-xs text-gray-600">{langName(l)}</span>
+                  {entry.originalText}
                 </p>
               ) : null
             )
