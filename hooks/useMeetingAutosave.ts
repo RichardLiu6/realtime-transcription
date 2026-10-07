@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { BilingualEntry, SpeakerInfo } from "@/types/bilingual";
 import { toSavedEntry, type MeetingSettings } from "@/lib/meetings/types";
 import type { RecordingsMode } from "@/hooks/useMeetingRecorder";
+import { isNativeApp } from "@/lib/native/stt";
 
 // Saved meetings, text part: a meeting is created when a recording starts
 // (the recorder needs its id) and every 3 s the finalized sentences that
@@ -34,7 +35,10 @@ export function useMeetingAutosave({ entries, speakers, settings, recording }: O
       .then((r) => r.json())
       .then((d) => {
         setAvailable(!!d.available);
-        setRecordingsMode(d.recordings === "blob" || d.recordings === "local" ? d.recordings : null);
+        // In the mobile app the microphone is native: no browser recording
+        // of the meeting audio (yet)
+        const mode = d.recordings === "blob" || d.recordings === "local" ? d.recordings : null;
+        setRecordingsMode(isNativeApp() ? null : mode);
       })
       .catch(() => {});
   }, []);

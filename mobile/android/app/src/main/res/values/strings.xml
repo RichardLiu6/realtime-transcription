@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ABL Translate</string>
+    <string name="title_activity_main">ABL Translate</string>
+    <string name="package_name">com.americanbestlife.translate</string>
+    <string name="custom_url_scheme">com.americanbestlife.translate</string>
+</resources>
