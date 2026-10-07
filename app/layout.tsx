@@ -16,6 +16,9 @@ const geistMono = Geist_Mono({
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // iOS zooms in on a focused field under 16px and the app's WebView can't
+  // pinch back out: no zoom (inputs are 16px on touch screens anyway)
+  maximumScale: 1,
   viewportFit: "cover",
   themeColor: "#ffffff",
 };

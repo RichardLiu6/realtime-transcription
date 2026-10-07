@@ -117,6 +117,15 @@ body {
   padding-right: env(safe-area-inset-right, 0px);
 }
 
+/* Touch screens: fields at 16px, so iOS doesn't zoom in when one is focused */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
 /* Listening dots animation */
 @keyframes listening-dot {
   0%, 80%, 100% {

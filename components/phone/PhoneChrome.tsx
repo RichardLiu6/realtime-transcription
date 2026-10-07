@@ -24,10 +24,9 @@ import {
   Square,
   X,
 } from "lucide-react";
-import TermsPanel from "@/components/sidebar/TermsPanel";
 import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
 import { LiveSharePanel } from "@/components/LiveShareButton";
-import { INDUSTRY_PRESETS } from "@/lib/contextTerms";
+import { INDUSTRY_PRESETS, presetLabel } from "@/lib/contextTerms";
 import { LOCALES, setLocale, useLocale, useT, type Locale, type TranslationKey } from "@/lib/i18n";
 import { formatDateTime } from "@/lib/meetings/format";
 import type { MeetingSummary } from "@/lib/meetings/types";
@@ -35,6 +34,7 @@ import type { BilingualEntry, CaptureSource, SpeakerInfo, SttProvider, Translati
 import type { MeetingSettingsSetters } from "@/lib/phoneModes";
 import type { SaveStatus } from "@/hooks/useMeetingAutosave";
 import MeetingSettings, { useMeetingSummary } from "./MeetingSettings";
+import PhoneTerms from "./PhoneTerms";
 import { BottomSheet, Row, SectionTitle, SideSheet } from "./parts";
 
 
@@ -119,7 +119,7 @@ export default function PhoneChrome(props: PhoneChromeProps) {
 
   const termsLabel = useMemo(() => {
     const names = Array.from(props.selectedPresets)
-      .map((k) => INDUSTRY_PRESETS[k] && t(`preset_${k}` as TranslationKey))
+      .map((k) => INDUSTRY_PRESETS[k] && presetLabel(k, INDUSTRY_PRESETS[k].label, t))
       .filter(Boolean);
     if (props.customTerms.length > 0) names.push(`+${props.customTerms.length}`);
     return names.length ? names.join(" · ") : t("ph_terms_none");
@@ -294,18 +294,14 @@ export default function PhoneChrome(props: PhoneChromeProps) {
       </BottomSheet>
 
       <BottomSheet open={sheet === "terms"} onOpenChange={(o) => setSheet(o ? "terms" : null)} title={t("terms")} tall>
-        <div className="-mx-5">
-          <TermsPanel
-            termsText={props.termsText}
-            onTermsTextChange={props.onTermsTextChange}
-            selectedPresets={props.selectedPresets}
-            onSelectedPresetsChange={props.onSelectedPresetsChange}
-            customTerms={props.customTerms}
-            onCustomTermsChange={props.onCustomTermsChange}
-            isRecording={isRecording}
-            inline
-          />
-        </div>
+        <PhoneTerms
+          onTermsTextChange={props.onTermsTextChange}
+          selectedPresets={props.selectedPresets}
+          onSelectedPresetsChange={props.onSelectedPresetsChange}
+          customTerms={props.customTerms}
+          onCustomTermsChange={props.onCustomTermsChange}
+          isRecording={isRecording}
+        />
       </BottomSheet>
 
       <BottomSheet open={sheet === "speakers"} onOpenChange={(o) => setSheet(o ? "speakers" : null)} title={t("speakers")}>
