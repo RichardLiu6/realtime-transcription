@@ -45,6 +45,17 @@ export function triggerBilingualDownload(entries: BilingualEntry[], options?: Ex
   const now = new Date();
   const filename = `bilingual-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}.txt`;
 
+  // Phones (and the iOS app, where a download link does nothing): the
+  // system share sheet — save to Files, send by WeChat or mail
+  const file = new File([content], filename, { type: "text/plain" });
+  const touch = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+  if (touch && navigator.canShare?.({ files: [file] })) {
+    navigator.share({ files: [file], title: filename }).catch(() => {
+      // cancelled by the user, or refused: nothing to do
+    });
+    return;
+  }
+
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

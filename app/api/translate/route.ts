@@ -201,7 +201,7 @@ ${SAME_LANGUAGE_RULES}
 ${SPEECH_INPUT_RULES}`;
 
   if (Array.isArray(terms) && terms.length > 0) {
-    systemPrompt += `\n\nTerminology — always use these translations when applicable:\n${terms.join(", ")}`;
+    systemPrompt += terminologyBlock(terms);
   }
   // Clause mode: each language's value is only the continuation
   if (continuation) {
@@ -272,7 +272,7 @@ Rules:
 ${SPEECH_INPUT_RULES}`;
 
   if (Array.isArray(terms) && terms.length > 0) {
-    systemPrompt += `\n\nTerminology — always use these translations when applicable:\n${terms.join(", ")}`;
+    systemPrompt += terminologyBlock(terms);
   }
 
   // Clause mode: translate only the next part of a partly translated sentence
@@ -313,18 +313,64 @@ interface MemoryItem {
   translations: Record<string, string>;
 }
 
+// Chat models: "a = b = c" lines are one term in several languages (the
+// industry packs are 中文=English; AI-suggested terms can have more). The
+// form in the target language is used; without one, the term is
+// translated normally — so a 中文=English pair doesn't put English into a
+// Vietnamese translation. Plain terms (names, brands) stay as written.
+function terminologyBlock(terms: string[]): string {
+  const groups: string[] = [];
+  const singles: string[] = [];
+  for (const raw of terms) {
+    const forms = raw.split("=").map((x) => x.trim()).filter(Boolean);
+    if (forms.length >= 2) groups.push(forms.join(" = "));
+    else if (forms.length === 1) singles.push(forms[0]);
+  }
+  let block = "";
+  if (groups.length > 0) {
+    block += `\n\nTerminology — each line is one term in different languages. When the text uses one of these forms, translate it with the form in the target language. If no form is in the target language, translate the term naturally into the target language; do not copy a form in another language.\n${groups.join("\n")}`;
+  }
+  if (singles.length > 0) {
+    block += `\n\nNames and terms to keep as written (spelling reference): ${singles.join(", ")}`;
+  }
+  return block;
+}
+
 interface TermPair {
   source: string;
   target: string;
+  // Forms in Latin script in this entry (several: can't tell which is English)
+  latinForms?: number;
 }
 
-// "a=b" entries become pairs, usable in either direction; plain terms are
+// Which script / language a term form is written in, for Hy-MT, whose
+// template takes one "X translates to Y" per term
+function formLanguage(form: string): "zh" | "ja" | "ko" | "vi" | "latin" | "other" {
+  if (/[\u3040-\u30ff]/.test(form)) return "ja";
+  if (/[\uac00-\ud7af]/.test(form)) return "ko";
+  if (/[\u3400-\u9fff]/.test(form)) return "zh";
+  if (/[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/i.test(form)) return "vi";
+  if (/^[\p{Script=Latin}\d\s.\-&'/()+%]+$/u.test(form)) return "latin";
+  return "other";
+}
+
+// Whether a form can stand as the translation into `lang`. Latin script is
+// only taken for English, and only when the entry has one Latin form
+// (中文=English); other Latin-script targets get no Hy-MT terminology.
+function formFits(pair: TermPair, lang: string): boolean {
+  const f = formLanguage(pair.target);
+  if (lang === "zh" || lang === "ja" || lang === "ko" || lang === "vi") return f === lang;
+  return lang === "en" && f === "latin" && (pair.latinForms ?? 1) === 1;
+}
+
+// "a=b(=c…)" entries become pairs between every two forms; plain terms are
 // not used
 function splitTerms(terms: string[] | undefined): TermPair[] {
   const pairs: TermPair[] = [];
   for (const raw of terms ?? []) {
-    const [a, b] = raw.split("=").map((x) => x.trim());
-    if (a && b) pairs.push({ source: a, target: b }, { source: b, target: a });
+    const forms = raw.split("=").map((x) => x.trim()).filter(Boolean).slice(0, MAX_TERM_FORMS);
+    const latinForms = forms.filter((f) => formLanguage(f) === "latin").length;
+    for (const a of forms) for (const b of forms) if (a !== b) pairs.push({ source: a, target: b, latinForms });
   }
   return pairs;
 }
@@ -404,7 +450,9 @@ function hyMTPrompt(
   const zh = sourceLang === "zh" || targetLang === "zh" || /[\u4e00-\u9fff]/.test(text);
   const lang = hyMTLanguageName(targetLang, zh);
   const lower = text.toLowerCase();
-  const terms = termPairs.filter((p) => lower.includes(p.source.toLowerCase())).slice(0, 20);
+  const terms = termPairs
+    .filter((p) => lower.includes(p.source.toLowerCase()) && formFits(p, targetLang))
+    .slice(0, 20);
   const history = memoryPairs(memory, sourceLang, targetLang);
 
   if (continuation) {
@@ -599,6 +647,14 @@ function describeFailure(
 // Single terms (names, acronyms) are few and always kept — they also help
 // the model repair misrecognized words, which by definition don't match.
 const MAX_SINGLE_TERMS = 60;
+// Bounds on what a request can send: an entry is one term in at most a few
+// languages (the term suggestions allow 5), short; and only so many pairs
+// are kept per sentence (pairs between forms grow with the square)
+const MAX_TERM_FORMS = 6;
+const MAX_TERM_ENTRY_LENGTH = 400;
+const MAX_TERMS_IN = 2000;
+const MAX_PAIRS = 200;
+const MAX_TEXT_LENGTH = 5000;
 
 function termOccurs(term: string, text: string): boolean {
   if (/^[\x20-\x7e]+$/.test(term)) {
@@ -613,11 +669,12 @@ function relevantTerms(terms: unknown, text: string): string[] | undefined {
   if (!Array.isArray(terms)) return undefined;
   const pairs: string[] = [];
   const singles: string[] = [];
-  for (const raw of terms) {
-    if (typeof raw !== "string" || !raw.trim()) continue;
+  for (const raw of terms.slice(0, MAX_TERMS_IN)) {
+    if (typeof raw !== "string" || !raw.trim() || raw.length > MAX_TERM_ENTRY_LENGTH) continue;
     const sides = raw.split("=").map((x) => x.trim()).filter(Boolean);
+    if (sides.length > MAX_TERM_FORMS) continue;
     if (sides.length >= 2) {
-      if (sides.some((side) => termOccurs(side, text))) pairs.push(raw);
+      if (pairs.length < MAX_PAIRS && sides.some((side) => termOccurs(side, text))) pairs.push(raw);
     } else if (singles.length < MAX_SINGLE_TERMS) {
       singles.push(raw);
     }
@@ -639,6 +696,10 @@ export async function POST(req: NextRequest) {
 
     if (!text || typeof text !== "string") {
       return NextResponse.json({ error: "Missing text" }, { status: 400 });
+    }
+    // A sentence (plus, in clause mode, what came before) is far shorter
+    if (text.length + (continuation?.sourceSoFar.length ?? 0) > MAX_TEXT_LENGTH) {
+      return NextResponse.json({ error: "Text too long" }, { status: 413 });
     }
     const terms = relevantTerms(rawTerms, continuation ? continuation.sourceSoFar + text : text);
 
