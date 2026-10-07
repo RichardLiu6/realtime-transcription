@@ -755,14 +755,16 @@ export default function PresentationMode({
           className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-current/30 px-2.5 py-1 text-xs hover:border-current"
         >
           <X className="size-3.5" />
-          <span>{t("present_exit")}</span>
+          {/* No Esc key on a phone */}
+          <span className="pointer-coarse:hidden">{t("present_exit")}</span>
+          <span className="hidden pointer-coarse:inline">{t("present_exit_touch")}</span>
         </button>
       </div>
 
       {/* Captions: anchored to the bottom, so the live sentence stays in
           one place and older ones scroll off the top (faded). The column
           is ~70 characters wide (in the caption font), left-aligned. */}
-      <div className="flex min-h-0 flex-1 overflow-hidden" style={{ padding: "4vh max(16px, 4vw)" }}>
+      <div className="flex min-h-0 flex-1 overflow-hidden" style={{ padding: "4vh max(16px, 4vw) calc(4vh + env(safe-area-inset-bottom, 0px))" }}>
         <div
           className="mx-auto flex h-full w-full min-w-0 flex-col"
           style={{

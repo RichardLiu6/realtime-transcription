@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { ArrowLeft, AudioLines, Search, Users } from "lucide-react";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
 import { useLocale, useT } from "@/lib/i18n";
 import { formatClock, formatDateTime } from "@/lib/meetings/format";
 import type { MeetingSummary } from "@/lib/meetings/types";
+
+const noSubscribe = () => () => {};
+// Inside the phone layout's meeting viewer (a frame over the recording
+// page), which has its own close button
+const isEmbedded = () => window.self !== window.top;
 
 // My meetings: the user's saved meetings and those shared with them,
 // newest first, with a search over titles and text
@@ -16,6 +21,7 @@ export default function MeetingsPage() {
   const [search, setSearch] = useState("");
   const [meetings, setMeetings] = useState<MeetingSummary[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const embedded = useSyncExternalStore(noSubscribe, isEmbedded, () => false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -45,10 +51,14 @@ export default function MeetingsPage() {
     <div className="min-h-dvh bg-background">
       <header className="safe-top safe-x sticky top-0 z-10 border-b border-border bg-background">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 px-4 py-2">
-          <Link href="/" className="inline-flex items-center gap-1 text-sm text-gray-700 hover:text-foreground">
-            <ArrowLeft className="size-4" aria-hidden />
-            {t("back_to_app")}
-          </Link>
+          {embedded ? (
+            <span />
+          ) : (
+            <Link href="/" className="inline-flex items-center gap-1 text-sm text-gray-700 hover:text-foreground">
+              <ArrowLeft className="size-4" aria-hidden />
+              {t("back_to_app")}
+            </Link>
+          )}
           <LanguageSwitcher />
         </div>
       </header>

@@ -169,6 +169,13 @@ Central logic for the entire app:
 - **Mobile app** (`mobile/`, see `mobile/README.md`): Capacitor 8 shell loading the live site; internal use (~20 people): Android APK from GitHub Actions, iPhone via TestFlight internal testing. Native plugin `NativeStt` (Swift / Java) owns the microphone and the engine WebSocket, so recording continues with the screen locked (iOS background audio; Android foreground service type microphone + wake lock). Web side `lib/native/stt.ts`: `nativeStt()` detects the app; `NativeSocket` looks like a WebSocket to the hook (native sends the open message and audio; the page gets numbered engine messages and fills gaps with `drain()` after being suspended; `progress` gives the samples sent for the timeline; Soniox gets a keepalive while no audio flows). In the app the hook skips getUserMedia / AudioWorklet, and 录音存档 is hidden. `mobile/` is excluded from tsconfig, ESLint and Vercel (`.vercelignore`). Workflows `.github/workflows/mobile-android.yml` (APK artifact) and `mobile-ios.yml` (unsigned simulator build).
 - Next: Electron desktop app (Windows + macOS: system audio + mic, floating captions, auto-update, download page).
 
+### Phone layout (`components/phone/`)
+
+- Below `lg` the status bar and desktop bars are hidden; `PhoneChrome` wraps the transcript panel. One main button per screen: a big start button when there is nothing yet, stop (with the timer) while recording, 继续录音 / 导出 / 新会议 / 更多 after stopping.
+- Three modes in 会议设置 instead of four: 互译 = two_way with 2 languages, presentation with 3+ (adding or removing a language switches; `applyMutual`), 单向翻译 = one_way (target defaults to the interface language), 纯转录 = transcribe. A scene hint (面对面对话 / 多人会议 / 听讲 / 只记录) says what will happen. Settings are locked while recording.
+- Sidebar (☰): 新会议, saved meetings (`/api/meetings`, grouped today / this week / earlier; hidden for guests), the current meeting on top, settings & account at the bottom. A meeting opens in `MeetingViewer` (an iframe of `/meetings/<id>` over the page, so a recording continues); `/meetings` hides its "back" link when framed.
+- Export on touch devices uses the system share sheet (`navigator.share` with the file; the iOS app's WebView ignores download links), else the download.
+
 ### Idle screen
 
 `components/ReadyCard.tsx` (TranscriptPanel and PresentationPanel when there are no entries): 准备就绪 + mode and languages, a large Start button, one-line tips (terms presets, rename by clicking a name, F for presentation mode — hidden on touch screens). Text ≥ 4.5:1.
@@ -218,7 +225,11 @@ Central logic for the entire app:
 │   ├── <BetweenLanguages> / <FromToLanguages>
 │   ├── <TermsPanel>         # Context terms with preset categories
 │   └── <SpeakerPanel>       # Speaker rename + word count
-├── <MobileSidebarDrawer>    # Mobile sheet wrapper
+├── <PhoneChrome>            # Phone layout (< lg; components/phone/): ☰ sidebar (new meeting, saved
+│                            #   meetings opened in an in-app frame, settings & account), language pill →
+│                            #   会议设置 (互译 / 单向翻译 / 纯转录; lib/phoneModes.ts maps them onto the four
+│                            #   modes), big start button, stop + timer, 更多 (present, terms, speakers,
+│                            #   share, audio archive). Desktop: renders only the transcript panel
 ├── <DesktopTopBar>          # topbar layout: preset chips that fit + "+N", always a Terms (N) button
 ├── <TranscriptPanel>        # Memoized rows (role=log); translation in a ruled, indented block,
 │                            #   upright and ≥ 4.5:1 contrast; <ReadyCard> when empty

@@ -20,7 +20,7 @@ import PresentationPanel from "@/components/PresentationPanel";
 import PresentationMode, { usePresentationMode } from "@/components/PresentationMode";
 import LiveShareButton from "@/components/LiveShareButton";
 import MeetingSaveControls from "@/components/MeetingSaveControls";
-import MobileBottom from "@/components/mobile/MobileBottom";
+import PhoneChrome from "@/components/phone/PhoneChrome";
 import DesktopTopBar from "@/components/desktop/DesktopTopBar";
 import DesktopFloatingBar from "@/components/desktop/DesktopFloatingBar";
 
@@ -388,6 +388,17 @@ export default function Home() {
     [speakers, mergeSpeaker, removeSpeaker, renameSpeaker]
   );
 
+  // 会议设置 on the phone changes the same stored settings
+  const meetingSetters = useMemo(
+    () => ({
+      setMode: handleTranslationModeChange,
+      setLanguageA: handleLanguageAChange,
+      setLanguageB: handleLanguageBChange,
+      setTargetLangs: handleTargetLangsChange,
+    }),
+    [handleTranslationModeChange, handleLanguageAChange, handleLanguageBChange, handleTargetLangsChange]
+  );
+
   const sharedProps = {
     translationMode,
     onTranslationModeChange: handleTranslationModeChange,
@@ -428,6 +439,8 @@ export default function Home() {
 
       {/* Main content */}
       <main className="flex flex-1 flex-col min-w-0">
+        {/* Desktop status bar; the phone layout has its own (PhoneChrome) */}
+        <div className="shrink-0 max-lg:hidden">
         <StatusBar
           recordingState={recordingState}
           elapsedSeconds={elapsedSeconds}
@@ -473,6 +486,7 @@ export default function Home() {
             ) : undefined
           }
         />
+        </div>
 
         {/* Desktop top bar (only in topbar layout) */}
         {desktopLayout === "topbar" && (
@@ -481,38 +495,91 @@ export default function Home() {
           </div>
         )}
 
-        {translationMode === "presentation" ? (
-          <PresentationPanel
-            entries={entries}
-            currentInterim={currentInterim}
-            speakers={speakers}
-            isRecording={recordingState === "recording"}
-            isConnecting={recordingState === "connecting"}
-            languageA={languageA}
-            targetLangs={targetLangs}
-            onStart={handleStart}
-          />
-        ) : (
-          <TranscriptPanel
-            entries={entries}
-            currentInterim={currentInterim}
-            speakers={speakers}
-            isRecording={recordingState === "recording"}
-            isConnecting={recordingState === "connecting"}
-            translationMode={translationMode}
-            onStart={handleStart}
-            languageA={languageA}
-            languageB={languageB}
-            onRenameSpeaker={handleRenameSpeaker}
-            // One sentence to another speaker; their other sentences stay
-            onReassignSpeaker={reassignSpeaker}
-          />
-        )}
-
-        {/* Mobile bottom bar (hidden on desktop) */}
-        <div className="lg:hidden">
-          <MobileBottom {...sharedProps} />
-        </div>
+        {/* Phone: top bar, one big button, bottom bar and sheets around the
+            transcript; desktop: just the transcript */}
+        <PhoneChrome
+          error={error}
+          translationMode={translationMode}
+          languageA={languageA}
+          languageB={languageB}
+          targetLangs={targetLangs}
+          setters={meetingSetters}
+          termsText={termsText}
+          onTermsTextChange={setTermsText}
+          selectedPresets={selectedPresets}
+          onSelectedPresetsChange={setSelectedPresets}
+          customTerms={customTerms}
+          onCustomTermsChange={setCustomTerms}
+          speakers={speakers}
+          onRenameSpeaker={handleRenameSpeaker}
+          entries={entries}
+          recordingState={recordingState}
+          elapsedSeconds={elapsedSeconds}
+          onStart={handleStart}
+          onStop={handleStop}
+          onExport={handleExport}
+          onNewMeeting={handleNewMeeting}
+          onPresent={presentation.enter}
+          share={
+            shareable && liveShare.available
+              ? {
+                  sharing: liveShare.sharing,
+                  starting: liveShare.starting,
+                  failing: liveShare.failing,
+                  viewerUrl: liveShare.viewerUrl,
+                  onStart: liveShare.start,
+                  onStop: liveShare.stop,
+                }
+              : null
+          }
+          save={{
+            available: autosave.available,
+            status: autosave.status,
+            meetingId: autosave.meetingId,
+            canArchive: !!autosave.recordingsMode,
+            archiveOn,
+            onArchiveChange: setArchiveOn,
+          }}
+          settings={{
+            sttProvider,
+            onSttProviderChange: handleSttProviderChange,
+            r2t2Enabled,
+            translationEngine,
+            onTranslationEngineChange: handleTranslationEngineChange,
+            t3poEnabled,
+            audioProcessing,
+            onAudioProcessingChange: handleAudioProcessingChange,
+            ...(canCaptureSystem ? { captureSource, onCaptureSourceChange: setCaptureSource } : {}),
+          }}
+        >
+          {translationMode === "presentation" ? (
+            <PresentationPanel
+              entries={entries}
+              currentInterim={currentInterim}
+              speakers={speakers}
+              isRecording={recordingState === "recording"}
+              isConnecting={recordingState === "connecting"}
+              languageA={languageA}
+              targetLangs={targetLangs}
+              onStart={handleStart}
+            />
+          ) : (
+            <TranscriptPanel
+              entries={entries}
+              currentInterim={currentInterim}
+              speakers={speakers}
+              isRecording={recordingState === "recording"}
+              isConnecting={recordingState === "connecting"}
+              translationMode={translationMode}
+              onStart={handleStart}
+              languageA={languageA}
+              languageB={languageB}
+              onRenameSpeaker={handleRenameSpeaker}
+              // One sentence to another speaker; their other sentences stay
+              onReassignSpeaker={reassignSpeaker}
+            />
+          )}
+        </PhoneChrome>
       </main>
 
       {/* Desktop floating bar (only in floating layout) */}
