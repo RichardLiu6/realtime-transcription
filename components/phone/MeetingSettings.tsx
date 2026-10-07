@@ -211,7 +211,11 @@ export default function MeetingSettings({
       </BottomSheet>
 
       <LanguagePicker
-        picker={picker}
+        open={picker !== null}
+        title={
+          picker?.kind === "target" ? t("ph_translate_into") : picker?.kind === "sources" ? t("ph_spoken") : t("ph_add_language")
+        }
+        multi={picker?.kind === "sources"}
         onClose={() => setPicker(null)}
         exclude={picker?.kind === "add" ? mutual : []}
         selected={
@@ -228,16 +232,20 @@ export default function MeetingSettings({
   );
 }
 
-// Full language list with search. "add" and "target" pick one and close;
-// "sources" toggles several, with 自动识别 (= none picked) at the top.
-function LanguagePicker({
-  picker,
+// Full language list with search. Single: pick one and close. Multi:
+// toggle several, with 自动识别 (= none picked) at the top.
+export function LanguagePicker({
+  open,
+  title,
+  multi = false,
   onClose,
   exclude,
   selected,
   onPick,
 }: {
-  picker: Picker | null;
+  open: boolean;
+  title: string;
+  multi?: boolean;
   onClose: () => void;
   exclude: string[];
   selected: string[];
@@ -246,7 +254,6 @@ function LanguagePicker({
   const t = useT();
   const { native, local } = useLangNames();
   const [query, setQuery] = useState("");
-  const multi = picker?.kind === "sources";
 
   const languages = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -266,14 +273,14 @@ function LanguagePicker({
 
   return (
     <BottomSheet
-      open={picker !== null}
+      open={open}
       onOpenChange={(o) => {
         if (!o) {
           onClose();
           setQuery("");
         }
       }}
-      title={picker?.kind === "target" ? t("ph_translate_into") : picker?.kind === "sources" ? t("ph_spoken") : t("ph_add_language")}
+      title={title}
       tall
     >
       <label className="sticky top-0 z-10 flex items-center gap-2 rounded-xl bg-muted px-3 py-2">

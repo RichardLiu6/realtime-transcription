@@ -15,7 +15,7 @@ import { verifyToken } from "@/lib/auth";
 import { meetingsAvailable, query } from "@/lib/meetings/db";
 import type { SonioxMonth } from "@/lib/sonioxUsage";
 
-export type UsageKind = "translate" | "provisional" | "summary" | "stt";
+export type UsageKind = "translate" | "provisional" | "summary" | "terms" | "stt";
 
 export const SONIOX_USD_PER_HOUR = 0.12;
 

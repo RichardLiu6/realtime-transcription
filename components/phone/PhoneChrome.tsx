@@ -31,11 +31,11 @@ import { LOCALES, setLocale, useLocale, useT, type Locale, type TranslationKey }
 import { formatDateTime } from "@/lib/meetings/format";
 import type { MeetingSummary } from "@/lib/meetings/types";
 import type { BilingualEntry, CaptureSource, SpeakerInfo, SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
-import type { MeetingSettingsSetters } from "@/lib/phoneModes";
+import { mutualLanguages, phoneModeOf, type MeetingSettingsSetters } from "@/lib/phoneModes";
 import type { SaveStatus } from "@/hooks/useMeetingAutosave";
 import MeetingSettings, { useMeetingSummary } from "./MeetingSettings";
 import PhoneTerms from "./PhoneTerms";
-import { BottomSheet, Row, SectionTitle, SideSheet } from "./parts";
+import { BottomSheet, Row, SectionTitle, SideSheet, homeLanguage } from "./parts";
 
 
 export interface PhoneChromeProps {
@@ -112,6 +112,16 @@ export default function PhoneChrome(props: PhoneChromeProps) {
   const hasEntries = entries.length > 0;
   // Nothing yet: the big start button takes the middle of the screen
   const empty = !hasEntries && !isRecording;
+
+  const locale = useLocale();
+  // The languages this meeting is in (AI-suggested terms default to them)
+  const meetingLangs = useMemo(() => {
+    const mode = phoneModeOf(props.translationMode);
+    if (mode === "mutual") return mutualLanguages(props.translationMode, props.languageA, props.languageB, props.targetLangs);
+    const sources = props.languageA.filter((c) => c !== "*");
+    if (mode === "oneway") return Array.from(new Set([...sources, props.languageB]));
+    return sources.length > 0 ? sources : [homeLanguage(locale)];
+  }, [props.translationMode, props.languageA, props.languageB, props.targetLangs, locale]);
 
   const summary = useMeetingSummary(props.translationMode, props.languageA, props.languageB, props.targetLangs);
   const close = useCallback(() => setSheet(null), []);
@@ -301,6 +311,7 @@ export default function PhoneChrome(props: PhoneChromeProps) {
           customTerms={props.customTerms}
           onCustomTermsChange={props.onCustomTermsChange}
           isRecording={isRecording}
+          meetingLanguages={meetingLangs}
         />
       </BottomSheet>
 

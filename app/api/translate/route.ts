@@ -201,7 +201,7 @@ ${SAME_LANGUAGE_RULES}
 ${SPEECH_INPUT_RULES}`;
 
   if (Array.isArray(terms) && terms.length > 0) {
-    systemPrompt += `\n\nTerminology — always use these translations when applicable:\n${terms.join(", ")}`;
+    systemPrompt += terminologyBlock(terms);
   }
   // Clause mode: each language's value is only the continuation
   if (continuation) {
@@ -272,7 +272,7 @@ Rules:
 ${SPEECH_INPUT_RULES}`;
 
   if (Array.isArray(terms) && terms.length > 0) {
-    systemPrompt += `\n\nTerminology — always use these translations when applicable:\n${terms.join(", ")}`;
+    systemPrompt += terminologyBlock(terms);
   }
 
   // Clause mode: translate only the next part of a partly translated sentence
@@ -313,18 +313,64 @@ interface MemoryItem {
   translations: Record<string, string>;
 }
 
+// Chat models: "a = b = c" lines are one term in several languages (the
+// industry packs are 中文=English; AI-suggested terms can have more). The
+// form in the target language is used; without one, the term is
+// translated normally — so a 中文=English pair doesn't put English into a
+// Vietnamese translation. Plain terms (names, brands) stay as written.
+function terminologyBlock(terms: string[]): string {
+  const groups: string[] = [];
+  const singles: string[] = [];
+  for (const raw of terms) {
+    const forms = raw.split("=").map((x) => x.trim()).filter(Boolean);
+    if (forms.length >= 2) groups.push(forms.join(" = "));
+    else if (forms.length === 1) singles.push(forms[0]);
+  }
+  let block = "";
+  if (groups.length > 0) {
+    block += `\n\nTerminology — each line is one term in different languages. When the text uses one of these forms, translate it with the form in the target language. If no form is in the target language, translate the term naturally into the target language; do not copy a form in another language.\n${groups.join("\n")}`;
+  }
+  if (singles.length > 0) {
+    block += `\n\nNames and terms to keep as written (spelling reference): ${singles.join(", ")}`;
+  }
+  return block;
+}
+
 interface TermPair {
   source: string;
   target: string;
+  // Forms in Latin script in this entry (several: can't tell which is English)
+  latinForms?: number;
 }
 
-// "a=b" entries become pairs, usable in either direction; plain terms are
+// Which script / language a term form is written in, for Hy-MT, whose
+// template takes one "X translates to Y" per term
+function formLanguage(form: string): "zh" | "ja" | "ko" | "vi" | "latin" | "other" {
+  if (/[\u3040-\u30ff]/.test(form)) return "ja";
+  if (/[\uac00-\ud7af]/.test(form)) return "ko";
+  if (/[\u3400-\u9fff]/.test(form)) return "zh";
+  if (/[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/i.test(form)) return "vi";
+  if (/^[\p{Script=Latin}\d\s.\-&'/()+%]+$/u.test(form)) return "latin";
+  return "other";
+}
+
+// Whether a form can stand as the translation into `lang`. Latin script is
+// only taken for English, and only when the entry has one Latin form
+// (中文=English); other Latin-script targets get no Hy-MT terminology.
+function formFits(pair: TermPair, lang: string): boolean {
+  const f = formLanguage(pair.target);
+  if (lang === "zh" || lang === "ja" || lang === "ko" || lang === "vi") return f === lang;
+  return lang === "en" && f === "latin" && (pair.latinForms ?? 1) === 1;
+}
+
+// "a=b(=c…)" entries become pairs between every two forms; plain terms are
 // not used
 function splitTerms(terms: string[] | undefined): TermPair[] {
   const pairs: TermPair[] = [];
   for (const raw of terms ?? []) {
-    const [a, b] = raw.split("=").map((x) => x.trim());
-    if (a && b) pairs.push({ source: a, target: b }, { source: b, target: a });
+    const forms = raw.split("=").map((x) => x.trim()).filter(Boolean);
+    const latinForms = forms.filter((f) => formLanguage(f) === "latin").length;
+    for (const a of forms) for (const b of forms) if (a !== b) pairs.push({ source: a, target: b, latinForms });
   }
   return pairs;
 }
@@ -404,7 +450,9 @@ function hyMTPrompt(
   const zh = sourceLang === "zh" || targetLang === "zh" || /[\u4e00-\u9fff]/.test(text);
   const lang = hyMTLanguageName(targetLang, zh);
   const lower = text.toLowerCase();
-  const terms = termPairs.filter((p) => lower.includes(p.source.toLowerCase())).slice(0, 20);
+  const terms = termPairs
+    .filter((p) => lower.includes(p.source.toLowerCase()) && formFits(p, targetLang))
+    .slice(0, 20);
   const history = memoryPairs(memory, sourceLang, targetLang);
 
   if (continuation) {
