@@ -285,7 +285,7 @@ export default function MeetingPage() {
 
   // --- Render ---
   const header = (
-    <header className="sticky top-0 z-20 border-b border-border bg-background">
+    <header className="safe-top safe-x sticky top-0 z-20 border-b border-border bg-background">
       <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-4 py-2">
         <Link href="/meetings" className="inline-flex items-center gap-1 text-sm text-gray-700 hover:text-foreground">
           <ArrowLeft className="size-4" aria-hidden />

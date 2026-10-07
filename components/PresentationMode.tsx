@@ -602,7 +602,7 @@ export default function PresentationMode({
       onMouseMove={poke}
       onPointerDown={poke}
       onKeyDown={poke}
-      className="fixed inset-0 z-[100] flex flex-col outline-none"
+      className="safe-top safe-x fixed inset-0 z-[100] flex flex-col outline-none"
       style={style}
     >
       {/* Control strip: over the captions (they never move when it shows) */}
@@ -619,7 +619,7 @@ export default function PresentationMode({
         onMouseLeave={() => {
           pointerOnStrip.current = false;
         }}
-        className={`absolute inset-x-0 top-0 z-10 flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 text-sm shadow-lg transition-opacity duration-300 ${
+        className={`absolute top-[env(safe-area-inset-top,0px)] right-[env(safe-area-inset-right,0px)] left-[env(safe-area-inset-left,0px)] z-10 flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 text-sm shadow-lg transition-opacity duration-300 ${
           controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         style={{ backgroundColor: colors.strip, borderBottom: `1px solid ${colors.rule}` }}

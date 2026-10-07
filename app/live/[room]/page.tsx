@@ -188,7 +188,7 @@ export default function LiveViewerPage() {
 
   if (status === "notfound") {
     return (
-      <main className="flex h-dvh flex-col items-center justify-center gap-4 px-6 text-center">
+      <main className="safe-top safe-x flex h-dvh flex-col items-center justify-center gap-4 px-6 text-center">
         <p className="text-base text-gray-700" data-live-status="notfound">
           {t("live_not_found")}
         </p>
@@ -219,7 +219,7 @@ export default function LiveViewerPage() {
   ];
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden">
+    <div className="safe-top safe-x flex h-dvh flex-col overflow-hidden">
       <header className="shrink-0 border-b border-border bg-background px-3 py-2 sm:px-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">

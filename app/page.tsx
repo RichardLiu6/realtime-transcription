@@ -407,7 +407,7 @@ export default function Home() {
 
   return (
     <TooltipProvider delayDuration={300}>
-    <div className="flex h-dvh overflow-hidden">
+    <div className="safe-top safe-x flex h-dvh overflow-hidden">
       {/* Desktop sidebar (only in sidebar layout) */}
       {desktopLayout === "sidebar" && (
         <div className="hidden lg:block">
