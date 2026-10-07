@@ -9,7 +9,8 @@ import { useMeetingRecorder } from "@/hooks/useMeetingRecorder";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
 import { useStoredState } from "@/lib/useStoredState";
 import { combineTerms, INDUSTRY_PRESETS } from "@/lib/contextTerms";
-import type { SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
+import type { CaptureSource, SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
+import { broadcastAvailable } from "@/lib/native/stt";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { t } from "@/lib/i18n";
 import Sidebar from "@/components/Sidebar";
@@ -44,6 +45,9 @@ function subscribeAudioProcessing(onChange: () => void) {
     window.removeEventListener("storage", onChange);
   };
 }
+
+const noSubscribe = () => () => {};
+const isCaptureSource = (v: unknown): v is CaptureSource => v === "mic" || v === "system";
 
 // Meeting settings, remembered across reloads (useStoredState)
 const DEFAULT_LANGUAGE_A = ["*"];
@@ -95,6 +99,10 @@ export default function Home() {
     readAudioProcessing,
     () => false
   );
+
+  // iOS app: transcribe what the phone plays (Zoom, WeChat…) + the mic
+  const canCaptureSystem = useSyncExternalStore(noSubscribe, broadcastAvailable, () => false);
+  const [captureSource, setCaptureSource] = useStoredState<CaptureSource>("captureSource", "mic", isCaptureSource);
 
   useEffect(() => {
     const saved = localStorage.getItem("desktopLayout");
@@ -202,6 +210,7 @@ export default function Home() {
     start({
       provider: sttProvider === "r2t2" && r2t2Enabled ? "r2t2" : "soniox",
       audioProcessing,
+      captureSource: canCaptureSystem ? captureSource : "mic",
       translationEngine: translationEngine === "t3po" && !t3poEnabled ? "llm" : translationEngine,
       languageA,
       languageB,
@@ -219,6 +228,8 @@ export default function Home() {
     sttProvider,
     r2t2Enabled,
     audioProcessing,
+    canCaptureSystem,
+    captureSource,
     translationEngine,
     t3poEnabled,
     start,
@@ -428,6 +439,7 @@ export default function Home() {
           r2t2Enabled={r2t2Enabled}
           audioProcessing={audioProcessing}
           onAudioProcessingChange={handleAudioProcessingChange}
+          {...(canCaptureSystem ? { captureSource, onCaptureSourceChange: setCaptureSource } : {})}
           translationEngine={translationEngine}
           onTranslationEngineChange={handleTranslationEngineChange}
           t3poEnabled={t3poEnabled}
