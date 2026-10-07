@@ -37,6 +37,11 @@ const en = {
   "tr_t3po_unavailable": "Simultaneous translation not configured (set T3PO_BASE_URL to a server running Confucius4-T3PO)",
   "audio_processing_on": "Browser noise suppression, echo cancellation and auto gain are ON. Use in noisy rooms; may drop quiet or distant speakers.",
   "audio_processing_off": "Raw microphone audio (recommended for accuracy). Turn on only in very noisy rooms.",
+  "capture_source": "Audio source",
+  "capture_mic": "Microphone",
+  "capture_system": "Phone audio + mic",
+  "capture_mic_desc": "Only the microphone: people in the room.",
+  "capture_system_desc": "What the phone plays (Zoom, Teams, WeChat calls…) plus your microphone — works with earphones. When you start, iOS asks to start the broadcast: choose ABL Translate and turn on the microphone.",
 
   // Top bar
   "ui_language": "Interface language",
@@ -281,6 +286,11 @@ const zh: Record<TranslationKey, string> = {
   "tr_t3po_unavailable": "同传翻译未配置（需要把 T3PO_BASE_URL 指向运行 Confucius4-T3PO 的服务器）",
   "audio_processing_on": "已开启浏览器降噪、回声消除和自动增益。适合嘈杂环境，但可能压掉声音小或离麦克风远的发言人。",
   "audio_processing_off": "使用原始麦克风音频（识别更准，推荐）。只在环境非常嘈杂时开启降噪。",
+  "capture_source": "收音来源",
+  "capture_mic": "麦克风",
+  "capture_system": "手机声音 + 麦克风",
+  "capture_mic_desc": "只用麦克风：收现场的人说话。",
+  "capture_system_desc": "收手机正在播放的声音（Zoom、Teams、微信通话等）加上你的麦克风，戴耳机也能收。开始时 iOS 会弹出“开始直播”：选 ABL Translate，并打开麦克风。",
 
   "ui_language": "界面语言",
   "layout_sidebar": "侧边栏",
@@ -512,6 +522,11 @@ const es: Record<TranslationKey, string> = {
   "tr_t3po_unavailable": "Traducción simultánea no configurada (T3PO_BASE_URL debe apuntar a un servidor con Confucius4-T3PO)",
   "audio_processing_on": "Supresión de ruido, cancelación de eco y ganancia automática del navegador ACTIVADAS. Útil en salas ruidosas; puede perder a hablantes con voz baja o lejos del micrófono.",
   "audio_processing_off": "Audio del micrófono sin procesar (recomendado para mayor precisión). Actívela solo en salas muy ruidosas.",
+  "capture_source": "Fuente de audio",
+  "capture_mic": "Micrófono",
+  "capture_system": "Audio del teléfono + micrófono",
+  "capture_mic_desc": "Solo el micrófono: las personas en la sala.",
+  "capture_system_desc": "Lo que reproduce el teléfono (Zoom, Teams, llamadas de WeChat…) más su micrófono; funciona con auriculares. Al empezar, iOS pide iniciar la transmisión: elija ABL Translate y active el micrófono.",
 
   "ui_language": "Idioma de la interfaz",
   "layout_sidebar": "Barra lateral",
@@ -743,6 +758,11 @@ const vi: Record<TranslationKey, string> = {
   "tr_t3po_unavailable": "Chưa cấu hình dịch song song (T3PO_BASE_URL phải trỏ tới máy chủ chạy Confucius4-T3PO)",
   "audio_processing_on": "Đã BẬT khử tiếng ồn, khử tiếng vọng và tự động điều chỉnh âm lượng của trình duyệt. Dùng khi phòng ồn; có thể bỏ sót người nói nhỏ hoặc ở xa micro.",
   "audio_processing_off": "Âm thanh micro nguyên gốc (khuyến nghị để nhận dạng chính xác hơn). Chỉ bật khi phòng rất ồn.",
+  "capture_source": "Nguồn âm thanh",
+  "capture_mic": "Micro",
+  "capture_system": "Âm thanh điện thoại + micro",
+  "capture_mic_desc": "Chỉ micro: người trong phòng.",
+  "capture_system_desc": "Âm thanh điện thoại đang phát (Zoom, Teams, cuộc gọi WeChat…) cùng micro của bạn — dùng được khi đeo tai nghe. Khi bắt đầu, iOS hỏi bắt đầu phát sóng: chọn ABL Translate và bật micro.",
 
   "ui_language": "Ngôn ngữ giao diện",
   "layout_sidebar": "Thanh bên",

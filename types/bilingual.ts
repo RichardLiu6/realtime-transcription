@@ -98,8 +98,13 @@ export type SttProvider = "soniox" | "r2t2";
 // Confucius4-T3PO ("t3po", zh<->en only)
 export type TranslationEngine = "llm" | "clause" | "t3po";
 
+// Where the iPhone app takes audio from: the microphone, or (ReplayKit
+// broadcast) what the phone plays — Zoom, WeChat… — plus the microphone
+export type CaptureSource = "mic" | "system";
+
 export interface SonioxConfig {
   provider?: SttProvider; // default "soniox"
+  captureSource?: CaptureSource; // default "mic"; "system" only in the iOS app
   audioProcessing?: boolean; // browser noise suppression / echo cancellation / auto gain (default off)
   translationEngine?: TranslationEngine; // default "llm"
   languageA: string[]; // e.g. ["*"] or ["zh", "en"]

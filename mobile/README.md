@@ -33,13 +33,16 @@ the phone, open it, allow "install unknown apps" when asked.
 **iPhone (TestFlight, internal testing — up to 100 people, no App Review)**, on a Mac
 with Xcode and the Apple developer account:
 
-1. `cd mobile && npm ci && npx cap sync ios && npx cap open ios`
-2. In Xcode: target *App* → Signing & Capabilities → choose the team; check that
-   *Background Modes → Audio* is listed (it comes from Info.plist).
-3. Product → Archive → Distribute App → TestFlight & App Store → Upload.
-4. App Store Connect → the app → TestFlight → add colleagues as internal testers;
-   they install the *TestFlight* app and accept the invitation.
-5. Builds expire after 90 days: upload a new one before (only the shell; the
+1. `cd mobile && npm ci && scripts/ios-testflight.sh` — syncs, archives with
+   automatic signing (team `WRR3ADG534`, build number = time) and uploads
+   (`ios/ExportOptions.plist`). Xcode must be signed in to the account
+   (Settings → Accounts) and the membership active. Or by hand in Xcode:
+   Product → Archive → Distribute App → TestFlight & App Store → Upload.
+2. App Store Connect → *ABL Translate* (app id 6820208548) → TestFlight → group
+   *ABL Internal*: new builds are added after processing (~10 min). Internal
+   testers must be App Store Connect users of the team (Users and Access →
+   invite them first); they install the *TestFlight* app and accept the invitation.
+3. Builds expire after 90 days: upload a new one before (only the shell; the
    site itself updates without it).
 
 The bundle id is `com.americanbestlife.translate` (`capacitor.config.ts`).

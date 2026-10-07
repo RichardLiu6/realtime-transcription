@@ -29,7 +29,7 @@ import {
 import { useT, type TranslationKey } from "@/lib/i18n";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
 import type { DesktopLayout } from "@/app/page";
-import type { SttProvider, TranslationEngine } from "@/types/bilingual";
+import type { CaptureSource, SttProvider, TranslationEngine } from "@/types/bilingual";
 
 interface StatusBarProps {
   recordingState: "idle" | "connecting" | "recording";
@@ -42,6 +42,9 @@ interface StatusBarProps {
   r2t2Enabled?: boolean;
   audioProcessing?: boolean;
   onAudioProcessingChange?: (on: boolean) => void;
+  // iOS app only: microphone, or other apps' audio + mic (ReplayKit)
+  captureSource?: CaptureSource;
+  onCaptureSourceChange?: (source: CaptureSource) => void;
   translationEngine?: TranslationEngine;
   onTranslationEngineChange?: (engine: TranslationEngine) => void;
   t3poEnabled?: boolean;
@@ -146,6 +149,8 @@ export default function StatusBar({
   r2t2Enabled = false,
   audioProcessing,
   onAudioProcessingChange,
+  captureSource,
+  onCaptureSourceChange,
   translationEngine,
   onTranslationEngineChange,
   t3poEnabled = false,
@@ -313,6 +318,25 @@ export default function StatusBar({
                     </RadioRow>
                     <p className="text-xs leading-snug text-muted-foreground">
                       {t(ENGINE_DESC[translationEngine])}
+                    </p>
+                  </Section>
+                )}
+
+                {captureSource && onCaptureSourceChange && (
+                  <Section title={t("capture_source")}>
+                    <RadioRow label={t("capture_source")}>
+                      {(["mic", "system"] as const).map((value) => (
+                        <Option
+                          key={value}
+                          label={t(value === "mic" ? "capture_mic" : "capture_system")}
+                          checked={captureSource === value}
+                          disabled={locked}
+                          onSelect={() => onCaptureSourceChange(value)}
+                        />
+                      ))}
+                    </RadioRow>
+                    <p className="text-xs leading-snug text-muted-foreground">
+                      {t(captureSource === "mic" ? "capture_mic_desc" : "capture_system_desc")}
                     </p>
                   </Section>
                 )}

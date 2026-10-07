@@ -7,33 +7,71 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		09A11B3C36DC40E5D0ED4DCC /* BroadcastShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0930FAC9A9045C3C1CDD86A /* BroadcastShared.swift */; };
+		20A0879B4756C5E9F2DD256C /* BroadcastShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0930FAC9A9045C3C1CDD86A /* BroadcastShared.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
-		A1B2C3D40000000000000004 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000003 /* MainViewController.swift */; };
-		A1B2C3D40000000000000002 /* NativeSttPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000001 /* NativeSttPlugin.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+		5C8FC9D1889CBE625F398F51 /* Broadcast.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 76129F789DB877E76B3563BD /* Broadcast.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
+		A1B2C3D40000000000000002 /* NativeSttPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000001 /* NativeSttPlugin.swift */; };
+		A1B2C3D40000000000000004 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000003 /* MainViewController.swift */; };
+		C24314811A74ADCDE0011369 /* ReplayKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82727B0F93E23E4D2D372A44 /* ReplayKit.framework */; };
+		D71A0361318923352BFCC3DD /* SampleHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DE240C03587BF529E7ABDA0 /* SampleHandler.swift */; };
+		E2E60C0744D83FBEA5690BF7 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB8AFAD6431DA7A4928DD049 /* Foundation.framework */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		654C9E01E1FA4189A75A4752 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F9468DEAA9FE547F2B3A9827;
+			remoteInfo = Broadcast;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		05B49B72A3CA5216A7D8971F /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				5C8FC9D1889CBE625F398F51 /* Broadcast.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		22705E50911E50D0155F9162 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
+		3DE240C03587BF529E7ABDA0 /* SampleHandler.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SampleHandler.swift; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		A1B2C3D40000000000000003 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
-		A1B2C3D40000000000000001 /* NativeSttPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSttPlugin.swift; sourceTree = "<group>"; };
 		504EC30C1FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
+		76129F789DB877E76B3563BD /* Broadcast.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = Broadcast.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		82727B0F93E23E4D2D372A44 /* ReplayKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ReplayKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS14.0.sdk/System/Library/Frameworks/ReplayKit.framework; sourceTree = DEVELOPER_DIR; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		A13291EE84614FF50B6B997D /* App.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
+		A1B2C3D40000000000000001 /* NativeSttPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSttPlugin.swift; sourceTree = "<group>"; };
+		A1B2C3D40000000000000003 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
+		A23625B1C6E7F4941F8E8B33 /* Broadcast.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = Broadcast.entitlements; sourceTree = "<group>"; };
+		DB8AFAD6431DA7A4928DD049 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS14.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		F0930FAC9A9045C3C1CDD86A /* BroadcastShared.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BroadcastShared.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -42,6 +80,15 @@
 			buildActionMask = 2147483647;
 			files = (
 				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		78028E9C43CC42E875752A45 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E2E60C0744D83FBEA5690BF7 /* Foundation.framework in Frameworks */,
+				C24314811A74ADCDE0011369 /* ReplayKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -54,6 +101,8 @@
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
 				504EC3051FED79650016851F /* Products */,
+				7732A5D3D49E1260FB569958 /* Frameworks */,
+				883F34B0F7CD1965BE459665 /* Broadcast */,
 			);
 			sourceTree = "<group>";
 		};
@@ -61,6 +110,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				76129F789DB877E76B3563BD /* Broadcast.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -79,8 +129,38 @@
 				504EC3131FED79650016851F /* Info.plist */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
+				A13291EE84614FF50B6B997D /* App.entitlements */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		7732A5D3D49E1260FB569958 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				989D4BC14760011B56708935 /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		883F34B0F7CD1965BE459665 /* Broadcast */ = {
+			isa = PBXGroup;
+			children = (
+				3DE240C03587BF529E7ABDA0 /* SampleHandler.swift */,
+				F0930FAC9A9045C3C1CDD86A /* BroadcastShared.swift */,
+				22705E50911E50D0155F9162 /* Info.plist */,
+				A23625B1C6E7F4941F8E8B33 /* Broadcast.entitlements */,
+			);
+			name = Broadcast;
+			path = Broadcast;
+			sourceTree = "<group>";
+		};
+		989D4BC14760011B56708935 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				DB8AFAD6431DA7A4928DD049 /* Foundation.framework */,
+				82727B0F93E23E4D2D372A44 /* ReplayKit.framework */,
+			);
+			name = iOS;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -93,10 +173,12 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				05B49B72A3CA5216A7D8971F /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				883572FFB58341CFE81CBEB8 /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -105,6 +187,23 @@
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
+		};
+		F9468DEAA9FE547F2B3A9827 /* Broadcast */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2BE28701B0FD66C220E72CC9 /* Build configuration list for PBXNativeTarget "Broadcast" */;
+			buildPhases = (
+				F02D75A1B79EB03CFF1DC27F /* Sources */,
+				78028E9C43CC42E875752A45 /* Frameworks */,
+				03D8F13335399DFA7C4CADA1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Broadcast;
+			productName = Broadcast;
+			productReference = 76129F789DB877E76B3563BD /* Broadcast.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -139,11 +238,19 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				F9468DEAA9FE547F2B3A9827 /* Broadcast */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		03D8F13335399DFA7C4CADA1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		504EC3021FED79650016851F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -168,10 +275,29 @@
 				A1B2C3D40000000000000004 /* MainViewController.swift in Sources */,
 				A1B2C3D40000000000000002 /* NativeSttPlugin.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
+				20A0879B4756C5E9F2DD256C /* BroadcastShared.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F02D75A1B79EB03CFF1DC27F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D71A0361318923352BFCC3DD /* SampleHandler.swift in Sources */,
+				09A11B3C36DC40E5D0ED4DCC /* BroadcastShared.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		883572FFB58341CFE81CBEB8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = Broadcast;
+			target = F9468DEAA9FE547F2B3A9827 /* Broadcast */;
+			targetProxy = 654C9E01E1FA4189A75A4752 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
@@ -307,6 +433,7 @@
 			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
@@ -329,6 +456,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
@@ -346,9 +474,69 @@
 			};
 			name = Release;
 		};
+		96D5881FA0C92BB6CD4BBCB9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = Broadcast/Broadcast.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Broadcast/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.americanbestlife.translate.Broadcast;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		9B4B268FBB7A48CC43355FDF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = Broadcast/Broadcast.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Broadcast/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.americanbestlife.translate.Broadcast;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		2BE28701B0FD66C220E72CC9 /* Build configuration list for PBXNativeTarget "Broadcast" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9B4B268FBB7A48CC43355FDF /* Release */,
+				96D5881FA0C92BB6CD4BBCB9 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		504EC2FF1FED79650016851F /* Build configuration list for PBXProject "App" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

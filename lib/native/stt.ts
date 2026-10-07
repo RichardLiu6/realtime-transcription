@@ -27,6 +27,10 @@ interface NativeSttPlugin {
     // Sent when no audio has gone out for a few seconds (a phone call took
     // the microphone), so the engine doesn't close the session
     keepaliveMessage?: string;
+    // iOS: "broadcast" captures what the phone plays (meeting apps, WeChat)
+    // plus the microphone, through the ReplayKit extension; the system asks
+    // the user to start it
+    source?: "mic" | "broadcast";
   }): Promise<void>;
   // Stop the microphone, send end-of-audio (empty binary frame, or `text`),
   // and close once the engine closes (or after a few seconds)
@@ -41,6 +45,7 @@ interface NativeSttPlugin {
 
 interface CapacitorGlobal {
   isNativePlatform?: () => boolean;
+  getPlatform?: () => string;
   Plugins?: { NativeStt?: NativeSttPlugin };
 }
 
@@ -50,6 +55,13 @@ export function nativeStt(): NativeSttPlugin | null {
   const cap = (window as unknown as { Capacitor?: CapacitorGlobal }).Capacitor;
   if (!cap?.isNativePlatform?.()) return null;
   return cap.Plugins?.NativeStt ?? null;
+}
+
+// Capturing other apps' audio (ReplayKit broadcast) exists in the iOS app only
+export function broadcastAvailable(): boolean {
+  if (typeof window === "undefined") return false;
+  const cap = (window as unknown as { Capacitor?: CapacitorGlobal }).Capacitor;
+  return nativeStt() !== null && cap?.getPlatform?.() === "ios";
 }
 
 export function isNativeApp(): boolean {

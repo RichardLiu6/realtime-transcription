@@ -1,6 +1,8 @@
 import Foundation
 import AVFoundation
 import Capacitor
+import ReplayKit
+import UIKit
 
 // Native speech-engine connection for the app (JS side: lib/native/stt.ts
 // in the web app). The microphone (AVAudioEngine) and the WebSocket to the
@@ -8,6 +10,12 @@ import Capacitor
 // locked or another app in front (Info.plist: UIBackgroundModes audio). The
 // page gets every engine message numbered; messages that arrive while the
 // page is suspended are kept and handed over by drain().
+//
+// source "broadcast": the ReplayKit extension (Broadcast/SampleHandler) does
+// the capturing and the engine connection instead — what the phone plays plus
+// the microphone, across apps — and passes the engine's messages through the
+// App Group (BroadcastShared); this plugin shows the system picker and feeds
+// those messages into the same numbered stream.
 @objc(NativeSttPlugin)
 public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "NativeSttPlugin"
@@ -45,6 +53,16 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
     private var finishing = false
     private var timer: DispatchSourceTimer?
     private var finishWork: DispatchWorkItem?
+    // Broadcast mode
+    private var broadcastId: String?
+    private var broadcastStart: CAPPluginCall?
+    private var broadcastDeadline = Date()
+    private var broadcastPoll: DispatchSourceTimer?
+    private var broadcastPollTicks = 0
+    private var readOffset: UInt64 = 0
+    private var picker: RPSystemBroadcastPickerView?
+    // Ask the user to start the broadcast for this long
+    private static let broadcastStartTimeout: TimeInterval = 55
 
     override public func load() {
         let center = NotificationCenter.default
@@ -70,6 +88,14 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
         let frameMs = call.getDouble("frameMs") ?? 100
         let processing = call.getBool("audioProcessing") ?? false
         let keepalive = call.getString("keepaliveMessage")
+
+        if call.getString("source") == "broadcast" {
+            let config = BroadcastShared.Config(id: UUID().uuidString, url: urlString, openMessage: openMessage,
+                                                keepaliveMessage: keepalive, sampleRate: sampleRate,
+                                                frameMs: frameMs, createdAt: Date())
+            queue.async { self.startBroadcast(call, config) }
+            return
+        }
 
         requestMicrophone { granted in
             self.queue.async {
@@ -127,6 +153,20 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func finish(_ call: CAPPluginCall) {
         let text = call.getString("text")
         queue.async {
+            if let id = self.broadcastId {
+                // The extension sends end-of-audio and ends the broadcast;
+                // its "closed" state ends the session here
+                if self.running && !self.finishing {
+                    self.finishing = true
+                    BroadcastShared.write(BroadcastShared.Command(id: id, cmd: "finish", text: text), to: "command.json")
+                    self.queue.asyncAfter(deadline: .now() + 6) {
+                        guard self.broadcastId == id else { return }
+                        self.broadcastClosed(code: 1000, reason: "")
+                    }
+                }
+                call.resolve()
+                return
+            }
             guard self.running, !self.finishing, let task = self.task else {
                 call.resolve()
                 return
@@ -157,6 +197,13 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func cancel(_ call: CAPPluginCall) {
         queue.async {
+            if let id = self.broadcastId {
+                BroadcastShared.write(BroadcastShared.Command(id: id, cmd: "cancel", text: nil), to: "command.json")
+                self.broadcastStart?.reject("Cancelled")
+                self.teardownBroadcast()
+                call.resolve()
+                return
+            }
             self.task?.cancel(with: .normalClosure, reason: nil)
             self.teardown()
             call.resolve()
@@ -170,6 +217,120 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
                 .filter { $0.seq > after }
                 .map { ["seq": $0.seq, "data": $0.data] as [String: Any] }
             call.resolve(["messages": messages])
+        }
+    }
+
+    // MARK: - Broadcast (ReplayKit extension)
+
+    private func startBroadcast(_ call: CAPPluginCall, _ config: BroadcastShared.Config) {
+        guard !running, task == nil, broadcastId == nil else {
+            call.reject("Already recording")
+            return
+        }
+        guard let messagesURL = BroadcastShared.url("messages.txt") else {
+            call.reject("App Group unavailable")
+            return
+        }
+        seq = 0
+        kept = []
+        samplesSent = 0
+        finishing = false
+        readOffset = 0
+        BroadcastShared.remove("state.json")
+        BroadcastShared.remove("command.json")
+        try? Data().write(to: messagesURL, options: .atomic)
+        BroadcastShared.write(config, to: "config.json")
+        broadcastId = config.id
+        broadcastStart = call
+        broadcastDeadline = Date().addingTimeInterval(NativeSttPlugin.broadcastStartTimeout)
+
+        // The system picker ("Start Broadcast"); only its own button starts it
+        DispatchQueue.main.async {
+            guard let view = self.bridge?.viewController?.view else { return }
+            self.picker?.removeFromSuperview()
+            let picker = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+            picker.preferredExtension = BroadcastShared.extensionBundleId
+            picker.showsMicrophoneButton = true
+            picker.alpha = 0.01
+            view.addSubview(picker)
+            self.picker = picker
+            for case let button as UIButton in picker.subviews {
+                button.sendActions(for: .touchUpInside)
+            }
+        }
+
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 0.25, repeating: 0.25)
+        timer.setEventHandler { [weak self] in self?.pollBroadcast() }
+        timer.resume()
+        broadcastPoll = timer
+    }
+
+    private func pollBroadcast() {
+        guard let id = broadcastId else { return }
+        let state = BroadcastShared.read(BroadcastShared.State.self, from: "state.json")
+        guard let state = state, state.id == id else {
+            if let call = broadcastStart, Date() > broadcastDeadline {
+                call.reject("没有开始直播，请重试并点“开始直播”。The broadcast was not started.")
+                teardownBroadcast()
+            }
+            return
+        }
+        samplesSent = state.samples
+        if let call = broadcastStart, state.status == "started" {
+            broadcastStart = nil
+            running = true
+            call.resolve()
+        }
+        readBroadcastMessages()
+        broadcastPollTicks += 1
+        if running, broadcastPollTicks % 4 == 0 {
+            notifyListeners("progress", data: ["samples": samplesSent])
+        }
+        if state.status == "closed" {
+            if let call = broadcastStart {
+                call.reject(state.reason?.isEmpty == false ? state.reason! : "Broadcast ended")
+                teardownBroadcast()
+            } else {
+                broadcastClosed(code: state.code ?? 1000, reason: state.reason ?? "")
+            }
+        }
+    }
+
+    // Complete lines appended since the last read (also after being suspended)
+    private func readBroadcastMessages() {
+        guard let url = BroadcastShared.url("messages.txt"),
+              let handle = try? FileHandle(forReadingFrom: url) else { return }
+        defer { try? handle.close() }
+        guard (try? handle.seek(toOffset: readOffset)) != nil,
+              let data = try? handle.readToEnd(), !data.isEmpty,
+              let end = data.lastIndex(of: 0x0A) else { return }
+        let complete = data[data.startIndex...end]
+        readOffset += UInt64(complete.count)
+        for line in complete.split(separator: 0x0A) {
+            if let array = try? JSONSerialization.jsonObject(with: Data(line)) as? [String], let text = array.first {
+                deliver(text)
+            }
+        }
+    }
+
+    private func broadcastClosed(code: Int, reason: String) {
+        guard broadcastId != nil else { return }
+        readBroadcastMessages()
+        teardownBroadcast()
+        notifyListeners("closed", data: ["code": code, "reason": reason])
+    }
+
+    private func teardownBroadcast() {
+        broadcastPoll?.cancel()
+        broadcastPoll = nil
+        broadcastId = nil
+        broadcastStart = nil
+        running = false
+        finishing = false
+        DispatchQueue.main.async {
+            self.picker?.removeFromSuperview()
+            self.picker = nil
         }
     }
 

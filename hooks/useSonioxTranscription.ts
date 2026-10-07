@@ -1227,6 +1227,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
                 sampleRate: TARGET_SAMPLE_RATE,
                 frameMs: FRAME_MS[provider],
                 audioProcessing: processing,
+                ...(config.captureSource === "system" ? { source: "broadcast" as const } : {}),
                 notificationTitle: "ABL Translate",
                 notificationText: t("native_recording_notice"),
                 ...(provider === "soniox" ? { keepaliveMessage: JSON.stringify({ type: "keepalive" }) } : {}),
