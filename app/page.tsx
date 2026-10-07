@@ -55,10 +55,12 @@ const isStringArray = (v: unknown): v is string[] =>
 const isString = (v: unknown): v is string => typeof v === "string" && v.length > 0;
 // Terms (possibly none): selected preset keys and custom terms
 const NO_TERMS: string[] = [];
+// Sharing in transcribe mode: no translated columns
+const NO_LANGS: string[] = [];
 const isTermList = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((x) => typeof x === "string");
 const isTranslationMode = (v: unknown): v is TranslationMode =>
-  v === "two_way" || v === "one_way" || v === "presentation";
+  v === "two_way" || v === "one_way" || v === "presentation" || v === "transcribe";
 
 export default function Home() {
   const [languageA, setLanguageA] = useStoredState("languageA", DEFAULT_LANGUAGE_A, isStringArray);
@@ -226,19 +228,21 @@ export default function Home() {
     stop();
   }, [stop]);
 
-  // Live caption sharing: multilingual mode only; viewers pick from its
-  // columns. Leaving the mode ends the share.
+  // Live caption sharing: multilingual mode (viewers pick from its
+  // columns) and transcribe only (the original alone). Leaving those modes
+  // ends the share.
+  const shareable = translationMode === "presentation" || translationMode === "transcribe";
   const liveShare = useLiveShare({
     entries,
     speakers,
-    targetLangs,
+    targetLangs: translationMode === "presentation" ? targetLangs : NO_LANGS,
     languageA,
     recording: recordingState === "recording",
   });
   const { sharing: liveSharing, stop: stopLiveShare } = liveShare;
   useEffect(() => {
-    if (liveSharing && translationMode !== "presentation") stopLiveShare();
-  }, [liveSharing, translationMode, stopLiveShare]);
+    if (liveSharing && !shareable) stopLiveShare();
+  }, [liveSharing, shareable, stopLiveShare]);
 
   // Saved meetings: the text is saved automatically once a recording
   // starts; the audio only when switched on for this meeting (off by
@@ -445,7 +449,7 @@ export default function Home() {
             ) : undefined
           }
           shareButton={
-            translationMode === "presentation" && liveShare.available ? (
+            shareable && liveShare.available ? (
               <LiveShareButton
                 sharing={liveShare.sharing}
                 starting={liveShare.starting}

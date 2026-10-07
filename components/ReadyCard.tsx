@@ -40,6 +40,9 @@ export default function ReadyCard({
   } else if (translationMode === "one_way") {
     modeName = t("mode_from_to");
     languages = `${sources} → ${langName(languageB)}`;
+  } else if (translationMode === "transcribe") {
+    modeName = t("mode_transcribe");
+    languages = sources;
   } else {
     modeName = t("mode_presentation");
     languages = `${sources} → ${t("original_text")} + ${targetLangs.map(langName).join(", ")}`;

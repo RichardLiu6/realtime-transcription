@@ -201,6 +201,12 @@ interface TranscriptionOptions {
   onSegmentFinalized?: (entryId: string, text: string, sourceLang: string) => void;
 }
 
+// Nothing is translated: 仅转录 (transcribe) mode, or a caller that does
+// its own translation (the admin compare page)
+function skipsTranslation(options: TranscriptionOptions | undefined, config: SonioxConfig | null): boolean {
+  return !!options?.skipTranslation || config?.translationMode === "transcribe";
+}
+
 // Speaker ids are "<recording>:<speaker>". The first recording reads as
 // before ("Speaker 1"); later ones carry the recording number
 // ("Speaker 1 (#2)") because Soniox restarted its count.
@@ -339,7 +345,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     provisional = false,
   ) => {
     const config = configRef.current;
-    if (!config || !text) return;
+    if (!config || !text || skipsTranslation(optionsRef.current, config)) return;
     const st = getTranslationState(entryId);
 
     // Build request target(s)
@@ -494,7 +500,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     const config = configRef.current;
     const engine = config?.translationEngine;
     if (!config || (engine !== "t3po" && engine !== "clause") || streamFailedRef.current) return [];
-    if (optionsRef.current?.skipTranslation || !sourceLang) return [];
+    if (skipsTranslation(optionsRef.current, configRef.current) || !sourceLang) return [];
 
     // Multilingual: every column, including the spoken language
     let targets: string[];
@@ -742,7 +748,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
 
   // Throttled provisional translation while a segment is still being spoken
   const maybeTranslateProvisional = useCallback((entryId: string, text: string, sourceLang: string) => {
-    if (optionsRef.current?.skipTranslation) return;
+    if (skipsTranslation(optionsRef.current, configRef.current)) return;
     // Streaming-translated segments get real incremental translation instead
     if (streamEntriesRef.current.has(entryId) || streamPendingRef.current.has(entryId)) return;
     if (sourceLang && streamRoutesFor(sourceLang).length > 0) return;
@@ -853,8 +859,8 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     };
 
     // Fire translation (or external callback via ref for latest callback)
-    if (optionsRef.current?.skipTranslation) {
-      optionsRef.current.onSegmentFinalized?.(seg.entryId, originalText, seg.language);
+    if (skipsTranslation(optionsRef.current, configRef.current)) {
+      optionsRef.current?.onSegmentFinalized?.(seg.entryId, originalText, seg.language);
     } else if (!simulFinalize(seg.entryId, originalText, seg.language)) {
       requestFinalTranslation(seg.entryId, originalText, seg.language);
     }
@@ -1160,7 +1166,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
             // column language (e.g. zh/en/es spoken interchangeably)
             const sources = config.languageA.filter((l) => l !== "*");
             languageHints = Array.from(new Set([...sources, ...(config.targetLangs ?? [])]));
-          } else if (config.translationMode === "one_way") {
+          } else if (config.translationMode === "one_way" || config.translationMode === "transcribe") {
             const isAny = config.languageA.length === 1 && config.languageA[0] === "*";
             languageHints = isAny ? [] : [...config.languageA];
           } else {

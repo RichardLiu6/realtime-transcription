@@ -33,7 +33,12 @@ export function meetingLanguages(
 ): string[] {
   let langs: string[];
   if (mode === "presentation") langs = targetLangs;
-  else if (mode === "two_way") langs = [primaryLanguageA(languageA), languageB];
+  else if (mode === "transcribe") {
+    // Only what is spoken (no target language)
+    const sources = languageA.filter((l) => l !== "*");
+    const heard = languageA.includes("*") ? entries.map((e) => e.language).filter(Boolean) : [];
+    langs = [...sources, ...heard];
+  } else if (mode === "two_way") langs = [primaryLanguageA(languageA), languageB];
   else {
     const sources = languageA.filter((l) => l !== "*");
     const heard = languageA.includes("*") ? entries.map((e) => e.language).filter(Boolean) : [];
@@ -91,7 +96,8 @@ export function sentenceIn(
     // Still translating: its own language can show the original meanwhile
     return entry.language === lang ? original() : null;
   }
-  if (entry.language === lang) return original();
+  // Transcribe only: every sentence as spoken
+  if (mode === "transcribe" || entry.language === lang) return original();
   if (singleTargetLanguage(mode, entry.language, languageA, languageB) === lang) {
     return translation(entry.translatedText);
   }

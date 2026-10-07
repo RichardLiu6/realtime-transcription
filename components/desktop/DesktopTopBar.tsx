@@ -16,6 +16,7 @@ import {
   ArrowRight,
   Monitor,
   ArrowUpDown,
+  Captions,
   ArrowDown,
   Download,
   FilePlus,
@@ -45,6 +46,7 @@ import { Badge } from "@/components/ui/badge";
 import TermsPanel from "@/components/sidebar/TermsPanel";
 import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
 import PresentationLanguages from "@/components/sidebar/PresentationLanguages";
+import FromToLanguages from "@/components/sidebar/FromToLanguages";
 import type { TranslationMode, SpeakerInfo, BilingualEntry } from "@/types/bilingual";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import { INDUSTRY_PRESETS, presetLabel } from "@/lib/contextTerms";
@@ -216,6 +218,10 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
             <Monitor className="size-3" />
             {t("mode_presentation")}
           </ToggleGroupItem>
+          <ToggleGroupItem value="transcribe" className="gap-1 text-xs px-2">
+            <Captions className="size-3" />
+            {t("mode_transcribe")}
+          </ToggleGroupItem>
         </ToggleGroup>
 
         <div className="h-5 w-px bg-border shrink-0" />
@@ -295,6 +301,33 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
                 </SelectContent>
               </Select>
             </>
+          ) : props.translationMode === "transcribe" ? (
+            // Spoken languages only (hints for the speech engine)
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" disabled={isRecording}>
+                  {props.languageA.includes("*") ? (
+                    t("any_language")
+                  ) : (
+                    props.languageA.map((code) => (
+                      <Badge key={code} variant="secondary" className="text-[10px] px-1 py-0 h-4">
+                        {langName(code)}
+                      </Badge>
+                    ))
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent side="bottom" align="start" className="w-72 p-0">
+                <FromToLanguages
+                  sourceOnly
+                  languageA={props.languageA}
+                  languageB={props.languageB}
+                  onLanguageAChange={props.onLanguageAChange}
+                  onLanguageBChange={props.onLanguageBChange}
+                  disabled={isRecording}
+                />
+              </PopoverContent>
+            </Popover>
           ) : (
             <Popover>
               <PopoverTrigger asChild>
