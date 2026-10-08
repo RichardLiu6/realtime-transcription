@@ -16,6 +16,10 @@ import UIKit
 // the microphone, across apps — and passes the engine's messages through the
 // App Group (BroadcastShared); this plugin shows the system picker and feeds
 // those messages into the same numbered stream.
+//
+// Floating captions (CaptionPip.swift): pipConfigure at the start of a
+// recording builds captions from the same messages; PiP shows them when the
+// page asks (pipStart) or the app leaves the screen.
 @objc(NativeSttPlugin)
 public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "NativeSttPlugin"
@@ -25,6 +29,9 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "finish", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "drain", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pipConfigure", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pipStart", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pipStop", returnType: CAPPluginReturnPromise),
     ]
 
     // Messages kept for drain() (a long meeting sends a few per second)
@@ -63,6 +70,10 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
     private var picker: RPSystemBroadcastPickerView?
     // Ask the user to start the broadcast for this long
     private static let broadcastStartTimeout: TimeInterval = 55
+    // Floating captions: the model on this queue, the window on the main thread
+    private var captions: CaptionModel?
+    private var pip: CaptionPip?
+    private var pipGeneration = 0
 
     override public func load() {
         let center = NotificationCenter.default
@@ -220,6 +231,78 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    // MARK: - Floating captions
+
+    @objc func pipConfigure(_ call: CAPPluginCall) {
+        guard CaptionPip.supported, let config = CaptionConfig(call.options) else {
+            call.resolve(["supported": false])
+            return
+        }
+        DispatchQueue.main.async {
+            guard let view = self.bridge?.viewController?.view else {
+                call.resolve(["supported": false])
+                return
+            }
+            self.pipGeneration += 1
+            let pip = self.pip ?? CaptionPip()
+            self.pip = pip
+            pip.onActive = { [weak self] active in
+                guard let self = self else { return }
+                self.queue.async { self.captions?.showing = active }
+                self.notifyListeners("pip", data: ["active": active])
+            }
+            pip.attach(to: view)
+            pip.reset(waiting: config.waiting, translates: config.translates, autoStart: config.autoStart)
+            let model = CaptionModel(config: config, queue: self.queue)
+            model.onChange = { [weak pip] lines in DispatchQueue.main.async { pip?.update(lines) } }
+            let showing = pip.isActive
+            self.queue.async {
+                self.captions = model
+                model.showing = showing
+            }
+            // The login cookie for /api/translate (the web view keeps its own cookies)
+            let host = config.translateURL.host ?? ""
+            self.bridge?.webView?.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+                let cookie = cookies.first { c in
+                    let domain = c.domain.hasPrefix(".") ? String(c.domain.dropFirst()) : c.domain
+                    return c.name == "auth_token" && (host == domain || host.hasSuffix("." + domain))
+                }
+                self.queue.async { model.cookie = cookie.map { "\($0.name)=\($0.value)" } }
+            }
+            call.resolve(["supported": true])
+        }
+    }
+
+    @objc func pipStart(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let pip = self.pip else {
+                call.resolve(["started": false])
+                return
+            }
+            pip.start { started in call.resolve(["started": started]) }
+        }
+    }
+
+    @objc func pipStop(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.pip?.stop()
+            call.resolve()
+        }
+    }
+
+    // The recording ended: no automatic PiP; close the window after the last
+    // sentence has been on screen a moment (unless a new recording started)
+    private func endCaptions() {
+        captions = nil
+        DispatchQueue.main.async {
+            self.pip?.setAutoStart(false)
+            let generation = self.pipGeneration
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                if self.pipGeneration == generation { self.pip?.stop() }
+            }
+        }
+    }
+
     // MARK: - Broadcast (ReplayKit extension)
 
     private func startBroadcast(_ call: CAPPluginCall, _ config: BroadcastShared.Config) {
@@ -322,6 +405,7 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func teardownBroadcast() {
+        endCaptions()
         broadcastPoll?.cancel()
         broadcastPoll = nil
         broadcastId = nil
@@ -367,6 +451,7 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
         kept.append((seq: seq, data: text))
         if kept.count > NativeSttPlugin.maxKept { kept.removeFirst(kept.count - NativeSttPlugin.maxKept) }
         notifyListeners("message", data: ["seq": seq, "data": text])
+        captions?.ingest(text)
     }
 
     private func closed(code: Int, reason: String) {
@@ -377,6 +462,7 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // Stop everything without telling the page
     private func teardown() {
+        endCaptions()
         stopAudio()
         timer?.cancel()
         timer = nil

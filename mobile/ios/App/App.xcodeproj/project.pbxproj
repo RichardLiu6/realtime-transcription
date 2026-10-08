@@ -21,6 +21,7 @@
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		A1B2C3D40000000000000002 /* NativeSttPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000001 /* NativeSttPlugin.swift */; };
 		A1B2C3D40000000000000004 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000003 /* MainViewController.swift */; };
+		A1B2C3D40000000000000006 /* CaptionPip.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000005 /* CaptionPip.swift */; };
 		C24314811A74ADCDE0011369 /* ReplayKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 82727B0F93E23E4D2D372A44 /* ReplayKit.framework */; };
 		D71A0361318923352BFCC3DD /* SampleHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DE240C03587BF529E7ABDA0 /* SampleHandler.swift */; };
 		E2E60C0744D83FBEA5690BF7 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB8AFAD6431DA7A4928DD049 /* Foundation.framework */; };
@@ -69,6 +70,7 @@
 		A13291EE84614FF50B6B997D /* App.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		A1B2C3D40000000000000001 /* NativeSttPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSttPlugin.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000003 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
+		A1B2C3D40000000000000005 /* CaptionPip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptionPip.swift; sourceTree = "<group>"; };
 		A23625B1C6E7F4941F8E8B33 /* Broadcast.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = Broadcast.entitlements; sourceTree = "<group>"; };
 		DB8AFAD6431DA7A4928DD049 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS14.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		F0930FAC9A9045C3C1CDD86A /* BroadcastShared.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BroadcastShared.swift; sourceTree = "<group>"; };
@@ -123,6 +125,7 @@
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				A1B2C3D40000000000000003 /* MainViewController.swift */,
 				A1B2C3D40000000000000001 /* NativeSttPlugin.swift */,
+				A1B2C3D40000000000000005 /* CaptionPip.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -274,6 +277,7 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				A1B2C3D40000000000000004 /* MainViewController.swift in Sources */,
 				A1B2C3D40000000000000002 /* NativeSttPlugin.swift in Sources */,
+				A1B2C3D40000000000000006 /* CaptionPip.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				20A0879B4756C5E9F2DD256C /* BroadcastShared.swift in Sources */,
 			);

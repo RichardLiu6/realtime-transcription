@@ -19,6 +19,7 @@ import {
   Menu,
   Mic,
   MoreHorizontal,
+  PictureInPicture2,
   Square,
 } from "lucide-react";
 import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
@@ -27,6 +28,7 @@ import { INDUSTRY_PRESETS, presetLabel } from "@/lib/contextTerms";
 import { LOCALES, setLocale, useLocale, useT, type Locale, type TranslationKey } from "@/lib/i18n";
 import type { BilingualEntry, CaptureSource, SpeakerInfo, SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
 import { meetingLanguagesOf, type MeetingSettingsSetters } from "@/lib/phoneModes";
+import { usePip } from "@/lib/native/pip";
 import type { SaveStatus } from "@/hooks/useMeetingAutosave";
 import MeetingSettings, { useMeetingSummary } from "./MeetingSettings";
 import PhoneTerms from "./PhoneTerms";
@@ -106,6 +108,7 @@ export default function PhoneChrome(props: PhoneChromeProps) {
   const [sheet, setSheet] = useState<Sheet>(null);
   const [viewing, setViewing] = useState<string | null>(null); // meeting id open in the viewer
   const user = useUser();
+  const pip = usePip();
   const isRecording = recordingState === "recording";
   const isConnecting = recordingState === "connecting";
   const busy = recordingState !== "idle";
@@ -202,7 +205,26 @@ export default function PhoneChrome(props: PhoneChromeProps) {
           {busy ? (
             // Recording: stop in the middle, 更多 on the right
             <div className="grid grid-cols-3 items-center">
-              <span />
+              {/* iOS app: floating captions over other apps */}
+              {pip.available ? (
+                <div className="flex justify-start">
+                  <button
+                    type="button"
+                    onClick={pip.active ? pip.stop : pip.start}
+                    aria-label={t("ph_pip_label")}
+                    aria-pressed={pip.active}
+                    data-phone-pip
+                    className={`flex h-11 items-center gap-1.5 rounded-full px-3 text-sm font-medium ${
+                      pip.active ? "bg-foreground text-background" : "bg-muted text-foreground"
+                    }`}
+                  >
+                    <PictureInPicture2 className="size-4" aria-hidden />
+                    {t("ph_pip")}
+                  </button>
+                </div>
+              ) : (
+                <span />
+              )}
               <div className="flex flex-col items-center gap-1">
                 <button
                   type="button"

@@ -41,6 +41,28 @@ interface NativeSttPlugin {
   addListener(event: "closed", fn: (e: { code: number; reason: string }) => void): Promise<PluginListener>;
   addListener(event: "error", fn: (e: { message: string }) => void): Promise<PluginListener>;
   addListener(event: "progress", fn: (e: { samples: number }) => void): Promise<PluginListener>;
+  // iOS floating captions (PiP; builds from 2026-10): native builds the
+  // captions from the engine's messages and translates them itself, since
+  // the page is suspended in the background. Older builds lack these.
+  pipConfigure?(options: PipConfig): Promise<{ supported: boolean }>;
+  pipStart?(): Promise<{ started: boolean }>;
+  pipStop?(): Promise<void>;
+  addListener(event: "pip", fn: (e: { active: boolean }) => void): Promise<PluginListener>;
+}
+
+export interface PipConfig {
+  mode: string;
+  languageA: string[];
+  languageB: string;
+  // Multilingual: the one translation shown
+  displayLang: string;
+  terms: string[];
+  uiLocale: string;
+  translateUrl: string;
+  // Shown before the first sentence
+  waiting: string;
+  // Start PiP when the app leaves the screen while recording
+  autoStart: boolean;
 }
 
 interface CapacitorGlobal {
