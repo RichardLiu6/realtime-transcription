@@ -6,9 +6,16 @@ export function splitTermInput(text: string): string[] {
   return text.split(TERM_SEPARATORS).map((t) => t.trim()).filter(Boolean);
 }
 
-// Selected presets + custom terms, deduplicated, in order
-export function combineTerms(presetKeys: Iterable<string>, customTerms: string[]): string[] {
-  const presetTerms = Array.from(presetKeys).flatMap((key) => INDUSTRY_PRESETS[key]?.terms ?? []);
+// Selected presets (industry packs, and the user's own packs as "u:<id>")
+// + custom terms, deduplicated, in order
+export function combineTerms(
+  presetKeys: Iterable<string>,
+  customTerms: string[],
+  userPacks: { id: string; terms: string[] }[] = []
+): string[] {
+  const presetTerms = Array.from(presetKeys).flatMap((key) =>
+    key.startsWith("u:") ? (userPacks.find((p) => `u:${p.id}` === key)?.terms ?? []) : (INDUSTRY_PRESETS[key]?.terms ?? [])
+  );
   return [...new Set([...presetTerms, ...customTerms])];
 }
 

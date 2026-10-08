@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
-import { X, Info, Sparkles } from "lucide-react";
+import { X, Info, Sparkles, Trash2 } from "lucide-react";
 import { INDUSTRY_PRESETS, combineTerms, presetLabel, splitTermInput } from "@/lib/contextTerms";
 import { useLocale, useT } from "@/lib/i18n";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { AiTerms } from "@/components/phone/PhoneTerms";
+import { deleteTermPack, useTermPacks } from "@/lib/useTermPacks";
+import { USER_PACK_PREFIX } from "@/lib/termPackTypes";
 import { homeLanguage } from "@/components/phone/parts";
 import { meetingLanguagesOf } from "@/lib/phoneModes";
 import type { TranslationMode } from "@/types/bilingual";
@@ -65,13 +67,19 @@ function PresetChip({
   terms,
   isSelected,
   onToggle,
+  meta,
+  onDelete,
 }: {
   presetKey: string;
   label: string;
   terms: string[];
   isSelected: boolean;
   onToggle: () => void;
+  // Own packs: "N terms · langs · date" and a delete action
+  meta?: string;
+  onDelete?: () => void;
 }) {
+  const t = useT();
   const [infoOpen, setInfoOpen] = useState(false);
   const longPress = useLongPress(() => setInfoOpen(true));
 
@@ -122,7 +130,9 @@ function PresetChip({
         collisionPadding={8}
         className="w-64 max-h-[min(20rem,var(--radix-popover-content-available-height))] overflow-y-auto overscroll-contain p-2"
       >
-        <p className="text-xs font-medium mb-1.5">{label}</p>
+        <p className="text-xs font-medium">{label}</p>
+        {meta && <p className="text-[10px] text-muted-foreground">{meta}</p>}
+        <div className="mb-1.5" />
         <div className="flex flex-wrap gap-1">
           {terms.map((term) => (
             <span
@@ -133,6 +143,20 @@ function PresetChip({
             </span>
           ))}
         </div>
+        {onDelete && (
+          <button
+            type="button"
+            onClick={() => {
+              if (!window.confirm(t("ph_delete_pack_confirm"))) return;
+              setInfoOpen(false);
+              onDelete();
+            }}
+            className="mt-2 inline-flex items-center gap-1 text-[11px] text-red-700 hover:underline"
+          >
+            <Trash2 className="size-3" aria-hidden />
+            {t("ph_delete_pack")}
+          </button>
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -159,17 +183,18 @@ export default function TermsPanel({
         : [],
     [meeting, locale]
   );
+  const { packs } = useTermPacks();
   const [inputValue, setInputValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Sync combined terms to parent
   useEffect(() => {
-    onTermsTextChange(combineTerms(selectedPresets, customTerms).join(", "));
-  }, [selectedPresets, customTerms, onTermsTextChange]);
+    onTermsTextChange(combineTerms(selectedPresets, customTerms, packs).join(", "));
+  }, [selectedPresets, customTerms, packs, onTermsTextChange]);
 
   const totalCount = useMemo(
-    () => combineTerms(selectedPresets, customTerms).length,
-    [selectedPresets, customTerms]
+    () => combineTerms(selectedPresets, customTerms, packs).length,
+    [selectedPresets, customTerms, packs]
   );
 
   const togglePreset = useCallback(
@@ -227,6 +252,32 @@ export default function TermsPanel({
             onToggle={() => togglePreset(key)}
           />
         ))}
+        {/* Own packs (AI-generated, saved per user) */}
+        {packs.map((pack) => {
+          const key = USER_PACK_PREFIX + pack.id;
+          return (
+            <PresetChip
+              key={key}
+              presetKey={key}
+              label={pack.name}
+              terms={pack.terms}
+              meta={t("ph_pack_meta", {
+                n: pack.terms.length,
+                langs: pack.languages.map((l) => l.toUpperCase()).join("/"),
+                date: new Date(pack.createdAt).toLocaleDateString(locale),
+              })}
+              isSelected={selectedPresets.has(key)}
+              onToggle={() => togglePreset(key)}
+              onDelete={async () => {
+                if (await deleteTermPack(pack.id)) {
+                  const next = new Set(selectedPresets);
+                  next.delete(key);
+                  onSelectedPresetsChange(next);
+                }
+              }}
+            />
+          );
+        })}
       </div>
 
       {/* Custom terms */}
@@ -300,6 +351,10 @@ export default function TermsPanel({
                 meetingLanguages={meetingLanguages}
                 onAdd={(terms) => {
                   addCustomTag(terms.join("\n"));
+                  setAiOpen(false);
+                }}
+                onSaved={(pack) => {
+                  onSelectedPresetsChange(new Set([...selectedPresets, USER_PACK_PREFIX + pack.id]));
                   setAiOpen(false);
                 }}
               />

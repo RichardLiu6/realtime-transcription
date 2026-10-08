@@ -67,18 +67,21 @@ Return 15 to ${MAX_TERMS} domain terms for that meeting: the ones it mentions, a
 
 Each term is an array with exactly ${languages.length} string(s), in this order: ${columns}. Each string is how professionals say that term in that language (keep brand names and acronyms as they are). Each string is at most ${MAX_TERM_LENGTH} characters and contains no "=", commas or line breaks.
 
+Also give "title": a short name for this glossary (the meeting's topic, at most 20 characters, in ${languageName(languages[0])}).
+
 If the description is not about a meeting or topic, return an empty list.`;
 
   const schema = {
     type: "object",
     properties: {
+      title: { type: "string" },
       terms: {
         type: "array",
         maxItems: MAX_TERMS,
         items: { type: "array", minItems: languages.length, maxItems: languages.length, items: { type: "string" } },
       },
     },
-    required: ["terms"],
+    required: ["title", "terms"],
     additionalProperties: false,
   };
 
@@ -134,6 +137,8 @@ If the description is not about a meeting or topic, return an empty list.`;
     terms.push(entry);
     if (terms.length >= MAX_TERMS) break;
   }
+  const rawTitle = (parsed as { title?: unknown })?.title;
+  const title = typeof rawTitle === "string" ? rawTitle.replace(/\s+/g, " ").replace(/[<>{}]/g, "").trim().slice(0, 30) : "";
   console.log(`[terms] model=${usedModel} languages=${languages.join(",")} in=${description.length} out=${terms.length}`);
-  return NextResponse.json({ terms });
+  return NextResponse.json({ title, terms });
 }

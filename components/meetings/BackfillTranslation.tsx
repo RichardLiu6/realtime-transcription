@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useTermPacks } from "@/lib/useTermPacks";
 import { Languages, Loader2, X } from "lucide-react";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import { getLocale, useLanguageName, useT } from "@/lib/i18n";
@@ -20,13 +21,13 @@ const CONTEXT_SENTENCES = 3;
 const COMMON = ["zh", "en", "es", "vi"];
 
 // The terms selected on the recording page (same browser)
-function storedTerms(): string[] {
+function storedTerms(packs: { id: string; terms: string[] }[]): string[] {
   try {
     const read = (key: string): string[] => {
       const v = JSON.parse(localStorage.getItem(key) ?? "[]");
       return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
     };
-    return combineTerms(read("termPresets"), read("customTerms"));
+    return combineTerms(read("termPresets"), read("customTerms"), packs);
   } catch {
     return [];
   }
@@ -47,6 +48,7 @@ interface Props {
 export default function BackfillTranslation({ meetingId, entries, existing, onTranslated }: Props) {
   const t = useT();
   const langName = useLanguageName();
+  const termPacks = useTermPacks();
   const [open, setOpen] = useState(false);
   const [langs, setLangs] = useState<string[]>([]);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
@@ -71,7 +73,7 @@ export default function BackfillTranslation({ meetingId, entries, existing, onTr
     stopRef.current = false;
     setResult(null);
     setProgress({ done: 0, total: work.length });
-    const terms = storedTerms();
+    const terms = storedTerms(termPacks.packs);
     const order = new Map(entries.map((e, i) => [e.id, i]));
     const pending: SavedEntry[] = [];
     let done = 0;
