@@ -45,7 +45,12 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
     private let queue = DispatchQueue(label: "com.americanbestlife.translate.NativeStt")
     private var session: URLSession?
     private var task: URLSessionWebSocketTask?
-    private let engine = AVAudioEngine()
+    // Replaced on every restart: after a route change (headphones, Bluetooth,
+    // another app's audio) the old engine's input format is stale, and
+    // installing a tap with it throws (an uncatchable NSException)
+    private var engine = AVAudioEngine()
+    private var restartWork: DispatchWorkItem?
+    private var restartTries = 0
     private var tapInstalled = false
     private var pending: [Int16] = []
     private var frameSamples = 1600
@@ -82,7 +87,7 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
         center.addObserver(self, selector: #selector(audioChanged(_:)),
                            name: AVAudioSession.routeChangeNotification, object: nil)
         center.addObserver(self, selector: #selector(audioChanged(_:)),
-                           name: .AVAudioEngineConfigurationChange, object: engine)
+                           name: .AVAudioEngineConfigurationChange, object: nil)
         center.addObserver(self, selector: #selector(audioChanged(_:)),
                            name: AVAudioSession.mediaServicesWereResetNotification, object: nil)
     }
@@ -143,6 +148,8 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
                             return
                         }
                         do {
+                            // A new engine per recording (the last one may predate a route change)
+                            self.engine = AVAudioEngine()
                             try self.startAudio()
                         } catch {
                             task.cancel(with: .normalClosure, reason: nil)
@@ -463,6 +470,9 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
     // Stop everything without telling the page
     private func teardown() {
         endCaptions()
+        restartWork?.cancel()
+        restartWork = nil
+        restartTries = 0
         stopAudio()
         timer?.cancel()
         timer = nil
@@ -512,19 +522,26 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
         try audioSession.setActive(true)
 
         let input = engine.inputNode
-        let inFormat = input.outputFormat(forBus: 0)
-        guard inFormat.sampleRate > 0, inFormat.channelCount > 0 else {
+        // The hardware's format right now (no input mid route change: retried)
+        let hwFormat = input.inputFormat(forBus: 0)
+        guard hwFormat.sampleRate > 0, hwFormat.channelCount > 0 else {
             throw NSError(domain: "NativeStt", code: 1, userInfo: [NSLocalizedDescriptionKey: "No microphone input"])
         }
         guard let outFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: targetRate,
-                                            channels: 1, interleaved: true),
-              let converter = AVAudioConverter(from: inFormat, to: outFormat) else {
+                                            channels: 1, interleaved: true) else {
             throw NSError(domain: "NativeStt", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unsupported audio format"])
         }
         if tapInstalled { input.removeTap(onBus: 0) }
-        // Runs on an audio thread; the converter is only used there
-        input.installTap(onBus: 0, bufferSize: 4096, format: inFormat) { [weak self] buffer, _ in
+        // format nil: the node's own format, which can't mismatch the
+        // hardware; the converter follows whatever the buffers carry. Runs
+        // on an audio thread; the converter is only used there
+        var converter: AVAudioConverter?
+        input.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buffer, _ in
             guard let self = self else { return }
+            if converter?.inputFormat != buffer.format {
+                converter = AVAudioConverter(from: buffer.format, to: outFormat)
+            }
+            guard let converter = converter else { return }
             let ratio = outFormat.sampleRate / buffer.format.sampleRate
             let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 32
             guard let out = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: capacity) else { return }
@@ -589,16 +606,31 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
         restartAudio()
     }
 
-    private func restartAudio() {
+    // Route changes come in bursts: one restart after they settle, on a new
+    // engine; a few retries while the new route has no input yet
+    private func restartAudio(after delay: TimeInterval = 0.3) {
         queue.async {
-            guard self.running, !self.finishing else { return }
-            if self.engine.isRunning && self.tapInstalled { return }
-            self.stopAudio()
-            do {
-                try self.startAudio()
-            } catch {
-                self.notifyListeners("error", data: ["message": "Microphone: \(error.localizedDescription)"])
+            self.restartWork?.cancel()
+            let work = DispatchWorkItem {
+                guard self.running, !self.finishing, self.broadcastId == nil else { return }
+                if self.engine.isRunning && self.tapInstalled { return }
+                self.stopAudio()
+                self.engine = AVAudioEngine()
+                do {
+                    try self.startAudio()
+                    self.restartTries = 0
+                } catch {
+                    self.restartTries += 1
+                    if self.restartTries < 5 {
+                        self.restartAudio(after: 1)
+                    } else {
+                        self.restartTries = 0
+                        self.notifyListeners("error", data: ["message": "Microphone: \(error.localizedDescription)"])
+                    }
+                }
             }
+            self.restartWork = work
+            self.queue.asyncAfter(deadline: .now() + delay, execute: work)
         }
     }
 }
