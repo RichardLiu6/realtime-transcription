@@ -15,6 +15,7 @@ import {
   ChevronDown,
   MonitorPlay,
   FolderClock,
+  MessageSquare,
 } from "lucide-react";
 import {
   Popover,
@@ -28,6 +29,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useT, type TranslationKey } from "@/lib/i18n";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
+import FeedbackForm from "@/components/FeedbackForm";
 import type { DesktopLayout } from "@/app/page";
 import type { CaptureSource, SttProvider, TranslationEngine } from "@/types/bilingual";
 
@@ -171,6 +173,10 @@ export default function StatusBar({
 
   const [userName, setUserName] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isGuest, setIsGuest] = useState(false);
+  // User menu: the menu, or the feedback form in its place
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [feedbackView, setFeedbackView] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -179,6 +185,7 @@ export default function StatusBar({
         if (d.user) {
           setUserName(d.user.name);
           if (d.user.role === "admin") setIsAdmin(true);
+          if (d.user.role === "guest") setIsGuest(true);
         }
       })
       .catch(() => {});
@@ -393,9 +400,15 @@ export default function StatusBar({
 
           <LanguageSwitcher />
 
-          {/* User menu: name, admin panel, log out */}
+          {/* User menu: name, meetings, feedback, admin panel, log out */}
           {userName && (
-            <Popover>
+            <Popover
+              open={menuOpen}
+              onOpenChange={(o) => {
+                setMenuOpen(o);
+                if (!o) setFeedbackView(false);
+              }}
+            >
               <PopoverTrigger asChild>
                 <button
                   type="button"
@@ -407,39 +420,58 @@ export default function StatusBar({
                   <ChevronDown className="size-3 shrink-0" aria-hidden />
                 </button>
               </PopoverTrigger>
-              <PopoverContent side="bottom" align="end" className="w-52 p-1">
-                <p className="truncate px-2 py-1.5 text-xs text-muted-foreground">{userName}</p>
-                {meetingsLink && (
-                  // New tab: leaving this page would lose the live transcript
-                  <a
-                    href="/meetings"
-                    target="_blank"
-                    rel="noopener"
-                    data-meetings-link
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
-                  >
-                    <FolderClock className="size-3.5" aria-hidden />
-                    {t("my_meetings")}
-                  </a>
+              <PopoverContent side="bottom" align="end" className={feedbackView ? "w-80 space-y-2 p-3" : "w-52 p-1"}>
+                {feedbackView ? (
+                  <>
+                    <p className="text-sm font-medium">{t("fb_title")}</p>
+                    <FeedbackForm topic="general" />
+                  </>
+                ) : (
+                  <>
+                    <p className="truncate px-2 py-1.5 text-xs text-muted-foreground">{userName}</p>
+                    {meetingsLink && (
+                      // New tab: leaving this page would lose the live transcript
+                      <a
+                        href="/meetings"
+                        target="_blank"
+                        rel="noopener"
+                        data-meetings-link
+                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                      >
+                        <FolderClock className="size-3.5" aria-hidden />
+                        {t("my_meetings")}
+                      </a>
+                    )}
+                    {!isGuest && (
+                      <button
+                        type="button"
+                        onClick={() => setFeedbackView(true)}
+                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                      >
+                        <MessageSquare className="size-3.5" aria-hidden />
+                        {t("fb_title")}
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => router.push("/admin")}
+                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                      >
+                        <Shield className="size-3.5" aria-hidden />
+                        {t("admin_panel")}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-destructive hover:bg-destructive/10"
+                    >
+                      <LogOut className="size-3.5" aria-hidden />
+                      {t("logout")}
+                    </button>
+                  </>
                 )}
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => router.push("/admin")}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
-                  >
-                    <Shield className="size-3.5" aria-hidden />
-                    {t("admin_panel")}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-destructive hover:bg-destructive/10"
-                >
-                  <LogOut className="size-3.5" aria-hidden />
-                  {t("logout")}
-                </button>
               </PopoverContent>
             </Popover>
           )}

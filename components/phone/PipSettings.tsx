@@ -1,10 +1,12 @@
 "use client";
 
 // 悬浮字幕 settings (iOS app): the floating window's text size and how much
-// of it the original takes; applied to an open window at once.
+// of it the original takes, applied to an open window at once; and feedback
+// on it, sent with these settings and how its translation went.
 
 import { useT } from "@/lib/i18n";
-import { setPipPrefs, usePipPrefs, type PipPrefs } from "@/lib/native/pip";
+import { pipStats, setPipPrefs, usePipPrefs, type PipPrefs } from "@/lib/native/pip";
+import FeedbackForm from "@/components/FeedbackForm";
 import { Choice } from "./parts";
 
 export default function PipSettings() {
@@ -26,7 +28,9 @@ export default function PipSettings() {
         options={([0, 0.2, 0.4] as const).map((v) => ({ value: String(v), label: t(`ph_pip_original_${v * 10}` as "ph_pip_original_0") }))}
         onChange={(v) => setPipPrefs({ ...prefs, originalShare: Number(v) as PipPrefs["originalShare"] })}
       />
-      <p className="py-3 text-sm leading-snug text-gray-600">{t("ph_pip_buttons")}</p>
+      <p className="border-b border-border py-3 text-sm leading-snug text-gray-600">{t("ph_pip_buttons")}</p>
+      <p className="pt-4 pb-2 text-[15px] text-foreground">{t("ph_pip_feedback")}</p>
+      <FeedbackForm topic="pip" context={async () => ({ pipPrefs: prefs, pipStats: await pipStats() })} />
     </div>
   );
 }
