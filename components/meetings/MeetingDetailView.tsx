@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ChevronLeft, Download, Loader2, MoreHorizontal, Play, Trash2, X } from "lucide-react";
+import { ArrowLeft, ChevronLeft, Download, Loader2, MoreHorizontal, Pause, Play, Trash2, X } from "lucide-react";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
 import { useLanguageName, useLocale, useT } from "@/lib/i18n";
 import { useStoredState } from "@/lib/useStoredState";
@@ -160,8 +160,40 @@ export default function MeetingDetailView({ id, inApp = false, onBack, onDeleted
     [recordings, segment, segmentFor]
   );
 
+  // Position and length of the current recording, for the phone player
+  const [pos, setPos] = useState(0);
+  const [dur, setDur] = useState(0);
+
+  // The player gets a signed storage URL asked for with the login cookie:
+  // in the iOS app the audio element's own requests carry no cookies, so
+  // the protected /recordings/<n> route redirected it to the login page
+  const currentIdx = recordings[segment]?.idx;
+  const [audioSrc, setAudioSrc] = useState<{ key: string; url: string } | null>(null);
+  useEffect(() => {
+    if (currentIdx === undefined) return;
+    const key = `${currentIdx}-${reload}`;
+    let cancelled = false;
+    fetch(`/api/meetings/${id}/recordings/${currentIdx}?url=1`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d: { url: string }) => {
+        if (!cancelled) setAudioSrc({ key, url: d.url });
+      })
+      .catch((error) => console.error("[meeting] recording URL failed:", error));
+    return () => {
+      cancelled = true;
+    };
+  }, [id, currentIdx, reload]);
+
+  const togglePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) audio.play().catch(() => {});
+    else audio.pause();
+  };
+
   const onLoadedMetadata = () => {
     const audio = audioRef.current;
+    if (audio && Number.isFinite(audio.duration)) setDur(audio.duration);
     const seek = pendingSeek.current;
     if (!audio || !seek) return;
     pendingSeek.current = null;
@@ -171,7 +203,10 @@ export default function MeetingDetailView({ id, inApp = false, onBack, onDeleted
   const onTimeUpdate = () => {
     const audio = audioRef.current;
     const rec = recordings[segment];
-    if (audio && rec) setPlayMs(rec.offsetMs + audio.currentTime * 1000);
+    if (audio && rec) {
+      setPlayMs(rec.offsetMs + audio.currentTime * 1000);
+      setPos(audio.currentTime);
+    }
   };
   const onEnded = () => {
     if (segment + 1 < recordings.length) {
@@ -397,9 +432,12 @@ export default function MeetingDetailView({ id, inApp = false, onBack, onDeleted
     <audio
       ref={audioRef}
       key={`${current.idx}-${reload}`}
-      src={`/api/meetings/${id}/recordings/${current.idx}${reload ? `?r=${reload}` : ""}`}
-      controls
+      src={audioSrc?.key === `${current.idx}-${reload}` ? audioSrc.url : undefined}
+      // Phones: our own player (below); desktop: the browser's
+      controls={!isPhone}
+      playsInline
       preload="metadata"
+      onDurationChange={(e) => Number.isFinite(e.currentTarget.duration) && setDur(e.currentTarget.duration)}
       data-meeting-audio
       onLoadedMetadata={onLoadedMetadata}
       onTimeUpdate={onTimeUpdate}
@@ -407,7 +445,7 @@ export default function MeetingDetailView({ id, inApp = false, onBack, onDeleted
       onPause={() => setPlaying(false)}
       onEnded={onEnded}
       onError={onError}
-      className="h-9 min-w-0 flex-1"
+      className={isPhone ? "hidden" : "h-9 min-w-0 flex-1"}
     />
   ) : null;
 
@@ -596,11 +634,42 @@ export default function MeetingDetailView({ id, inApp = false, onBack, onDeleted
         </main>
 
         {audio && (
-          <div className="fixed inset-x-0 bottom-0 z-20 flex items-center gap-2 border-t border-border bg-background pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
+          <div
+            className="fixed inset-x-0 bottom-0 z-20 flex items-center gap-3 border-t border-border bg-background pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2"
+            data-phone-player
+          >
             {audio}
+            <button
+              type="button"
+              onClick={togglePlay}
+              aria-label={playing ? t("meeting_pause") : t("meeting_play")}
+              className="grid size-10 shrink-0 place-items-center rounded-full bg-foreground text-background active:opacity-80"
+            >
+              {playing ? <Pause className="size-5 fill-current" /> : <Play className="ml-0.5 size-5 fill-current" />}
+            </button>
+            <span className="w-11 shrink-0 text-xs tabular-nums text-gray-700">{formatClock(pos * 1000)}</span>
+            <input
+              type="range"
+              min={0}
+              max={dur || 0}
+              step={0.1}
+              value={Math.min(pos, dur || 0)}
+              disabled={!dur}
+              onChange={(e) => {
+                const a = audioRef.current;
+                if (!a) return;
+                a.currentTime = Number(e.target.value);
+                setPos(a.currentTime);
+              }}
+              aria-label={t("meeting_play_here")}
+              className="min-w-0 flex-1 accent-foreground"
+            />
+            <span className="w-11 shrink-0 text-right text-xs tabular-nums text-gray-700">
+              {dur ? formatClock(dur * 1000) : "--:--"}
+            </span>
             {recordings.length > 1 && (
               <span className="shrink-0 text-xs tabular-nums text-gray-600">
-                {segment + 1} / {recordings.length}
+                {segment + 1}/{recordings.length}
               </span>
             )}
           </div>
