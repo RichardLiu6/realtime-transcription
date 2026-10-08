@@ -112,6 +112,7 @@ body {
 .safe-top {
   padding-top: env(safe-area-inset-top, 0px);
 }
+/* Sets the side padding: don't combine with px-* (use pl-[max(…)] instead) */
 .safe-x {
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
