@@ -498,6 +498,7 @@ export default function Home() {
         {/* Phone: top bar, one big button, bottom bar and sheets around the
             transcript; desktop: just the transcript */}
         <PhoneChrome
+          gesturesDisabled={presentation.open}
           error={error}
           translationMode={translationMode}
           languageA={languageA}

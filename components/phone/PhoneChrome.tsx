@@ -19,27 +19,26 @@ import {
   Menu,
   Mic,
   MoreHorizontal,
-  Plus,
-  Search,
   Square,
-  X,
 } from "lucide-react";
 import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
 import { LiveSharePanel } from "@/components/LiveShareButton";
 import { INDUSTRY_PRESETS, presetLabel } from "@/lib/contextTerms";
 import { LOCALES, setLocale, useLocale, useT, type Locale, type TranslationKey } from "@/lib/i18n";
-import { formatDateTime } from "@/lib/meetings/format";
-import type { MeetingSummary } from "@/lib/meetings/types";
 import type { BilingualEntry, CaptureSource, SpeakerInfo, SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
 import { mutualLanguages, phoneModeOf, type MeetingSettingsSetters } from "@/lib/phoneModes";
 import type { SaveStatus } from "@/hooks/useMeetingAutosave";
 import MeetingSettings, { useMeetingSummary } from "./MeetingSettings";
 import PhoneTerms from "./PhoneTerms";
+import Drawer from "./Drawer";
+import MeetingDetailView from "@/components/meetings/MeetingDetailView";
 import { BottomSheet, Row, SectionTitle, SideSheet, homeLanguage } from "./parts";
 
 
 export interface PhoneChromeProps {
   children: ReactNode;
+  // Presentation mode covers the screen: no edge swipe for the sidebar
+  gesturesDisabled?: boolean;
   error: string | null;
   // Meeting
   translationMode: TranslationMode;
@@ -106,6 +105,7 @@ export default function PhoneChrome(props: PhoneChromeProps) {
   const { recordingState, entries } = props;
   const [sheet, setSheet] = useState<Sheet>(null);
   const [viewing, setViewing] = useState<string | null>(null); // meeting id open in the viewer
+  const user = useUser();
   const isRecording = recordingState === "recording";
   const isConnecting = recordingState === "connecting";
   const busy = recordingState !== "idle";
@@ -324,9 +324,11 @@ export default function PhoneChrome(props: PhoneChromeProps) {
       <Drawer
         open={sheet === "drawer"}
         onOpenChange={(o) => setSheet(o ? "drawer" : null)}
+        gesturesEnabled={sheet === null && !viewing && !props.gesturesDisabled}
         recording={busy}
         canSave={props.save.available}
         current={props.save.meetingId && (hasEntries || busy) ? { id: props.save.meetingId, summary } : null}
+        userName={user?.name ?? ""}
         onNewMeeting={() => {
           close();
           props.onNewMeeting();
@@ -341,7 +343,18 @@ export default function PhoneChrome(props: PhoneChromeProps) {
 
       <Preferences open={sheet === "prefs"} onOpenChange={(o) => setSheet(o ? "prefs" : null)} locked={busy} settings={props.settings} />
 
-      {viewing && <MeetingViewer id={viewing} onClose={() => setViewing(null)} />}
+      {/* A saved meeting, inside the app, over the recording page (which
+          keeps recording underneath) */}
+      {viewing && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("my_meetings")}
+          className="fixed inset-0 z-40 overflow-y-auto overscroll-contain bg-background lg:hidden"
+        >
+          <MeetingDetailView id={viewing} inApp onBack={() => setViewing(null)} onDeleted={() => setViewing(null)} />
+        </div>
+      )}
     </>
   );
 }
@@ -418,184 +431,6 @@ function Switch({ on, danger }: { on: boolean; danger?: boolean }) {
       <span className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-all ${on ? "left-[18px]" : "left-0.5"}`} />
     </span>
   );
-}
-
-// --- Sidebar: new meeting, saved meetings, settings & account ---
-
-function Drawer({
-  open,
-  onOpenChange,
-  recording,
-  canSave,
-  current,
-  onNewMeeting,
-  onOpenMeeting,
-  onBackToRecording,
-  onSettings,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  recording: boolean;
-  canSave: boolean;
-  current: { id: string; summary: string } | null;
-  onNewMeeting: () => void;
-  onOpenMeeting: (id: string) => void;
-  onBackToRecording: () => void;
-  onSettings: () => void;
-}) {
-  const t = useT();
-  const locale = useLocale();
-  const user = useUser();
-  const [query, setQuery] = useState("");
-  const [meetings, setMeetings] = useState<MeetingSummary[] | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  // Loaded each time the sidebar opens (and while typing a search)
-  useEffect(() => {
-    if (!open || !canSave) return;
-    const controller = new AbortController();
-    const timer = setTimeout(
-      () => {
-        fetch(`/api/meetings?q=${encodeURIComponent(query.trim())}`, { signal: controller.signal, cache: "no-store" })
-          .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-          .then((d) => {
-            setMeetings(d.meetings ?? []);
-            setFailed(false);
-          })
-          .catch((e) => {
-            if (e?.name !== "AbortError") setFailed(true);
-          });
-      },
-      query ? 300 : 0
-    );
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [open, query, canSave]);
-
-  const groups = useMemo(() => groupByDate(meetings ?? [], current?.id), [meetings, current?.id]);
-
-  return (
-    <SideSheet open={open} onOpenChange={onOpenChange} side="left" title={t("ph_menu")} className="w-[86%] max-w-sm">
-      <div className="flex h-full min-h-0 flex-col pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        <div className="space-y-2 px-3 pt-3">
-          <button
-            type="button"
-            onClick={onNewMeeting}
-            disabled={recording}
-            className="flex h-11 w-full items-center gap-2 rounded-xl bg-foreground px-3 text-[15px] font-semibold text-background disabled:opacity-50"
-          >
-            <Plus className="size-5" aria-hidden />
-            {t("new_meeting")}
-            {recording && <span className="ml-auto text-xs font-normal opacity-80">{t("ph_stop_first")}</span>}
-          </button>
-          <label className={`flex items-center gap-2 rounded-xl bg-muted px-3 py-2 ${canSave ? "" : "hidden"}`}>
-            <Search className="size-4 text-gray-600" aria-hidden />
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t("ph_search_meetings")}
-              className="min-w-0 flex-1 bg-transparent text-[15px] outline-none"
-            />
-          </label>
-        </div>
-
-        <div className="mt-2 min-h-0 flex-1 overflow-y-auto px-2">
-          {current && !query && (
-            <>
-              <DrawerTitle>{recording ? t("ph_recording_now") : t("ph_current")}</DrawerTitle>
-              <button
-                type="button"
-                onClick={onBackToRecording}
-                className={`w-full rounded-lg px-2 py-2 text-left ${recording ? "bg-red-50" : "bg-muted"}`}
-              >
-                <span className={`flex items-center gap-1.5 text-[15px] font-semibold ${recording ? "text-red-700" : "text-foreground"}`}>
-                  {recording && <span className="size-2 rounded-full bg-red-600 recording-pulse" aria-hidden />}
-                  <span className="truncate">{current.summary}</span>
-                </span>
-                <span className="block text-xs text-gray-600">{t("ph_back_to_recording")}</span>
-              </button>
-            </>
-          )}
-          {failed && <p className="px-2 py-4 text-sm text-red-700">{t("ph_meetings_failed")}</p>}
-          {meetings && meetings.length === 0 && !failed && (
-            <p className="px-2 py-4 text-sm text-gray-600">{t("ph_no_meetings")}</p>
-          )}
-          {meetings === null && !failed && canSave && (
-            <div className="grid place-items-center py-6">
-              <Loader2 className="size-5 animate-spin text-gray-500" />
-            </div>
-          )}
-          {groups.map((g) => (
-            <div key={g.key}>
-              <DrawerTitle>{t(g.key)}</DrawerTitle>
-              {g.items.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => onOpenMeeting(m.id)}
-                  className="w-full rounded-lg px-2 py-2 text-left hover:bg-muted"
-                >
-                  <span className="block truncate text-[15px] text-foreground">
-                    {m.title || formatDateTime(m.createdAt, locale)}
-                  </span>
-                  <span className="block truncate text-xs text-gray-600">
-                    {[
-                      m.title ? formatDateTime(m.createdAt, locale) : null,
-                      t("ph_min", { n: Math.max(1, Math.round(m.durationMs / 60000)) }),
-                      m.recordingCount > 0 ? t("ph_with_audio") : null,
-                      m.shared ? t("ph_shared") : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ))}
-        </div>
-
-        <button
-          type="button"
-          onClick={onSettings}
-          className="mx-2 mt-2 flex items-center gap-3 rounded-xl border-t border-border px-2 pt-3 text-left"
-        >
-          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-foreground text-sm font-semibold text-background">
-            {(user?.name ?? "?").slice(0, 1).toUpperCase()}
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-semibold">{user?.name ?? ""}</span>
-            <span className="block text-xs text-gray-600">{t("ph_settings_account")}</span>
-          </span>
-        </button>
-      </div>
-    </SideSheet>
-  );
-}
-
-function DrawerTitle({ children }: { children: ReactNode }) {
-  return <p className="px-2 pb-1 pt-4 text-xs font-medium text-gray-600">{children}</p>;
-}
-
-function groupByDate(meetings: MeetingSummary[], skipId?: string) {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const weekAgo = today - 6 * 86400000;
-  const buckets: Record<"ph_today" | "ph_this_week" | "ph_earlier", MeetingSummary[]> = {
-    ph_today: [],
-    ph_this_week: [],
-    ph_earlier: [],
-  };
-  for (const m of meetings) {
-    if (m.id === skipId) continue;
-    const time = new Date(m.createdAt).getTime();
-    buckets[time >= today ? "ph_today" : time >= weekAgo ? "ph_this_week" : "ph_earlier"].push(m);
-  }
-  return (Object.keys(buckets) as (keyof typeof buckets)[])
-    .filter((k) => buckets[k].length > 0)
-    .map((key) => ({ key, items: buckets[key] }));
 }
 
 function useUser() {
@@ -754,28 +589,6 @@ function Choice<V extends string>({
         ))}
       </div>
       {description && <p className="mt-2 text-xs leading-snug text-gray-600">{description}</p>}
-    </div>
-  );
-}
-
-// --- A saved meeting, inside the app: the page in a frame over the
-// recording screen, so a recording carries on underneath ---
-
-function MeetingViewer({ id, onClose }: { id: string; onClose: () => void }) {
-  const t = useT();
-  return (
-    <div className="safe-top safe-x fixed inset-0 z-[70] flex flex-col bg-background lg:hidden" role="dialog" aria-modal>
-      <div className="flex shrink-0 items-center border-b border-border px-2 py-1.5">
-        <button
-          type="button"
-          onClick={onClose}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[15px] text-blue-700"
-        >
-          <X className="size-5" aria-hidden />
-          {t("ph_close")}
-        </button>
-      </div>
-      <iframe src={`/meetings/${id}`} title={t("my_meetings")} className="min-h-0 w-full flex-1 border-0" />
     </div>
   );
 }
