@@ -96,6 +96,15 @@ CREATE TABLE IF NOT EXISTS soniox_usage (
   cost_usd numeric(14, 6) NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS soniox_usage_end ON soniox_usage (end_time);
+CREATE TABLE IF NOT EXISTS user_term_packs (
+  id text PRIMARY KEY,
+  email text NOT NULL,
+  name text NOT NULL,
+  languages jsonb NOT NULL DEFAULT '[]',
+  terms jsonb NOT NULL DEFAULT '[]',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS user_term_packs_email ON user_term_packs (email, created_at);
 CREATE TABLE IF NOT EXISTS sync_state (
   key text PRIMARY KEY,
   synced_to timestamptz NOT NULL

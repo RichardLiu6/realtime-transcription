@@ -9,6 +9,7 @@ import { useMeetingRecorder } from "@/hooks/useMeetingRecorder";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
 import { useStoredState } from "@/lib/useStoredState";
 import { combineTerms, INDUSTRY_PRESETS } from "@/lib/contextTerms";
+import { useTermPacks } from "@/lib/useTermPacks";
 import type { CaptureSource, SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
 import { broadcastAvailable } from "@/lib/native/stt";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -73,8 +74,11 @@ export default function Home() {
   // Terms survive a reload too (stored as arrays; the panel works with a Set)
   const [presetKeys, setPresetKeys] = useStoredState("termPresets", NO_TERMS, isTermList);
   const [customTerms, setCustomTerms] = useStoredState("customTerms", NO_TERMS, isTermList);
+  // The user's own term packs (saved AI suggestions)
+  const termPacks = useTermPacks();
   const selectedPresets = useMemo(
-    () => new Set(presetKeys.filter((k) => k in INDUSTRY_PRESETS)),
+    // Industry packs, and the user's own packs ("u:<id>"; a deleted one is skipped)
+    () => new Set(presetKeys.filter((k) => k in INDUSTRY_PRESETS || k.startsWith("u:"))),
     [presetKeys]
   );
   const setSelectedPresets = useCallback(
@@ -204,7 +208,7 @@ export default function Home() {
   const handleStart = useCallback(() => {
     // From the stored selection itself, so it doesn't depend on the terms
     // panel being mounted
-    const terms = combineTerms(selectedPresets, customTerms);
+    const terms = combineTerms(selectedPresets, customTerms, termPacks.packs);
     // Stopping and starting again continues the same transcript; only
     // 新会议 (handleNewMeeting) clears it
     start({
@@ -223,6 +227,7 @@ export default function Home() {
     languageB,
     selectedPresets,
     customTerms,
+    termPacks.packs,
     translationMode,
     targetLangs,
     sttProvider,
