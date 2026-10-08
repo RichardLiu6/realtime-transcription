@@ -37,6 +37,16 @@ function subscribePhone(onChange: () => void) {
 }
 const isPhoneNow = () => window.matchMedia(PHONE_QUERY).matches;
 
+// iPhones / iPads (every browser there is WebKit) and Safari fail on
+// Chrome's WebM recordings: they ask for the AAC copy
+function prefersAac(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  const ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const safari = /Safari/.test(ua) && !/Chrome|Chromium|Edg|Firefox|OPR/.test(ua);
+  return ios || safari;
+}
+
 interface MeetingDetailViewProps {
   id: string;
   // In the app's phone layout: back closes the view
@@ -168,21 +178,33 @@ export default function MeetingDetailView({ id, inApp = false, onBack, onDeleted
   // in the iOS app the audio element's own requests carry no cookies, so
   // the protected /recordings/<n> route redirected it to the login page
   const currentIdx = recordings[segment]?.idx;
+  const currentType = recordings[segment]?.contentType;
+  // WebM that failed to play here: switch to the AAC copy
+  const [aacFallback, setAacFallback] = useState(false);
+  const useAac = currentType === "audio/webm" && (aacFallback || prefersAac());
   const [audioSrc, setAudioSrc] = useState<{ key: string; url: string } | null>(null);
+  const [preparing, setPreparing] = useState(false);
   useEffect(() => {
     if (currentIdx === undefined) return;
     const key = `${currentIdx}-${reload}`;
     let cancelled = false;
-    fetch(`/api/meetings/${id}/recordings/${currentIdx}?url=1`, { cache: "no-store" })
+    // The first AAC copy of a long recording takes a few seconds
+    const slow = useAac ? setTimeout(() => !cancelled && setPreparing(true), 400) : undefined;
+    fetch(`/api/meetings/${id}/recordings/${currentIdx}?url=1${useAac ? "&format=aac" : ""}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((d: { url: string }) => {
         if (!cancelled) setAudioSrc({ key, url: d.url });
       })
-      .catch((error) => console.error("[meeting] recording URL failed:", error));
+      .catch((error) => console.error("[meeting] recording URL failed:", error))
+      .finally(() => {
+        clearTimeout(slow);
+        if (!cancelled) setPreparing(false);
+      });
     return () => {
       cancelled = true;
+      clearTimeout(slow);
     };
-  }, [id, currentIdx, reload]);
+  }, [id, currentIdx, reload, useAac]);
 
   const togglePlay = () => {
     const audio = audioRef.current;
@@ -220,7 +242,13 @@ export default function MeetingDetailView({ id, inApp = false, onBack, onDeleted
   // it again (once) where it stopped
   const onError = () => {
     const audio = audioRef.current;
-    if (!audio || reload > 3) return;
+    if (!audio) return;
+    if (currentType === "audio/webm" && !useAac) {
+      pendingSeek.current = { ms: audio.currentTime * 1000, play: !audio.paused };
+      setAacFallback(true);
+      return;
+    }
+    if (reload > 3) return;
     pendingSeek.current = { ms: audio.currentTime * 1000, play: !audio.paused };
     setReload((n) => n + 1);
   };
@@ -647,7 +675,13 @@ export default function MeetingDetailView({ id, inApp = false, onBack, onDeleted
             >
               {playing ? <Pause className="size-5 fill-current" /> : <Play className="ml-0.5 size-5 fill-current" />}
             </button>
-            <span className="w-11 shrink-0 text-xs tabular-nums text-gray-700">{formatClock(pos * 1000)}</span>
+            {preparing && (
+              <span className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-gray-600" role="status">
+                <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />
+                <span className="truncate">{t("meeting_audio_preparing")}</span>
+              </span>
+            )}
+            <span className={`w-11 shrink-0 text-xs tabular-nums text-gray-700 ${preparing ? "hidden" : ""}`}>{formatClock(pos * 1000)}</span>
             <input
               type="range"
               min={0}
@@ -662,7 +696,7 @@ export default function MeetingDetailView({ id, inApp = false, onBack, onDeleted
                 setPos(a.currentTime);
               }}
               aria-label={t("meeting_play_here")}
-              className="min-w-0 flex-1 accent-foreground"
+              className={`min-w-0 flex-1 accent-foreground ${preparing ? "hidden" : ""}`}
             />
             <span className="w-11 shrink-0 text-right text-xs tabular-nums text-gray-700">
               {dur ? formatClock(dur * 1000) : "--:--"}

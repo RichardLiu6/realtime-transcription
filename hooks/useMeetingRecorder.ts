@@ -23,7 +23,9 @@ import {
 const CHUNK_MS = 5000;
 const BITRATE = 32_000;
 const MULTIPART_ABOVE = 8 * 1024 * 1024;
-const MIME_TYPES = ["audio/webm;codecs=opus", "audio/mp4", "audio/ogg;codecs=opus"];
+// AAC in MP4 first: it plays everywhere, iPhones included (Chrome's WebM
+// fails there); WebM / Ogg only for browsers that can't record MP4
+const MIME_TYPES = ["audio/mp4;codecs=mp4a.40.2", "audio/mp4", "audio/webm;codecs=opus", "audio/ogg;codecs=opus"];
 
 export type RecordingsMode = "blob" | "local";
 
