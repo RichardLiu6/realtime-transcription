@@ -11,3 +11,5 @@
 - 设计页 https://claude.ai/artifact/EY7657qA3wR8AnWxpHTvc6；细节 docs/mobile-redesign.md
 
 ## [2026-10-07] 手机侧边栏手势 + Claude 风格；会议记录改为 App 内组件（记录/纪要标签）— PR #20
+
+## [2026-10-07] App 内会议录音播放修复（播放器不带 Cookie → 先取签名地址）+ 手机播放条 — PR #21
