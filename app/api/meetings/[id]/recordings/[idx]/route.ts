@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import { guardMeeting, serverError } from "@/lib/meetings/guard";
 import { recordingFile } from "@/lib/meetings/repo";
-import { audioMode, ensureAacCopy, localPath, signedPlaybackUrl } from "@/lib/meetings/audio";
+import { ConversionLimitError, audioMode, ensureAacCopy, localPath, signedPlaybackUrl } from "@/lib/meetings/audio";
+import { withinDailyLimit } from "@/lib/rateLimit";
 
 type Params = { params: Promise<{ id: string; idx: string }> };
 
 // Making an AAC copy of a long WebM recording takes a while
 export const maxDuration = 300;
+// Conversions one person can start per day (a meeting has a few recordings)
+const AAC_DAILY_LIMIT = 30;
 
 // Owner or shared with: play a recording. From Blob: a redirect to a
 // short-lived signed URL (the player fetches and seeks straight from
@@ -28,7 +31,18 @@ export async function GET(req: NextRequest, { params }: Params) {
     const asJson = req.nextUrl.searchParams.get("url") === "1";
     const wantAac = asJson && req.nextUrl.searchParams.get("format") === "aac" && file.contentType === "audio/webm";
     if (wantAac) {
-      const copy = await ensureAacCopy(file.pathname);
+      // Each copy is made once; a person can start only so many a day
+      let copy: string;
+      try {
+        copy = await ensureAacCopy(file.pathname, () =>
+          withinDailyLimit("aac", g.user.email.toLowerCase(), AAC_DAILY_LIMIT)
+        );
+      } catch (error) {
+        if (error instanceof ConversionLimitError) {
+          return NextResponse.json({ error: "Daily limit reached", code: "limit" }, { status: 429 });
+        }
+        throw error;
+      }
       const url = audioMode() === "blob" ? await signedPlaybackUrl(copy) : `/api/meetings/${g.id}/recordings/${idx}?file=aac`;
       return NextResponse.json({ url }, { headers: { "Cache-Control": "private, no-store" } });
     }
