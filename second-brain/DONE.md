@@ -9,3 +9,5 @@
 
 ## [2026-10-07] 手机新界面 + 术语改版 + AI 生成术语 + 多语言术语翻译修复 — PR #19
 - 设计页 https://claude.ai/artifact/EY7657qA3wR8AnWxpHTvc6；细节 docs/mobile-redesign.md
+
+## [2026-10-07] 手机侧边栏手势 + Claude 风格；会议记录改为 App 内组件（记录/纪要标签）— PR #20
