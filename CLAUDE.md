@@ -155,6 +155,11 @@ Central logic for the entire app:
 - **补翻译** (`components/meetings/BackfillTranslation.tsx`, owner only, multilingual and 仅转录 meetings): pick languages (preselected: the ones already there, else the interface language), and only sentences missing them are translated — never into a sentence's own language (that column shows the original). The browser calls `/api/translate` per sentence (4 at a time; missing languages only; previous 3 sentences as context; the terms selected on the recording page in this browser), so model, fallback and usage work as live; results go through `PUT …/entries` every 10 sentences. Progress, stop, and a count of what's left (a second run finishes it; an account failure 401/402 stops at once). A transcribe meeting with translations shows the language columns. `saveEntries` merges stored `translations` under incoming ones, so the recording page re-saving a sentence (rename, speaker change) never drops them.
 - Cleanup: Vercel Cron (`vercel.json`, daily) → `/api/cron/cleanup-meetings` (needs `CRON_SECRET`; public in middleware) deletes expired meetings and day-old empty ones with their audio.
 
+### Feedback (`lib/feedback.ts`)
+
+- `components/FeedbackForm.tsx` (`topic` "general" | "pip", optional `context()` for the caller's state) → `POST /api/feedback` → Postgres `feedback` (same database; id, lower-cased email, time, topic, message, context jsonb). Logged-in users only (guests 403 `guest`, no database 503); message 1–2000 chars, topic from `FEEDBACK_TOPICS`, context over 4 KB dropped, 20 per user per day (`lib/rateLimit.ts`). The form always adds interface locale, user agent, viewport, `nativeApp` and page path.
+- Entry points: phone settings (意见反馈 row → bottom sheet), desktop user menu (the popover turns into the form). PiP mounts its own `topic="pip"` form. Admin page section 意见反馈: latest 200 (`/api/admin/feedback`), context as key: value chips.
+
 ### Presentation (projector) mode (`components/PresentationMode.tsx`)
 
 - Not the multilingual mode above: a full-screen caption view of the page's state for a meeting-room projector. Opened by the 演示模式 button in the status bar (the one bar every layout, incl. mobile, shows) or `F` (ignored while typing in a text field); Esc / F / the exit button close it. `usePresentationMode()` requests the Fullscreen API when available (else a full-viewport overlay) and leaves the mode when the browser leaves full screen (its Esc never reaches the page). Only displays: recording keeps running when entering or leaving; Start/Stop in the strip call the page's handlers.
@@ -208,6 +213,8 @@ Central logic for the entire app:
 | `/api/meetings/[id]/recordings/[idx]` | GET | Play: signed Blob URL redirect / local file with Range |
 | `/api/admin/saved-meetings` | GET | Admin: content-free list of meetings |
 | `/api/admin/usage` | GET | Admin: usage and cost per user (`?month=YYYY-MM`) |
+| `/api/feedback` | POST | User feedback (logged-in users, 20/day) |
+| `/api/admin/feedback` | GET | Admin: latest 200 feedback rows |
 | `/api/cron/cleanup-meetings` | GET | Daily cleanup (CRON_SECRET) |
 | `/api/cron/sync-soniox-usage` | GET | Daily copy of Soniox usage logs (CRON_SECRET) |
 | `/api/auth/send-code` | POST | Email OTP |

@@ -34,6 +34,7 @@ import MeetingSettings, { useMeetingSummary } from "./MeetingSettings";
 import PhoneTerms from "./PhoneTerms";
 import Drawer from "./Drawer";
 import MeetingDetailView from "@/components/meetings/MeetingDetailView";
+import FeedbackForm from "@/components/FeedbackForm";
 import { BottomSheet, Row, SectionTitle, SideSheet, homeLanguage } from "./parts";
 
 
@@ -488,6 +489,7 @@ function Preferences({
   const router = useRouter();
   const user = useUser();
   const isAdmin = user?.role === "admin";
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const sttOptions = (["soniox", "r2t2"] as const).filter((v) => v !== "r2t2" || settings.r2t2Enabled);
   const engineOptions = (["llm", "clause", "t3po"] as const).filter((v) => v !== "t3po" || settings.t3poEnabled);
 
@@ -561,6 +563,7 @@ function Preferences({
             options={LOCALES.map((l) => ({ value: l.code, label: l.label }))}
             onChange={(v) => setLocale(v as Locale)}
           />
+          {user?.role !== "guest" && <Row label={t("fb_title")} onClick={() => setFeedbackOpen(true)} />}
 
           <SectionTitle>{t("ph_section_account")}</SectionTitle>
           {user && <Row label={user.name} description={user.email.toLowerCase() !== user.name.toLowerCase() ? user.email : undefined} />}
@@ -568,6 +571,10 @@ function Preferences({
           <Row label={t("logout")} danger chevron={false} onClick={logout} />
         </div>
       </div>
+      {/* Inside the settings sheet, so closing it returns to settings */}
+      <BottomSheet open={feedbackOpen} onOpenChange={setFeedbackOpen} title={t("fb_title")}>
+        <FeedbackForm topic="general" />
+      </BottomSheet>
     </SideSheet>
   );
 }
