@@ -73,14 +73,31 @@ export function aacCopyPathname(pathname: string): string {
   return pathname.replace(/\.webm$/, ".aac.m4a");
 }
 
-export async function ensureAacCopy(pathname: string): Promise<string> {
+// One conversion per recording at a time (on this instance): concurrent
+// requests wait for the same one
+const converting = new Map<string, Promise<string>>();
+
+export class ConversionLimitError extends Error {}
+
+// `mayConvert` runs only when a copy has to be made (a per-user limit)
+export function ensureAacCopy(pathname: string, mayConvert: () => Promise<boolean>): Promise<string> {
+  const running = converting.get(pathname);
+  if (running) return running;
+  const job = makeAacCopy(pathname, mayConvert).finally(() => converting.delete(pathname));
+  converting.set(pathname, job);
+  return job;
+}
+
+async function makeAacCopy(pathname: string, mayConvert: () => Promise<boolean>): Promise<string> {
   const copy = aacCopyPathname(pathname);
   if (copy === pathname) return pathname;
   const mode = audioMode();
   if (mode === "blob") {
     if (await head(copy).then(() => true, () => false)) return copy;
+    if (!(await mayConvert())) throw new ConversionLimitError("Conversion limit reached");
     const original = await get(pathname, { access: "private", useCache: false });
     if (!original || original.statusCode !== 200) throw new Error("Recording not found in storage");
+    if ((original.blob.size ?? 0) > MAX_RECORDING_BYTES) throw new Error("Recording too large to convert");
     const input = new Uint8Array(await new Response(original.stream).arrayBuffer());
     const started = Date.now();
     const output = await toAacM4a(input);
@@ -95,6 +112,7 @@ export async function ensureAacCopy(pathname: string): Promise<string> {
   }
   if (mode === "local") {
     const done = await fs.access(localPath(copy)).then(() => true, () => false);
+    if (!done && !(await mayConvert())) throw new ConversionLimitError("Conversion limit reached");
     if (!done) await writeLocal(copy, await toAacM4a(await fs.readFile(localPath(pathname))));
     return copy;
   }
