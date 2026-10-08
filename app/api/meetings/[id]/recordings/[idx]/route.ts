@@ -9,6 +9,9 @@ type Params = { params: Promise<{ id: string; idx: string }> };
 // Owner or shared with: play a recording. From Blob: a redirect to a
 // short-lived signed URL (the player fetches and seeks straight from
 // storage); local files are served here, with Range support for seeking.
+// `?url=1` answers with that URL as JSON instead: the page asks for it
+// (with its login cookie) and gives the player a URL that needs none — in
+// the iOS app the player's own requests carry no cookies.
 export async function GET(req: NextRequest, { params }: Params) {
   const { id, idx } = await params;
   const g = await guardMeeting(req, id);
@@ -17,11 +20,15 @@ export async function GET(req: NextRequest, { params }: Params) {
     const file = await recordingFile(g.id, Number(idx));
     if (!file) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const mode = audioMode();
+    const asJson = req.nextUrl.searchParams.get("url") === "1";
     if (mode === "blob") {
       const url = await signedPlaybackUrl(file.pathname);
+      if (asJson) return NextResponse.json({ url }, { headers: { "Cache-Control": "private, no-store" } });
       return NextResponse.redirect(url, { status: 302, headers: { "Cache-Control": "private, no-store" } });
     }
     if (mode !== "local") return NextResponse.json({ error: "Not configured" }, { status: 503 });
+    // Local files (dev): the player loads this route itself
+    if (asJson) return NextResponse.json({ url: `/api/meetings/${g.id}/recordings/${idx}` });
 
     const data = await fs.readFile(localPath(file.pathname));
     const headers: Record<string, string> = {
