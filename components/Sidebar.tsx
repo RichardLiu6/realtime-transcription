@@ -118,6 +118,7 @@ export default function Sidebar({
         )}
 
         <TermsPanel
+          meeting={{ translationMode, languageA, languageB, targetLangs }}
           termsText={termsText}
           onTermsTextChange={onTermsTextChange}
           selectedPresets={selectedPresets}

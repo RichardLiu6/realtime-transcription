@@ -80,3 +80,20 @@ export function applyPhoneMode(
     set.setLanguageA(["*"]);
   }
 }
+
+// The languages a meeting is in: 互译's languages, the sources and target of
+// 单向翻译, the spoken languages of 纯转录 (`home` when none is chosen).
+// The default for AI-suggested terms.
+export function meetingLanguagesOf(
+  mode: TranslationMode,
+  languageA: string[],
+  languageB: string,
+  targetLangs: string[],
+  home: string
+): string[] {
+  const phone = phoneModeOf(mode);
+  if (phone === "mutual") return mutualLanguages(mode, languageA, languageB, targetLangs);
+  const sources = languageA.filter((c) => c !== "*");
+  if (phone === "oneway") return Array.from(new Set([...sources, languageB]));
+  return sources.length > 0 ? sources : [home];
+}

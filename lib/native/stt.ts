@@ -49,7 +49,8 @@ interface CapacitorGlobal {
   Plugins?: { NativeStt?: NativeSttPlugin };
 }
 
-// The plugin, when this page runs inside the mobile app
+// The plugin, when this page runs inside the mobile app. (iOS builds before
+// the SceneDelegate fix never registered it: those keep the web microphone.)
 export function nativeStt(): NativeSttPlugin | null {
   if (typeof window === "undefined") return null;
   const cap = (window as unknown as { Capacitor?: CapacitorGlobal }).Capacitor;

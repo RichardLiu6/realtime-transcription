@@ -417,6 +417,7 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
           </PopoverTrigger>
           <PopoverContent side="bottom" align="end" className="w-80 p-0">
             <TermsPanel
+              meeting={{ translationMode: props.translationMode, languageA: props.languageA, languageB: props.languageB, targetLangs: props.targetLangs }}
               termsText={props.termsText}
               onTermsTextChange={props.onTermsTextChange}
               selectedPresets={props.selectedPresets}

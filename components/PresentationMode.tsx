@@ -5,6 +5,7 @@ import { Loader2, Mic, Minus, Plus, Square, X } from "lucide-react";
 import type { BilingualEntry, SpeakerInfo, TranslationMode } from "@/types/bilingual";
 import { useLanguageName, useLocale, useT, type TranslationKey } from "@/lib/i18n";
 import { useStoredState } from "@/lib/useStoredState";
+import { setStatusBarHidden } from "@/lib/native/statusBar";
 import { meetingLanguages, sameText, sentenceIn, type SentenceText } from "@/lib/meetingLanguages";
 import { FALLBACK_SPEAKER_COLOR, speakerDisplayName } from "@/hooks/useSpeakerManager";
 
@@ -108,7 +109,9 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 // Open / close, with the F shortcut and the Fullscreen API. Full screen is
 // best effort: without it (iOS Safari, iframes) the mode is a full-viewport
-// overlay.
+// overlay. Touch screens always get the overlay: in the iPhone's full screen
+// the safe-area insets read 0 and the controls slid under the status bar;
+// in the app the status bar is hidden instead.
 export function usePresentationMode() {
   const [open, setOpen] = useState(false);
   const openRef = useRef(false);
@@ -118,8 +121,10 @@ export function usePresentationMode() {
   const enter = useCallback(() => {
     openRef.current = true;
     setOpen(true);
+    setStatusBarHidden(true);
     const el = document.documentElement;
-    if (!document.fullscreenElement && typeof el.requestFullscreen === "function") {
+    const touch = window.matchMedia("(pointer: coarse)").matches;
+    if (!touch && !document.fullscreenElement && typeof el.requestFullscreen === "function") {
       el.requestFullscreen()
         .then(() => {
           ownFullscreen.current = true;
@@ -133,6 +138,7 @@ export function usePresentationMode() {
   const exit = useCallback(() => {
     openRef.current = false;
     setOpen(false);
+    setStatusBarHidden(false);
     if (ownFullscreen.current) {
       ownFullscreen.current = false;
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -149,6 +155,7 @@ export function usePresentationMode() {
         ownFullscreen.current = false;
         openRef.current = false;
         setOpen(false);
+        setStatusBarHidden(false);
       }
     };
     const onKeyDown = (e: KeyboardEvent) => {
