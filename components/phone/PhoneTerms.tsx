@@ -8,9 +8,9 @@
 import { useEffect, useState } from "react";
 import { Check, Loader2, Plus, Sparkles, X } from "lucide-react";
 import { INDUSTRY_PRESETS, combineTerms, presetLabel, splitTermInput } from "@/lib/contextTerms";
-import { useT } from "@/lib/i18n";
+import { useLanguageName, useT } from "@/lib/i18n";
+import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import { BottomSheet, SectionTitle, useLangNames } from "./parts";
-import { LanguagePicker } from "./MeetingSettings";
 
 interface PhoneTermsProps {
   onTermsTextChange: (text: string) => void;
@@ -195,11 +195,12 @@ export default function PhoneTerms({
 }
 
 // Describe the meeting, pick its languages, get terms in each language
-function AiTerms({ meetingLanguages, onAdd }: { meetingLanguages: string[]; onAdd: (terms: string[]) => void }) {
+// (also in the desktop terms panel)
+export function AiTerms({ meetingLanguages, onAdd }: { meetingLanguages: string[]; onAdd: (terms: string[]) => void }) {
   const t = useT();
   const { native } = useLangNames();
+  const langName = useLanguageName();
   const [languages, setLanguages] = useState<string[]>(meetingLanguages.slice(0, MAX_LANGUAGES));
-  const [picking, setPicking] = useState(false);
   const [description, setDescription] = useState("");
   const [state, setState] = useState<"idle" | "loading" | "limit" | "failed" | "empty">("idle");
   const [results, setResults] = useState<string[] | null>(null);
@@ -257,14 +258,24 @@ function AiTerms({ meetingLanguages, onAdd }: { meetingLanguages: string[]; onAd
           </span>
         ))}
         {languages.length < MAX_LANGUAGES && (
-          <button
-            type="button"
-            onClick={() => setPicking(true)}
-            className="inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-3 py-1 text-sm text-blue-700"
-          >
+          // A native list: the system picker on phones, a menu on desktop
+          <label className="relative inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-3 py-1 text-sm text-blue-700">
             <Plus className="size-3.5" aria-hidden />
             {t("ph_add_language")}
-          </button>
+            <select
+              value=""
+              onChange={(e) => e.target.value && setLanguages([...languages, e.target.value].slice(0, MAX_LANGUAGES))}
+              aria-label={t("ph_add_language")}
+              className="absolute inset-0 cursor-pointer opacity-0"
+            >
+              <option value="" />
+              {SONIOX_LANGUAGES.filter((l) => !languages.includes(l.code)).map((l) => (
+                <option key={l.code} value={l.code}>
+                  {langName(l.code)}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
       </div>
 
@@ -339,14 +350,6 @@ function AiTerms({ meetingLanguages, onAdd }: { meetingLanguages: string[]; onAd
         </>
       )}
 
-      <LanguagePicker
-        open={picking}
-        title={t("ph_add_language")}
-        onClose={() => setPicking(false)}
-        exclude={languages}
-        selected={[]}
-        onPick={(codes) => setLanguages([...languages, ...codes].slice(0, MAX_LANGUAGES))}
-      />
     </section>
   );
 }

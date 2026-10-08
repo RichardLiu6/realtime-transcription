@@ -1,9 +1,14 @@
 "use client";
 
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
-import { X, Info } from "lucide-react";
+import { X, Info, Sparkles } from "lucide-react";
 import { INDUSTRY_PRESETS, combineTerms, presetLabel, splitTermInput } from "@/lib/contextTerms";
-import { useT } from "@/lib/i18n";
+import { useLocale, useT } from "@/lib/i18n";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { AiTerms } from "@/components/phone/PhoneTerms";
+import { homeLanguage } from "@/components/phone/parts";
+import { meetingLanguagesOf } from "@/lib/phoneModes";
+import type { TranslationMode } from "@/types/bilingual";
 import {
   Popover,
   PopoverContent,
@@ -26,6 +31,8 @@ interface TermsPanelProps {
   isRecording: boolean;
   /** When true, render content directly without Accordion wrapper */
   inline?: boolean;
+  /** The meeting's settings: enables AI-suggested terms in its languages */
+  meeting?: { translationMode: TranslationMode; languageA: string[]; languageB: string; targetLangs: string[] };
 }
 
 /** Hook: long-press detection for mobile */
@@ -140,8 +147,18 @@ export default function TermsPanel({
   onCustomTermsChange,
   isRecording,
   inline = false,
+  meeting,
 }: TermsPanelProps) {
   const t = useT();
+  const locale = useLocale();
+  const [aiOpen, setAiOpen] = useState(false);
+  const meetingLanguages = useMemo(
+    () =>
+      meeting
+        ? meetingLanguagesOf(meeting.translationMode, meeting.languageA, meeting.languageB, meeting.targetLangs, homeLanguage(locale))
+        : [],
+    [meeting, locale]
+  );
   const [inputValue, setInputValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -253,11 +270,43 @@ export default function TermsPanel({
         />
       </div>
 
+      {meeting && (
+        <button
+          type="button"
+          onClick={() => setAiOpen(true)}
+          data-ai-terms-open
+          className="mt-2 inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-foreground hover:bg-muted"
+        >
+          <Sparkles className="size-3.5" aria-hidden />
+          {t("ph_ai_title")}
+        </button>
+      )}
+
       <p className="mt-2 text-[10px] text-muted-foreground">
         {isRecording
           ? t("terms_effect_next")
           : t("terms_effect_start")}
       </p>
+
+      {meeting && (
+        <Sheet open={aiOpen} onOpenChange={setAiOpen}>
+          <SheetContent side="right" className="w-full gap-0 overflow-y-auto sm:max-w-md">
+            <SheetHeader>
+              <SheetTitle>{t("ph_ai_title")}</SheetTitle>
+            </SheetHeader>
+            <div className="px-4 pb-6 [&_[data-ai-terms]]:mt-0 [&_[data-ai-terms]]:border-0 [&_[data-ai-terms]]:p-0 [&_[data-ai-terms]>h3]:hidden">
+              <AiTerms
+                key={meetingLanguages.join(",")}
+                meetingLanguages={meetingLanguages}
+                onAdd={(terms) => {
+                  addCustomTag(terms.join("\n"));
+                  setAiOpen(false);
+                }}
+              />
+            </div>
+          </SheetContent>
+        </Sheet>
+      )}
     </>
   );
 

@@ -26,7 +26,7 @@ import { LiveSharePanel } from "@/components/LiveShareButton";
 import { INDUSTRY_PRESETS, presetLabel } from "@/lib/contextTerms";
 import { LOCALES, setLocale, useLocale, useT, type Locale, type TranslationKey } from "@/lib/i18n";
 import type { BilingualEntry, CaptureSource, SpeakerInfo, SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
-import { mutualLanguages, phoneModeOf, type MeetingSettingsSetters } from "@/lib/phoneModes";
+import { meetingLanguagesOf, type MeetingSettingsSetters } from "@/lib/phoneModes";
 import type { SaveStatus } from "@/hooks/useMeetingAutosave";
 import MeetingSettings, { useMeetingSummary } from "./MeetingSettings";
 import PhoneTerms from "./PhoneTerms";
@@ -115,13 +115,10 @@ export default function PhoneChrome(props: PhoneChromeProps) {
 
   const locale = useLocale();
   // The languages this meeting is in (AI-suggested terms default to them)
-  const meetingLangs = useMemo(() => {
-    const mode = phoneModeOf(props.translationMode);
-    if (mode === "mutual") return mutualLanguages(props.translationMode, props.languageA, props.languageB, props.targetLangs);
-    const sources = props.languageA.filter((c) => c !== "*");
-    if (mode === "oneway") return Array.from(new Set([...sources, props.languageB]));
-    return sources.length > 0 ? sources : [homeLanguage(locale)];
-  }, [props.translationMode, props.languageA, props.languageB, props.targetLangs, locale]);
+  const meetingLangs = useMemo(
+    () => meetingLanguagesOf(props.translationMode, props.languageA, props.languageB, props.targetLangs, homeLanguage(locale)),
+    [props.translationMode, props.languageA, props.languageB, props.targetLangs, locale]
+  );
 
   const summary = useMeetingSummary(props.translationMode, props.languageA, props.languageB, props.targetLangs);
   const close = useCallback(() => setSheet(null), []);
