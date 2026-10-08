@@ -50,6 +50,11 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
     // installing a tap with it throws (an uncatchable NSException)
     private var engine = AVAudioEngine()
     private var restartWork: DispatchWorkItem?
+    // Broadcast mode: the extension records, so this app has no active audio
+    // session — iOS then refuses PiP and suspends the app in the background.
+    // Silence played while broadcasting (mixed, so other apps' sound — the
+    // video being watched — is untouched) keeps both working
+    private var silence: AVAudioEngine?
     private var restartTries = 0
     private var tapInstalled = false
     private var pending: [Int16] = []
@@ -370,6 +375,7 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
         if let call = broadcastStart, state.status == "started" {
             broadcastStart = nil
             running = true
+            startSilence()
             call.resolve()
         }
         readBroadcastMessages()
@@ -413,6 +419,7 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func teardownBroadcast() {
         endCaptions()
+        stopSilence()
         broadcastPoll?.cancel()
         broadcastPoll = nil
         broadcastId = nil
@@ -604,6 +611,41 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
     // the input format may have changed, so set the microphone up again
     @objc private func audioChanged(_ note: Notification) {
         restartAudio()
+        queue.async {
+            if self.broadcastId != nil, self.running, self.silence?.isRunning != true { self.startSilence() }
+        }
+    }
+
+    private func startSilence() {
+        stopSilence()
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true)
+            let engine = AVAudioEngine()
+            let rate = engine.outputNode.outputFormat(forBus: 0).sampleRate
+            guard let format = AVAudioFormat(standardFormatWithSampleRate: rate > 0 ? rate : 48000, channels: 1) else { return }
+            // Zeros, not flagged as silence: the output must really render
+            let source = AVAudioSourceNode { _, _, _, buffers in
+                for buffer in UnsafeMutableAudioBufferListPointer(buffers) {
+                    if let data = buffer.mData { memset(data, 0, Int(buffer.mDataByteSize)) }
+                }
+                return noErr
+            }
+            engine.attach(source)
+            engine.connect(source, to: engine.mainMixerNode, format: format)
+            try engine.start()
+            silence = engine
+        } catch {
+            NSLog("[broadcast] silence failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func stopSilence() {
+        guard let engine = silence else { return }
+        silence = nil
+        engine.stop()
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     // Route changes come in bursts: one restart after they settle, on a new
