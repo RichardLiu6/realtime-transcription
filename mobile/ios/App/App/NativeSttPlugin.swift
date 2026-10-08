@@ -32,6 +32,8 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "pipConfigure", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "pipStart", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "pipStop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pipPrefs", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pipStats", returnType: CAPPluginReturnPromise),
     ]
 
     // Messages kept for drain() (a long meeting sends a few per second)
@@ -84,6 +86,8 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
     private var captions: CaptionModel?
     private var pip: CaptionPip?
     private var pipGeneration = 0
+    // The last recording's translation stats, for feedback
+    private var lastPipStats: [String: Any] = [:]
 
     override public func load() {
         let center = NotificationCenter.default
@@ -264,7 +268,7 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.notifyListeners("pip", data: ["active": active])
             }
             pip.attach(to: view)
-            pip.reset(waiting: config.waiting, translates: config.translates, autoStart: config.autoStart)
+            pip.reset(config)
             let model = CaptionModel(config: config, queue: self.queue)
             model.onChange = { [weak pip] lines in DispatchQueue.main.async { pip?.update(lines) } }
             let showing = pip.isActive
@@ -295,6 +299,22 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    // Font size / original share changed on the page: applies at once
+    @objc func pipPrefs(_ call: CAPPluginCall) {
+        let prefs = CaptionPrefs(call.options)
+        DispatchQueue.main.async {
+            self.pip?.setPrefs(prefs)
+            call.resolve()
+        }
+    }
+
+    // For feedback: how the floating captions' translation went
+    @objc func pipStats(_ call: CAPPluginCall) {
+        queue.async {
+            call.resolve(self.captions?.stats ?? self.lastPipStats)
+        }
+    }
+
     @objc func pipStop(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             self.pip?.stop()
@@ -305,6 +325,7 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
     // The recording ended: no automatic PiP; close the window after the last
     // sentence has been on screen a moment (unless a new recording started)
     private func endCaptions() {
+        if let stats = captions?.stats { lastPipStats = stats }
         captions = nil
         DispatchQueue.main.async {
             self.pip?.setAutoStart(false)
