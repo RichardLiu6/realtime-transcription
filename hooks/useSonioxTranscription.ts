@@ -8,6 +8,7 @@ import { ClauseEngine } from "@/lib/clause/engine";
 import { getLocale, t } from "@/lib/i18n";
 import { singleTargetLanguage } from "@/lib/meetingLanguages";
 import { NativeSocket, nativeStt, type SocketLike } from "@/lib/native/stt";
+import { setPipSupported } from "@/lib/native/pip";
 
 const TARGET_SAMPLE_RATE = 16000;
 
@@ -1302,6 +1303,28 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
 
         // 4. Audio graph (browser only)
         if (!stream) {
+          // iOS app: floating captions, built natively from the engine's
+          // messages (Soniox only; R2T2 sends no tokens)
+          if (native?.pipConfigure && provider === "soniox") {
+            const home = getLocale();
+            const targets = config.targetLangs ?? [];
+            native
+              .pipConfigure({
+                mode: config.translationMode,
+                languageA: config.languageA,
+                languageB: config.languageB,
+                displayLang: targets.includes(home) ? home : (targets[0] ?? home),
+                terms: config.contextTerms,
+                uiLocale: home,
+                translateUrl: new URL("/api/translate", window.location.href).href,
+                waiting: t("pip_waiting"),
+                autoStart: true,
+              })
+              .then((r) => setPipSupported(r.supported))
+              .catch((error) => console.error("[native] pip:", error));
+          } else {
+            setPipSupported(false);
+          }
           startedAtRef.current = Date.now();
           setElapsedSeconds(0);
           timerRef.current = setInterval(() => {

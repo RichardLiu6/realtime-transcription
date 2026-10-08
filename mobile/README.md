@@ -13,6 +13,13 @@ without a new app version. The native part adds what a web page can't do:
   - Android: `android/app/src/main/java/com/americanbestlife/translate/NativeSttPlugin.java`
     (AudioRecord, OkHttp) + `TranscriptionService.java` (foreground service of type
     microphone, ongoing notification) + a partial wake lock.
+- iOS floating captions (Picture in Picture): `ios/App/App/CaptionPip.swift`.
+  The page is suspended in the background, so native builds the sentences from
+  the engine's Soniox messages and, only while the window shows, translates them
+  through the site's `/api/translate` with the web view's login cookie. Opens with
+  the 悬浮 button while recording, or by itself when the app leaves the screen.
+  The simulator has no PiP: there the frame is drawn in a corner of the screen.
+  Needs a TestFlight build with this file; older builds just don't show the button.
 - In the app the 录音存档 (meeting audio) switch is hidden: the browser recorder
   needs the web microphone. Text is saved as usual.
 - Neither platform lets an app record the other side of a phone / WeChat call.
