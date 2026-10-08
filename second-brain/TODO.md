@@ -8,7 +8,7 @@
 - 设计方案与功能对照：[docs/mobile-redesign.md](../docs/mobile-redesign.md)
 - 下面 #2–#4 的 App 问题并入新设计一起解决
 
-## #2 [2026-10-07] bug: 演示模式在 iOS App 顶部/底部未适配
+## #2 [2026-10-07] bug: 演示模式在 iOS App 顶部/底部未适配 — 已修（PR #24 + TestFlight 202610080929），待真机确认
 - 状态栏黑字压在深色背景上（需原生隐藏状态栏：@capacitor/status-bar，要发 TestFlight）
 - 底部字幕贴着 Home 横条；手机上控制条占 3 行、显示电脑才有的“(Esc)”
 
@@ -20,7 +20,8 @@
 - lib/exportBilingual.ts 用 `<a download>` blob，WKWebView 不支持 → App 内改 iOS 分享面板
 
 ## #5 [2026-10-07] 真机验证“手机声音 + 麦克风”（ReplayKit broadcast）
-- TestFlight 构建 2026100713xx；戴耳机测微信 / Zoom；切回补齐；停止是否正常
+- 2026-10-08 发现：旧构建 SceneDelegate 绕过 MainViewController，NativeStt 从未注册（App 一直用网页麦克风）；修复后构建 202610080929 才真正启用原生录音 / broadcast
+- 戴耳机测微信 / Zoom；切回补齐；停止是否正常
 
 ## #6 [2026-10-07] 悬浮窗：原生画中画字幕（iOS AVPictureInPicture / Android PiP）
 - 后台时网页被挂起 → 原生需自己拼原文并调 /api/translate 补译文
