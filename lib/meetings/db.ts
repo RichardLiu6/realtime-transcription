@@ -105,6 +105,15 @@ CREATE TABLE IF NOT EXISTS user_term_packs (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS user_term_packs_email ON user_term_packs (email, created_at);
+CREATE TABLE IF NOT EXISTS feedback (
+  id text PRIMARY KEY,
+  email text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  topic text NOT NULL,
+  message text NOT NULL,
+  context jsonb
+);
+CREATE INDEX IF NOT EXISTS feedback_created ON feedback (created_at DESC);
 CREATE TABLE IF NOT EXISTS sync_state (
   key text PRIMARY KEY,
   synced_to timestamptz NOT NULL

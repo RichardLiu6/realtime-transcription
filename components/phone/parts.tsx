@@ -139,3 +139,44 @@ export function useLangNames() {
 export function homeLanguage(locale: string): string {
   return SONIOX_LANGUAGES.some((l) => l.code === locale) ? locale : "zh";
 }
+
+// A setting with a few choices, as chips
+export function Choice<V extends string>({
+  label,
+  description,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  description?: string;
+  value: V;
+  options: { value: V; label: string }[];
+  disabled?: boolean;
+  onChange: (v: V) => void;
+}) {
+  return (
+    <div className="border-b border-border py-3">
+      <p className="text-[15px] text-foreground">{label}</p>
+      <div role="radiogroup" aria-label={label} className="mt-2 flex flex-wrap gap-1.5">
+        {options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={value === o.value}
+            disabled={disabled}
+            onClick={() => onChange(o.value)}
+            className={`rounded-full border px-3 py-1.5 text-sm disabled:opacity-60 ${
+              value === o.value ? "border-foreground bg-foreground text-background" : "border-border text-foreground"
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      {description && <p className="mt-2 text-xs leading-snug text-gray-600">{description}</p>}
+    </div>
+  );
+}

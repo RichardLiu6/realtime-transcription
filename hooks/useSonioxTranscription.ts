@@ -8,7 +8,7 @@ import { ClauseEngine } from "@/lib/clause/engine";
 import { getLocale, t } from "@/lib/i18n";
 import { singleTargetLanguage } from "@/lib/meetingLanguages";
 import { NativeSocket, nativeStt, type SocketLike } from "@/lib/native/stt";
-import { setPipSupported } from "@/lib/native/pip";
+import { getPipPrefs, setPipSupported } from "@/lib/native/pip";
 
 const TARGET_SAMPLE_RATE = 16000;
 
@@ -1317,7 +1317,8 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
                 terms: config.contextTerms,
                 uiLocale: home,
                 translateUrl: new URL("/api/translate", window.location.href).href,
-                waiting: t("pip_waiting"),
+                prefs: getPipPrefs(),
+                labels: { waiting: t("pip_waiting"), reviewing: t("pip_reviewing"), held: t("pip_held") },
                 autoStart: true,
               })
               .then((r) => setPipSupported(r.supported))

@@ -60,6 +60,22 @@ interface SavedMeetingRow {
   sharedWith: number;
 }
 
+interface FeedbackRow {
+  id: string;
+  email: string;
+  createdAt: string;
+  topic: string;
+  message: string;
+  context: Record<string, unknown> | null;
+}
+
+const FEEDBACK_TOPIC_LABEL: Record<string, string> = { general: "通用", pip: "悬浮字幕" };
+
+// A context value as a short chip text (objects as JSON)
+function contextValue(v: unknown): string {
+  return typeof v === "string" ? v : JSON.stringify(v);
+}
+
 interface MonthlyUsage {
   stt_seconds: number;
   llm_input_tokens: number;
@@ -118,6 +134,15 @@ export default function AdminPage() {
     fetch("/api/admin/saved-meetings")
       .then((r) => r.json())
       .then((d) => setSavedMeetings(d.available ? d.meetings : null))
+      .catch(() => {});
+  }, []);
+
+  // User feedback (FeedbackForm → /api/feedback), latest 200
+  const [feedback, setFeedback] = useState<FeedbackRow[] | null>(null);
+  useEffect(() => {
+    fetch("/api/admin/feedback")
+      .then((r) => r.json())
+      .then((d) => setFeedback(d.available ? d.feedback : null))
       .catch(() => {});
   }, []);
 
@@ -630,6 +655,47 @@ export default function AdminPage() {
                   </tbody>
                 </table>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Feedback: what users sent from the app, newest first */}
+        {feedback && (
+          <div className="space-y-3" data-admin-feedback>
+            <div>
+              <h2 className="text-sm font-semibold">意见反馈</h2>
+              <p className="text-xs text-muted-foreground">最近 200 条，附带设备信息（界面语言、浏览器、屏幕、是否 App、页面）。</p>
+            </div>
+            {feedback.length === 0 ? (
+              <p className="text-sm text-muted-foreground">暂无</p>
+            ) : (
+              <ul className="divide-y divide-border rounded-md border border-border">
+                {feedback.map((f) => (
+                  <li key={f.id} className="space-y-1.5 px-3 py-2 text-xs">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
+                      <span className="whitespace-nowrap">{new Date(f.createdAt).toLocaleString("zh-CN")}</span>
+                      <span className="max-w-60 truncate">{f.email}</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5 font-medium text-foreground">
+                        {FEEDBACK_TOPIC_LABEL[f.topic] ?? f.topic}
+                      </span>
+                    </div>
+                    <p className="whitespace-pre-wrap break-words text-sm">{f.message}</p>
+                    {f.context && Object.keys(f.context).length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {Object.entries(f.context).map(([k, v]) => (
+                          <span
+                            key={k}
+                            title={contextValue(v)}
+                            className="max-w-full truncate rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground sm:max-w-80"
+                          >
+                            {k}: {contextValue(v)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}

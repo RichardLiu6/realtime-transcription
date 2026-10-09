@@ -47,6 +47,8 @@ interface NativeSttPlugin {
   pipConfigure?(options: PipConfig): Promise<{ supported: boolean }>;
   pipStart?(): Promise<{ started: boolean }>;
   pipStop?(): Promise<void>;
+  pipPrefs?(prefs: { fontSize: number; originalShare: number }): Promise<void>;
+  pipStats?(): Promise<Record<string, unknown>>;
   addListener(event: "pip", fn: (e: { active: boolean }) => void): Promise<PluginListener>;
 }
 
@@ -59,8 +61,10 @@ export interface PipConfig {
   terms: string[];
   uiLocale: string;
   translateUrl: string;
-  // Shown before the first sentence
-  waiting: string;
+  // The user's font size / original share
+  prefs: { fontSize: number; originalShare: number };
+  // Window texts: before the first sentence, browsing back, held
+  labels: { waiting: string; reviewing: string; held: string };
   // Start PiP when the app leaves the screen while recording
   autoStart: boolean;
 }

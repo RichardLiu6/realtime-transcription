@@ -8,7 +8,7 @@
 // meeting, saved meetings, settings & account) and 会议设置 (languages).
 // Desktop renders only `children` (the transcript panel).
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown,
@@ -28,13 +28,15 @@ import { INDUSTRY_PRESETS, presetLabel } from "@/lib/contextTerms";
 import { LOCALES, setLocale, useLocale, useT, type Locale, type TranslationKey } from "@/lib/i18n";
 import type { BilingualEntry, CaptureSource, SpeakerInfo, SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
 import { meetingLanguagesOf, type MeetingSettingsSetters } from "@/lib/phoneModes";
-import { usePip } from "@/lib/native/pip";
+import { pipInApp, usePip } from "@/lib/native/pip";
+import PipSettings from "./PipSettings";
 import type { SaveStatus } from "@/hooks/useMeetingAutosave";
 import MeetingSettings, { useMeetingSummary } from "./MeetingSettings";
 import PhoneTerms from "./PhoneTerms";
 import Drawer from "./Drawer";
 import MeetingDetailView from "@/components/meetings/MeetingDetailView";
-import { BottomSheet, Row, SectionTitle, SideSheet, homeLanguage } from "./parts";
+import FeedbackForm from "@/components/FeedbackForm";
+import { BottomSheet, Choice, Row, SectionTitle, SideSheet, homeLanguage } from "./parts";
 
 
 export interface PhoneChromeProps {
@@ -100,7 +102,9 @@ export interface PhoneChromeProps {
   };
 }
 
-type Sheet = null | "settings" | "more" | "terms" | "speakers" | "drawer" | "prefs";
+const noSubscribe = () => () => {};
+
+type Sheet = null | "settings" | "more" | "terms" | "speakers" | "drawer" | "prefs" | "pip";
 
 export default function PhoneChrome(props: PhoneChromeProps) {
   const t = useT();
@@ -109,6 +113,8 @@ export default function PhoneChrome(props: PhoneChromeProps) {
   const [viewing, setViewing] = useState<string | null>(null); // meeting id open in the viewer
   const user = useUser();
   const pip = usePip();
+  // App builds with floating captions (whether or not recording)
+  const showPipSettings = useSyncExternalStore(noSubscribe, pipInApp, () => false);
   const isRecording = recordingState === "recording";
   const isConnecting = recordingState === "connecting";
   const busy = recordingState !== "idle";
@@ -286,6 +292,10 @@ export default function PhoneChrome(props: PhoneChromeProps) {
         setters={props.setters}
       />
 
+      <BottomSheet open={sheet === "pip"} onOpenChange={(o) => setSheet(o ? "pip" : null)} title={t("ph_pip_settings")}>
+        <PipSettings />
+      </BottomSheet>
+
       {/* 更多: things about this meeting */}
       <BottomSheet open={sheet === "more"} onOpenChange={(o) => setSheet(o ? "more" : null)} title={t("ph_this_meeting")}>
         <Row
@@ -297,6 +307,7 @@ export default function PhoneChrome(props: PhoneChromeProps) {
           }}
         />
         <Row label={t("terms")} value={termsLabel} onClick={open("terms")} />
+        {showPipSettings && <Row label={t("ph_pip_settings")} onClick={open("pip")} />}
         <Row label={t("speakers")} value={t("ph_people", { n: props.speakers.size })} onClick={open("speakers")} disabled={props.speakers.size === 0} />
         {props.save.available && props.save.meetingId && (
           <Row label={t("ph_open_record")} onClick={() => { close(); setViewing(props.save.meetingId); }} />
@@ -488,6 +499,7 @@ function Preferences({
   const router = useRouter();
   const user = useUser();
   const isAdmin = user?.role === "admin";
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const sttOptions = (["soniox", "r2t2"] as const).filter((v) => v !== "r2t2" || settings.r2t2Enabled);
   const engineOptions = (["llm", "clause", "t3po"] as const).filter((v) => v !== "t3po" || settings.t3poEnabled);
 
@@ -561,6 +573,7 @@ function Preferences({
             options={LOCALES.map((l) => ({ value: l.code, label: l.label }))}
             onChange={(v) => setLocale(v as Locale)}
           />
+          {user?.role !== "guest" && <Row label={t("fb_title")} onClick={() => setFeedbackOpen(true)} />}
 
           <SectionTitle>{t("ph_section_account")}</SectionTitle>
           {user && <Row label={user.name} description={user.email.toLowerCase() !== user.name.toLowerCase() ? user.email : undefined} />}
@@ -568,46 +581,11 @@ function Preferences({
           <Row label={t("logout")} danger chevron={false} onClick={logout} />
         </div>
       </div>
+      {/* Inside the settings sheet, so closing it returns to settings */}
+      <BottomSheet open={feedbackOpen} onOpenChange={setFeedbackOpen} title={t("fb_title")}>
+        <FeedbackForm topic="general" />
+      </BottomSheet>
     </SideSheet>
   );
 }
 
-function Choice<V extends string>({
-  label,
-  description,
-  value,
-  options,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  description?: string;
-  value: V;
-  options: { value: V; label: string }[];
-  disabled?: boolean;
-  onChange: (v: V) => void;
-}) {
-  return (
-    <div className="border-b border-border py-3">
-      <p className="text-[15px] text-foreground">{label}</p>
-      <div role="radiogroup" aria-label={label} className="mt-2 flex flex-wrap gap-1.5">
-        {options.map((o) => (
-          <button
-            key={o.value}
-            type="button"
-            role="radio"
-            aria-checked={value === o.value}
-            disabled={disabled}
-            onClick={() => onChange(o.value)}
-            className={`rounded-full border px-3 py-1.5 text-sm disabled:opacity-60 ${
-              value === o.value ? "border-foreground bg-foreground text-background" : "border-border text-foreground"
-            }`}
-          >
-            {o.label}
-          </button>
-        ))}
-      </div>
-      {description && <p className="mt-2 text-xs leading-snug text-gray-600">{description}</p>}
-    </div>
-  );
-}
