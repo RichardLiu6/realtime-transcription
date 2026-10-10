@@ -29,11 +29,14 @@ import {
 } from "@/components/ui/tooltip";
 import { useT, type TranslationKey } from "@/lib/i18n";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
+import { sidebarShortcutLabel } from "@/components/Sidebar";
 import FeedbackForm from "@/components/FeedbackForm";
 import type { DesktopLayout } from "@/app/page";
 import type { CaptureSource, SttProvider, TranslationEngine } from "@/types/bilingual";
 
 interface StatusBarProps {
+  // Sidebar layout with the sidebar collapsed: the button that opens it
+  onExpandSidebar?: () => void;
   recordingState: "idle" | "connecting" | "recording";
   elapsedSeconds: number;
   error: string | null;
@@ -160,6 +163,7 @@ export default function StatusBar({
   shareButton,
   saveControls,
   meetingsLink = false,
+  onExpandSidebar,
 }: StatusBarProps) {
   const t = useT();
   const router = useRouter();
@@ -218,6 +222,22 @@ export default function StatusBar({
           language, advanced settings and the user menu on the right */}
       <div className="flex min-w-0 items-center justify-between gap-2 border-b border-border bg-background px-3 py-2 sm:px-4">
         <div className="flex min-w-0 items-center gap-2">
+          {onExpandSidebar && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onClick={onExpandSidebar}
+                  aria-label={t("sidebar_expand")}
+                  data-sidebar-expand
+                >
+                  <PanelLeft className="size-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{t("sidebar_expand")} · {sidebarShortcutLabel()}</TooltipContent>
+            </Tooltip>
+          )}
           {isRecording && (
             <>
               <span className="h-2 w-2 shrink-0 rounded-full bg-red-500 recording-pulse" />
