@@ -14,7 +14,7 @@ import type { CaptureSource, SttProvider, TranslationEngine, TranslationMode } f
 import { broadcastAvailable } from "@/lib/native/stt";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { t } from "@/lib/i18n";
-import Sidebar from "@/components/Sidebar";
+import Sidebar, { isSidebarShortcut } from "@/components/Sidebar";
 import StatusBar from "@/components/StatusBar";
 import TranscriptPanel from "@/components/TranscriptPanel";
 import PresentationPanel from "@/components/PresentationPanel";
@@ -107,6 +107,25 @@ export default function Home() {
   // iOS app: transcribe what the phone plays (Zoom, WeChat…) + the mic
   const canCaptureSystem = useSyncExternalStore(noSubscribe, broadcastAvailable, () => false);
   const [captureSource, setCaptureSource] = useStoredState<CaptureSource>("captureSource", "mic", isCaptureSource);
+
+  // Sidebar layout: the sidebar can be collapsed (the floating toolbar then
+  // keeps record / export / terms at hand); remembered per browser
+  const [sidebarCollapsed, setSidebarCollapsed] = useStoredState<boolean>(
+    "sidebarCollapsed",
+    false,
+    (v): v is boolean => typeof v === "boolean"
+  );
+  const toggleSidebar = useCallback(() => setSidebarCollapsed(!sidebarCollapsed), [sidebarCollapsed, setSidebarCollapsed]);
+  useEffect(() => {
+    if (desktopLayout !== "sidebar") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!isSidebarShortcut(e)) return;
+      e.preventDefault();
+      toggleSidebar();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [desktopLayout, toggleSidebar]);
 
   useEffect(() => {
     const saved = localStorage.getItem("desktopLayout");
@@ -436,9 +455,9 @@ export default function Home() {
     <TooltipProvider delayDuration={300}>
     <div className="safe-top safe-x flex h-dvh overflow-hidden">
       {/* Desktop sidebar (only in sidebar layout) */}
-      {desktopLayout === "sidebar" && (
+      {desktopLayout === "sidebar" && !sidebarCollapsed && (
         <div className="hidden lg:block">
-          <Sidebar {...sharedProps} />
+          <Sidebar {...sharedProps} onCollapse={toggleSidebar} />
         </div>
       )}
 
@@ -462,6 +481,7 @@ export default function Home() {
           onTranslationEngineChange={handleTranslationEngineChange}
           t3poEnabled={t3poEnabled}
           onPresent={presentation.enter}
+          {...(desktopLayout === "sidebar" && sidebarCollapsed ? { onExpandSidebar: toggleSidebar } : {})}
           meetingsLink={autosave.available}
           saveControls={
             autosave.available ? (
@@ -589,7 +609,7 @@ export default function Home() {
       </main>
 
       {/* Desktop floating bar (only in floating layout) */}
-      {desktopLayout === "floating" && (
+      {(desktopLayout === "floating" || (desktopLayout === "sidebar" && sidebarCollapsed)) && (
         <div className="hidden lg:block">
           <DesktopFloatingBar {...sharedProps} />
         </div>

@@ -232,7 +232,9 @@ Central logic for the entire app:
 │                            #   engine, 整句/分句/同传, 降噪, desktop layout — locked while recording;
 │                            #   unavailable R2T2/同传 hidden, shown disabled with env-var hints to admins),
 │                            #   interface language, user menu (admin panel, log out), 演示模式 button
-├── <Sidebar>                # Left: language, mode, speaker, terms, record/export
+├── <Sidebar>                # Left: language, mode, speaker, terms, record/export; collapsible
+│                            #   (button in its header, ⌘\ / Ctrl+\, localStorage `sidebarCollapsed`):
+│                            #   collapsed = the floating toolbar + an open button in the status bar
 │   ├── <AudioWaveButton>    # Record/stop with waveform
 │   ├── <TranslationModeToggle>
 │   ├── <BetweenLanguages> / <FromToLanguages>

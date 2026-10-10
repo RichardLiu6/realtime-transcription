@@ -1,6 +1,7 @@
 "use client";
 
-import { Download, FilePlus } from "lucide-react";
+import { Download, FilePlus, PanelLeftClose } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { TranslationMode, SpeakerInfo, BilingualEntry } from "@/types/bilingual";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
@@ -12,7 +13,18 @@ import TermsPanel from "@/components/sidebar/TermsPanel";
 import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
 import AudioWaveButton from "@/components/sidebar/AudioWaveButton";
 
+// ⌘\ (Ctrl+\ elsewhere) collapses / opens the sidebar
+export function isSidebarShortcut(e: KeyboardEvent): boolean {
+  return e.key === "\\" && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey;
+}
+
+export function sidebarShortcutLabel(): string {
+  return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘\\" : "Ctrl+\\";
+}
+
 interface SidebarProps {
+  // Hides the sidebar (the status bar then offers to open it)
+  onCollapse?: () => void;
   translationMode: TranslationMode;
   onTranslationModeChange: (mode: TranslationMode) => void;
   languageA: string[];
@@ -65,6 +77,7 @@ export default function Sidebar({
   onExport,
   onNewMeeting,
   hasEntries,
+  onCollapse,
 }: SidebarProps) {
   const t = useT();
   const isRecording = recordingState === "recording";
@@ -73,13 +86,33 @@ export default function Sidebar({
   return (
     <aside className="flex w-72 flex-col border-r border-border bg-background h-full overflow-hidden">
       {/* Header: Record button (the timer is in the status bar) */}
-      <div className="shrink-0 px-4 py-3 border-b border-border">
-        <AudioWaveButton
-          recordingState={recordingState}
-          onStart={onStart}
-          onStop={onStop}
-          audioAnalyser={audioAnalyser}
-        />
+      <div className="flex shrink-0 items-center gap-2 px-4 py-3 border-b border-border">
+        <div className="min-w-0 flex-1">
+          <AudioWaveButton
+            recordingState={recordingState}
+            onStart={onStart}
+            onStop={onStop}
+            audioAnalyser={audioAnalyser}
+          />
+        </div>
+        {onCollapse && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={onCollapse}
+                aria-label={t("sidebar_collapse")}
+                data-sidebar-collapse
+                className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <PanelLeftClose className="size-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              {t("sidebar_collapse")} · {sidebarShortcutLabel()}
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
 
       {/* Scrollable content */}
