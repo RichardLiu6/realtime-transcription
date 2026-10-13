@@ -391,7 +391,15 @@ export default function AdminPage() {
       {/* Section list: one section at a time (remembered in the URL hash);
           a row of tabs on phones */}
       <nav className="flex shrink-0 flex-col border-border bg-background max-md:border-b md:w-52 md:border-r">
-        <h1 className="px-4 pt-4 pb-2 text-base font-bold text-foreground max-md:hidden">管理后台</h1>
+        <div className="flex items-center justify-between gap-2 px-3 pt-2 md:flex-col md:items-stretch md:px-4 md:pt-4 md:pb-1">
+          <h1 className="text-sm font-bold text-foreground md:text-base">管理后台</h1>
+          <Button asChild variant="outline" size="sm" className="shrink-0 md:w-full md:justify-start">
+            <Link href="/">
+              <ArrowLeft aria-hidden />
+              返回首页
+            </Link>
+          </Button>
+        </div>
         <ul className="flex gap-1 overflow-x-auto px-2 py-2 md:flex-col md:overflow-visible md:py-1">
           {SECTIONS.map(({ key, label, icon: Icon }) => {
             const n = sectionCount(key);
@@ -417,10 +425,6 @@ export default function AdminPage() {
           <Link href="/admin/compare" className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground">
             <GitCompareArrows className="size-4" />
             模型对比
-          </Link>
-          <Link href="/" className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground">
-            <ArrowLeft className="size-4" />
-            返回首页
           </Link>
         </div>
       </nav>
