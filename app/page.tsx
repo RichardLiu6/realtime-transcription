@@ -451,6 +451,7 @@ export default function Home() {
     elapsedSeconds,
     onStart: handleStart,
     onStop: handleStop,
+    ...pauseProps,
     audioAnalyser,
     entries,
     onExport: handleExport,
@@ -475,7 +476,7 @@ export default function Home() {
         <StatusBar
           recordingState={recordingState}
           elapsedSeconds={elapsedSeconds}
-          {...pauseProps}
+          paused={paused}
           error={error}
           desktopLayout={desktopLayout}
           onDesktopLayoutChange={handleDesktopLayoutChange}

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import PauseButton from "@/components/PauseButton";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
@@ -40,10 +39,8 @@ interface StatusBarProps {
   onExpandSidebar?: () => void;
   recordingState: "idle" | "connecting" | "recording";
   elapsedSeconds: number;
-  // Pause / resume (mute yourself) while recording; absent = no button
+  // Paused recording: shown next to the timer (the button is by stop)
   paused?: boolean;
-  onPause?: () => void;
-  onResume?: () => void;
   error: string | null;
   desktopLayout?: DesktopLayout;
   onDesktopLayoutChange?: (layout: DesktopLayout) => void;
@@ -152,8 +149,6 @@ export default function StatusBar({
   recordingState,
   elapsedSeconds,
   paused = false,
-  onPause,
-  onResume,
   error,
   desktopLayout,
   onDesktopLayoutChange,
@@ -260,9 +255,7 @@ export default function StatusBar({
                   {t("paused")}
                 </span>
               )}
-              {onPause && onResume && (
-                <PauseButton paused={paused} onPause={onPause} onResume={onResume} className="h-7 px-2 py-0 text-xs" />
-              )}
+
             </>
           )}
           {isConnecting && (

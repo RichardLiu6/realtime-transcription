@@ -1,6 +1,7 @@
 "use client";
 
 import { Download, FilePlus, PanelLeftClose } from "lucide-react";
+import PauseButton from "@/components/PauseButton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { TranslationMode, SpeakerInfo, BilingualEntry } from "@/types/bilingual";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,10 @@ interface SidebarProps {
   elapsedSeconds: number;
   onStart: () => void;
   onStop: () => void;
+  // Pause / resume next to stop (absent where pausing isn't possible)
+  paused?: boolean;
+  onPause?: () => void;
+  onResume?: () => void;
   audioAnalyser: AnalyserNode | null;
   entries: BilingualEntry[];
   onExport: () => void;
@@ -72,6 +77,9 @@ export default function Sidebar({
   recordingState,
   onStart,
   onStop,
+  paused = false,
+  onPause,
+  onResume,
   audioAnalyser,
   entries,
   onExport,
@@ -95,6 +103,9 @@ export default function Sidebar({
             audioAnalyser={audioAnalyser}
           />
         </div>
+        {isRecording && onPause && onResume && (
+          <PauseButton paused={paused} onPause={onPause} onResume={onResume} className="h-12" />
+        )}
         {onCollapse && (
           <Tooltip>
             <TooltipTrigger asChild>

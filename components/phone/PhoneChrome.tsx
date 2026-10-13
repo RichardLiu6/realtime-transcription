@@ -239,7 +239,7 @@ export default function PhoneChrome(props: PhoneChromeProps) {
                     paused={!!props.paused}
                     onPause={props.onPause}
                     onResume={props.onResume}
-                    className="h-11 rounded-full px-3"
+                    className="h-11 rounded-full px-4"
                   />
                 </div>
               ) : (
