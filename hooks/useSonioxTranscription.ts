@@ -259,6 +259,9 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
   const startedAtRef = useRef(0);
   const pausedRef = useRef(false);
   const pausedAtRef = useRef(0);
+  // Paused time already shifted out of startedAtRef (the timer skips it,
+  // Soniox still bills it)
+  const pausedTotalRef = useRef(0);
   const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const samplesSentRef = useRef(0);
   // Recording again continues the transcript: timestamps of the new session
@@ -1341,6 +1344,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
             setPipSupported(false);
           }
           startedAtRef.current = Date.now();
+          pausedTotalRef.current = 0;
           setElapsedSeconds(0);
           timerRef.current = setInterval(() => {
             setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
@@ -1383,6 +1387,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         workletNode.connect(audioContext.destination);
 
         startedAtRef.current = Date.now();
+        pausedTotalRef.current = 0;
         setElapsedSeconds(0);
         timerRef.current = setInterval(() => {
           setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
@@ -1408,10 +1413,6 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     if (keepaliveRef.current) {
       clearInterval(keepaliveRef.current);
       keepaliveRef.current = null;
-    }
-    // Stopped while paused: the paused time isn't transcription time
-    if (pausedRef.current && startedAtRef.current) {
-      startedAtRef.current += Date.now() - pausedAtRef.current;
     }
     pausedRef.current = false;
     setPaused(false);
@@ -1442,9 +1443,10 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     }
 
     // Report STT usage (fire-and-forget). R2T2 is self-hosted, so only
-    // Soniox minutes are billed.
+    // Soniox minutes are billed — for the whole session, paused time
+    // included (Soniox bills the stream duration, keepalives too).
     const seconds = startedAtRef.current
-      ? Math.round((Date.now() - startedAtRef.current) / 1000)
+      ? Math.round((Date.now() - startedAtRef.current + pausedTotalRef.current) / 1000)
       : 0;
     startedAtRef.current = 0;
     if (provider === "soniox" && seconds > 0) {
@@ -1488,7 +1490,9 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       clearInterval(keepaliveRef.current);
       keepaliveRef.current = null;
     }
-    startedAtRef.current += Date.now() - pausedAtRef.current;
+    const pausedFor = Date.now() - pausedAtRef.current;
+    startedAtRef.current += pausedFor;
+    pausedTotalRef.current += pausedFor;
     pausedRef.current = false;
     setPaused(false);
     timerRef.current = setInterval(() => {
