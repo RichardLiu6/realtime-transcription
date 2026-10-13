@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Loader2, Mic, Minus, Plus, Square, X } from "lucide-react";
+import { Loader2, Mic, Minus, Pause, Play, Plus, Square, X } from "lucide-react";
 import type { BilingualEntry, SpeakerInfo, TranslationMode } from "@/types/bilingual";
 import { useLanguageName, useLocale, useT, type TranslationKey } from "@/lib/i18n";
 import { useStoredState } from "@/lib/useStoredState";
@@ -193,6 +193,10 @@ interface PresentationModeProps {
   // Absent for a shared-captions viewer: nothing to record
   onStart?: () => void;
   onStop?: () => void;
+  // Pause / resume while recording (absent = no button)
+  paused?: boolean;
+  onPause?: () => void;
+  onResume?: () => void;
   onExit: () => void;
 }
 
@@ -292,6 +296,9 @@ export default function PresentationMode({
   elapsedSeconds,
   onStart,
   onStop,
+  paused = false,
+  onPause,
+  onResume,
   onExit,
 }: PresentationModeProps) {
   const t = useT();
@@ -635,14 +642,28 @@ export default function PresentationMode({
         <div className="flex items-center gap-2">
           {isRecording && (
             <>
-              <span className="size-2.5 shrink-0 rounded-full bg-red-500 recording-pulse" />
-              <span className="sr-only">{t("recording_status")}</span>
+              <span
+                className={paused ? "size-2.5 shrink-0 rounded-full bg-amber-500" : "size-2.5 shrink-0 rounded-full bg-red-500 recording-pulse"}
+              />
+              <span className="sr-only">{t(paused ? "paused" : "recording_status")}</span>
               {onStop && (
                 <span className="font-mono font-semibold tabular-nums">
                   {minutes}:{seconds}
                 </span>
               )}
+              {paused && <span className="font-medium">{t("paused")}</span>}
             </>
+          )}
+          {isRecording && onPause && onResume && (
+            <button
+              type="button"
+              onClick={paused ? onResume : onPause}
+              aria-pressed={paused}
+              className="inline-flex items-center gap-1.5 rounded-md border border-current/40 px-2.5 py-1 text-xs font-medium hover:border-current"
+            >
+              {paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+              {t(paused ? "resume_recording" : "pause_recording")}
+            </button>
           )}
           {!onStart || !onStop ? null : isRecording ? (
             <button

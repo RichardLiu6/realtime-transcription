@@ -205,10 +205,16 @@ export default function Home() {
     getTranscriptTimeMs,
     start,
     stop,
+    paused,
+    canPause,
+    pause,
+    resume,
     clearEntries,
     reassignSpeaker,
     mergeSpeaker,
   } = useSonioxTranscription();
+  // Pause / resume (mute yourself) — the same props for every layout
+  const pauseProps = canPause ? { paused, onPause: pause, onResume: resume } : {};
 
   const { speakers, registerSpeaker, renameSpeaker, removeSpeaker, clearSpeakers } =
     useSpeakerManager();
@@ -305,6 +311,7 @@ export default function Home() {
     enabled: archiveOn,
     mode: autosave.recordingsMode,
     getTranscriptTimeMs,
+    paused,
   });
 
   // Projector view of the same state (button in the status bar, or F);
@@ -468,6 +475,7 @@ export default function Home() {
         <StatusBar
           recordingState={recordingState}
           elapsedSeconds={elapsedSeconds}
+          {...pauseProps}
           error={error}
           desktopLayout={desktopLayout}
           onDesktopLayoutChange={handleDesktopLayoutChange}
@@ -541,6 +549,7 @@ export default function Home() {
           entries={entries}
           recordingState={recordingState}
           elapsedSeconds={elapsedSeconds}
+          {...pauseProps}
           onStart={handleStart}
           onStop={handleStop}
           onExport={handleExport}
@@ -625,6 +634,7 @@ export default function Home() {
           targetLangs={targetLangs}
           recordingState={recordingState}
           elapsedSeconds={elapsedSeconds}
+          {...pauseProps}
           onStart={handleStart}
           onStop={handleStop}
           onExit={presentation.exit}

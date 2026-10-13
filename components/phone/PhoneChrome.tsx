@@ -9,6 +9,7 @@
 // Desktop renders only `children` (the transcript panel).
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import PauseButton from "@/components/PauseButton";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown,
@@ -64,6 +65,10 @@ export interface PhoneChromeProps {
   // Recording
   recordingState: "idle" | "connecting" | "recording";
   elapsedSeconds: number;
+  // Pause / resume while recording (browser; absent in the app for now)
+  paused?: boolean;
+  onPause?: () => void;
+  onResume?: () => void;
   onStart: () => void;
   onStop: () => void;
   onExport: () => void;
@@ -228,6 +233,15 @@ export default function PhoneChrome(props: PhoneChromeProps) {
                     {t("ph_pip")}
                   </button>
                 </div>
+              ) : isRecording && props.onPause && props.onResume ? (
+                <div className="flex justify-start">
+                  <PauseButton
+                    paused={!!props.paused}
+                    onPause={props.onPause}
+                    onResume={props.onResume}
+                    className="h-11 rounded-full px-3"
+                  />
+                </div>
               ) : (
                 <span />
               )}
@@ -243,8 +257,12 @@ export default function PhoneChrome(props: PhoneChromeProps) {
                   {isConnecting ? <Loader2 className="size-6 animate-spin" /> : <Square className="size-6 fill-current" />}
                 </button>
                 <span className="flex items-center gap-1.5 font-mono text-sm tabular-nums text-foreground">
-                  <span className="size-2 rounded-full bg-red-600 recording-pulse" aria-hidden />
+                  <span
+                    className={props.paused ? "size-2 rounded-full bg-amber-600" : "size-2 rounded-full bg-red-600 recording-pulse"}
+                    aria-hidden
+                  />
                   {formatElapsed(props.elapsedSeconds)}
+                  {props.paused && <span className="font-sans text-amber-700 dark:text-amber-400">{t("paused")}</span>}
                 </span>
               </div>
               <div className="flex justify-end">

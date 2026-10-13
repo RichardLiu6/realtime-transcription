@@ -16,6 +16,8 @@ export interface SegmentMeta {
   offsetMs: number; // transcript time where the segment starts
   startedAt: number;
   stoppedAt?: number;
+  // Time the recording was paused (not in the audio)
+  pausedMs?: number;
 }
 
 function open(): Promise<IDBDatabase> {

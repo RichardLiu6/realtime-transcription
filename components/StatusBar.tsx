@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import PauseButton from "@/components/PauseButton";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
@@ -39,6 +40,10 @@ interface StatusBarProps {
   onExpandSidebar?: () => void;
   recordingState: "idle" | "connecting" | "recording";
   elapsedSeconds: number;
+  // Pause / resume (mute yourself) while recording; absent = no button
+  paused?: boolean;
+  onPause?: () => void;
+  onResume?: () => void;
   error: string | null;
   desktopLayout?: DesktopLayout;
   onDesktopLayoutChange?: (layout: DesktopLayout) => void;
@@ -146,6 +151,9 @@ function RadioRow({ label, children }: { label: string; children: ReactNode }) {
 export default function StatusBar({
   recordingState,
   elapsedSeconds,
+  paused = false,
+  onPause,
+  onResume,
   error,
   desktopLayout,
   onDesktopLayoutChange,
@@ -240,11 +248,21 @@ export default function StatusBar({
           )}
           {isRecording && (
             <>
-              <span className="h-2 w-2 shrink-0 rounded-full bg-red-500 recording-pulse" />
-              <span className="sr-only">{t("recording_status")}</span>
+              <span
+                className={paused ? "h-2 w-2 shrink-0 rounded-full bg-amber-600" : "h-2 w-2 shrink-0 rounded-full bg-red-500 recording-pulse"}
+              />
+              <span className="sr-only">{t(paused ? "paused" : "recording_status")}</span>
               <span className="font-mono text-sm font-semibold text-foreground">
                 {minutes}:{seconds}
               </span>
+              {paused && (
+                <span className="truncate text-sm font-medium text-amber-700 dark:text-amber-400" title={t("paused_hint")}>
+                  {t("paused")}
+                </span>
+              )}
+              {onPause && onResume && (
+                <PauseButton paused={paused} onPause={onPause} onResume={onResume} className="h-7 px-2 py-0 text-xs" />
+              )}
             </>
           )}
           {isConnecting && (
