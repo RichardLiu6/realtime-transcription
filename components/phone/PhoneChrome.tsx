@@ -19,7 +19,9 @@ import {
   Menu,
   Mic,
   MoreHorizontal,
+  Pause,
   PictureInPicture2,
+  Play,
   Square,
 } from "lucide-react";
 import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
@@ -64,6 +66,10 @@ export interface PhoneChromeProps {
   // Recording
   recordingState: "idle" | "connecting" | "recording";
   elapsedSeconds: number;
+  // Pause / resume while recording (browser; absent in the app for now)
+  paused?: boolean;
+  onPause?: () => void;
+  onResume?: () => void;
   onStart: () => void;
   onStop: () => void;
   onExport: () => void;
@@ -228,6 +234,28 @@ export default function PhoneChrome(props: PhoneChromeProps) {
                     {t("ph_pip")}
                   </button>
                 </div>
+              ) : isRecording && props.onPause && props.onResume ? (
+                // Same round button as 更多 on the right; solid while paused
+                <div className="flex justify-start">
+                  <button
+                    type="button"
+                    onClick={props.paused ? props.onResume : props.onPause}
+                    aria-pressed={!!props.paused}
+                    data-pause-button
+                    className="flex flex-col items-center gap-1 text-xs text-gray-700"
+                  >
+                    <span
+                      className={`grid size-11 place-items-center rounded-full border ${
+                        props.paused
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-muted/60"
+                      }`}
+                    >
+                      {props.paused ? <Play className="size-5" /> : <Pause className="size-5" />}
+                    </span>
+                    {t(props.paused ? "resume_recording" : "pause_recording")}
+                  </button>
+                </div>
               ) : (
                 <span />
               )}
@@ -243,8 +271,12 @@ export default function PhoneChrome(props: PhoneChromeProps) {
                   {isConnecting ? <Loader2 className="size-6 animate-spin" /> : <Square className="size-6 fill-current" />}
                 </button>
                 <span className="flex items-center gap-1.5 font-mono text-sm tabular-nums text-foreground">
-                  <span className="size-2 rounded-full bg-red-600 recording-pulse" aria-hidden />
+                  <span
+                    className={props.paused ? "size-2 rounded-full bg-muted-foreground" : "size-2 rounded-full bg-red-600 recording-pulse"}
+                    aria-hidden
+                  />
                   {formatElapsed(props.elapsedSeconds)}
+                  {props.paused && <span className="sr-only">{t("paused")}</span>}
                 </span>
               </div>
               <div className="flex justify-end">

@@ -6,6 +6,7 @@
  */
 
 import { useMemo } from "react";
+import PauseButton from "@/components/PauseButton";
 import {
   Mic,
   Square,
@@ -58,6 +59,10 @@ interface DesktopFloatingBarProps {
   elapsedSeconds: number;
   onStart: () => void;
   onStop: () => void;
+  // Pause / resume next to stop (absent where pausing isn't possible)
+  paused?: boolean;
+  onPause?: () => void;
+  onResume?: () => void;
   audioAnalyser: AnalyserNode | null;
   entries: BilingualEntry[];
   onExport: () => void;
@@ -97,7 +102,11 @@ export default function DesktopFloatingBar(props: DesktopFloatingBarProps) {
             </TooltipTrigger>
             <TooltipContent side="top">{t("stop_recording")}</TooltipContent>
           </Tooltip>
-        ) : (
+        ) : null}
+        {isRecording && props.onPause && props.onResume && (
+          <PauseButton paused={!!props.paused} onPause={props.onPause} onResume={props.onResume} iconOnly className="size-10 px-0" />
+        )}
+        {isRecording ? null : (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

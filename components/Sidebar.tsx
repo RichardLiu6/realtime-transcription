@@ -1,6 +1,7 @@
 "use client";
 
 import { Download, FilePlus, PanelLeftClose } from "lucide-react";
+import PauseButton from "@/components/PauseButton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { TranslationMode, SpeakerInfo, BilingualEntry } from "@/types/bilingual";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,10 @@ interface SidebarProps {
   elapsedSeconds: number;
   onStart: () => void;
   onStop: () => void;
+  // Pause / resume next to stop (absent where pausing isn't possible)
+  paused?: boolean;
+  onPause?: () => void;
+  onResume?: () => void;
   audioAnalyser: AnalyserNode | null;
   entries: BilingualEntry[];
   onExport: () => void;
@@ -72,6 +77,9 @@ export default function Sidebar({
   recordingState,
   onStart,
   onStop,
+  paused = false,
+  onPause,
+  onResume,
   audioAnalyser,
   entries,
   onExport,
@@ -92,9 +100,16 @@ export default function Sidebar({
             recordingState={recordingState}
             onStart={onStart}
             onStop={onStop}
-            audioAnalyser={audioAnalyser}
+            // Paused: the stop button's waves calm down (no microphone level)
+            audioAnalyser={paused ? null : audioAnalyser}
+            compact={isRecording && !!onPause}
           />
         </div>
+        {isRecording && onPause && onResume && (
+          // Icon only: the sidebar is narrow and "Stop Recording" / "Detener
+          // grabación" needs the room (label in the tooltip and aria-label)
+          <PauseButton paused={paused} onPause={onPause} onResume={onResume} iconOnly className="size-12 px-0" />
+        )}
         {onCollapse && (
           <Tooltip>
             <TooltipTrigger asChild>

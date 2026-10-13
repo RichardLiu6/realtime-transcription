@@ -122,6 +122,7 @@ Central logic for the entire app:
 - Meeting settings (languageA/B, translationMode, targetLangs) persist in localStorage via `lib/useStoredState.ts`
 - A segment of nothing but punctuation (a trailing `。` finalized on its own) is not a sentence: its mark is appended to the previous entry and it is never translated
 - stop() sends end-of-audio and drains trailing results before closing (3 s timeout)
+- **Pause** (`pause` / `resume`, `paused`; = mute yourself): the engine session stays open but no audio is sent and `samplesSent` stops, so the timer, the transcript timeline and the meeting audio (`useMeetingRecorder` `paused` → `MediaRecorder.pause()`, segment `pausedMs` subtracted from its duration) all stop together. Soniox gets `{"type":"finalize"}` (the sentence in progress completes) and a keepalive every 5 s; R2T2 has no keepalive, so a long pause may end its session. Soniox bills the whole stream, keepalives included, so pausing saves nothing on Soniox and the usage report counts the paused time; translation calls do stop. A pause button next to stop in every layout, in the app's own button styles (stop stays the one red button): outline 暂停 → primary (black) 继续 (`PauseButton`; icon only in the narrow sidebar, whose stop button then reads the short 停止 so Spanish fits; the phone uses a round button like 更多; presentation mode one in its strip). Paused: grey dot by the timer, 已暂停 in the status bar. Browser only: `canPause` is false in the mobile app until the native plugin can pause its audio
 
 ### Key Types (types/bilingual.ts)
 

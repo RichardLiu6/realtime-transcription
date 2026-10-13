@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import PauseButton from "@/components/PauseButton";
 import {
   Mic,
   Square,
@@ -73,6 +74,10 @@ interface DesktopTopBarProps {
   elapsedSeconds: number;
   onStart: () => void;
   onStop: () => void;
+  // Pause / resume next to stop (absent where pausing isn't possible)
+  paused?: boolean;
+  onPause?: () => void;
+  onResume?: () => void;
   audioAnalyser: AnalyserNode | null;
   entries: BilingualEntry[];
   onExport: () => void;
@@ -176,7 +181,11 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
             <Square className="size-3.5" />
             {t("stop")}
           </Button>
-        ) : (
+        ) : null}
+        {isRecording && props.onPause && props.onResume && (
+          <PauseButton paused={!!props.paused} onPause={props.onPause} onResume={props.onResume} className="h-8 text-sm" />
+        )}
+        {isRecording ? null : (
           <Button
             onClick={props.onStart}
             disabled={isConnecting}

@@ -39,6 +39,8 @@ interface StatusBarProps {
   onExpandSidebar?: () => void;
   recordingState: "idle" | "connecting" | "recording";
   elapsedSeconds: number;
+  // Paused recording: shown next to the timer (the button is by stop)
+  paused?: boolean;
   error: string | null;
   desktopLayout?: DesktopLayout;
   onDesktopLayoutChange?: (layout: DesktopLayout) => void;
@@ -146,6 +148,7 @@ function RadioRow({ label, children }: { label: string; children: ReactNode }) {
 export default function StatusBar({
   recordingState,
   elapsedSeconds,
+  paused = false,
   error,
   desktopLayout,
   onDesktopLayoutChange,
@@ -240,11 +243,19 @@ export default function StatusBar({
           )}
           {isRecording && (
             <>
-              <span className="h-2 w-2 shrink-0 rounded-full bg-red-500 recording-pulse" />
-              <span className="sr-only">{t("recording_status")}</span>
+              <span
+                className={paused ? "h-2 w-2 shrink-0 rounded-full bg-muted-foreground" : "h-2 w-2 shrink-0 rounded-full bg-red-500 recording-pulse"}
+              />
+              <span className="sr-only">{t(paused ? "paused" : "recording_status")}</span>
               <span className="font-mono text-sm font-semibold text-foreground">
                 {minutes}:{seconds}
               </span>
+              {paused && (
+                <span className="truncate text-sm text-muted-foreground" title={t("paused_hint")}>
+                  {t("paused")}
+                </span>
+              )}
+
             </>
           )}
           {isConnecting && (
