@@ -1,6 +1,8 @@
 "use client";
 
 import { ArrowDown, Check, ChevronsUpDown } from "lucide-react";
+import { LanguageSearchInput, NoLanguageMatch } from "@/components/LanguageSelect";
+import { languageMatches } from "@/lib/languageSearch";
 import ChipRemove from "@/components/sidebar/ChipRemove";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import {
@@ -33,6 +35,10 @@ export default function PresentationLanguages({
   const langName = useLanguageName();
   const [sourceOpen, setSourceOpen] = useState(false);
   const [targetOpen, setTargetOpen] = useState(false);
+  const [sourceQuery, setSourceQuery] = useState("");
+  const [targetQuery, setTargetQuery] = useState("");
+  const sourceMatches = SONIOX_LANGUAGES.filter((l) => languageMatches(l.code, sourceQuery));
+  const targetMatches = SONIOX_LANGUAGES.filter((l) => languageMatches(l.code, targetQuery));
 
   const isAny = languageA.length === 1 && languageA[0] === "*";
 
@@ -86,7 +92,13 @@ export default function PresentationLanguages({
           <label className="mb-1 block text-xs text-muted-foreground">
             {t("source_language")}
           </label>
-          <Popover open={sourceOpen} onOpenChange={setSourceOpen}>
+          <Popover
+            open={sourceOpen}
+            onOpenChange={(o) => {
+              setSourceOpen(o);
+              if (!o) setSourceQuery("");
+            }}
+          >
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
@@ -115,17 +127,27 @@ export default function PresentationLanguages({
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+              <LanguageSearchInput
+                value={sourceQuery}
+                onChange={setSourceQuery}
+                onEnter={() => sourceMatches[0] && toggleSource(sourceMatches[0].code)}
+              />
               <div className="max-h-64 overflow-y-auto">
-                <button
-                  type="button"
-                  className={cn("flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent cursor-pointer", isAny && "bg-accent")}
-                  onClick={() => toggleSource("*")}
-                >
-                  <Check className={cn("size-4 shrink-0", isAny ? "opacity-100" : "opacity-0")} />
-                  {t("any_language")}
-                </button>
-                <div className="h-px bg-border" />
-                {SONIOX_LANGUAGES.map((lang) => {
+                {!sourceQuery.trim() && (
+                  <>
+                    <button
+                      type="button"
+                      className={cn("flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent cursor-pointer", isAny && "bg-accent")}
+                      onClick={() => toggleSource("*")}
+                    >
+                      <Check className={cn("size-4 shrink-0", isAny ? "opacity-100" : "opacity-0")} />
+                      {t("any_language")}
+                    </button>
+                    <div className="h-px bg-border" />
+                  </>
+                )}
+                {sourceMatches.length === 0 && <NoLanguageMatch />}
+                {sourceMatches.map((lang) => {
                   const selected = !isAny && languageA.includes(lang.code);
                   return (
                     <button
@@ -153,7 +175,13 @@ export default function PresentationLanguages({
           <label className="mb-1 block text-xs text-muted-foreground">
             {t("target_languages")}
           </label>
-          <Popover open={targetOpen} onOpenChange={setTargetOpen}>
+          <Popover
+            open={targetOpen}
+            onOpenChange={(o) => {
+              setTargetOpen(o);
+              if (!o) setTargetQuery("");
+            }}
+          >
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
@@ -178,8 +206,14 @@ export default function PresentationLanguages({
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+              <LanguageSearchInput
+                value={targetQuery}
+                onChange={setTargetQuery}
+                onEnter={() => targetMatches[0] && toggleTarget(targetMatches[0].code)}
+              />
               <div className="max-h-64 overflow-y-auto">
-                {SONIOX_LANGUAGES.map((lang) => {
+                {targetMatches.length === 0 && <NoLanguageMatch />}
+                {targetMatches.map((lang) => {
                   const selected = targetLangs.includes(lang.code);
                   return (
                     <button

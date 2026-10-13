@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import LanguageSelect from "@/components/LanguageSelect";
 import PauseButton from "@/components/PauseButton";
 import {
   Mic,
@@ -36,20 +37,12 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import TermsPanel from "@/components/sidebar/TermsPanel";
 import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
 import PresentationLanguages from "@/components/sidebar/PresentationLanguages";
 import FromToLanguages from "@/components/sidebar/FromToLanguages";
 import type { TranslationMode, SpeakerInfo, BilingualEntry } from "@/types/bilingual";
-import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import { INDUSTRY_PRESETS, presetLabel } from "@/lib/contextTerms";
 import { useLanguageName, useT } from "@/lib/i18n";
 
@@ -239,76 +232,38 @@ export default function DesktopTopBar(props: DesktopTopBarProps) {
         <div className="flex items-center gap-1.5 shrink-0">
           {props.translationMode === "two_way" ? (
             <>
-              <Select
+              <LanguageSelect
                 value={langA}
-                onValueChange={(code) => props.onLanguageAChange([code])}
+                onChange={(code) => props.onLanguageAChange([code])}
                 disabled={isRecording}
-              >
-                <SelectTrigger className="h-8 w-[110px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SONIOX_LANGUAGES.map((lang) => (
-                    <SelectItem key={lang.code} value={lang.code} disabled={lang.code === props.languageB}>
-                      {langName(lang.code)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                disabledCodes={[props.languageB]}
+                className="h-8 w-[110px] text-xs"
+              />
               <ArrowUpDown className="size-3.5 text-muted-foreground shrink-0" />
-              <Select
+              <LanguageSelect
                 value={props.languageB}
-                onValueChange={props.onLanguageBChange}
+                onChange={props.onLanguageBChange}
                 disabled={isRecording}
-              >
-                <SelectTrigger className="h-8 w-[110px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SONIOX_LANGUAGES.map((lang) => (
-                    <SelectItem key={lang.code} value={lang.code} disabled={lang.code === langA}>
-                      {langName(lang.code)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                disabledCodes={[langA]}
+                className="h-8 w-[110px] text-xs"
+              />
             </>
           ) : props.translationMode === "one_way" ? (
             <>
-              <Select
+              <LanguageSelect
                 value={props.languageA[0] === "*" ? "*" : (props.languageA[0] ?? "*")}
-                onValueChange={(code) => props.onLanguageAChange([code])}
+                onChange={(code) => props.onLanguageAChange([code])}
                 disabled={isRecording}
-              >
-                <SelectTrigger className="h-8 w-[110px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="*">{t("any_language")}</SelectItem>
-                  {SONIOX_LANGUAGES.map((lang) => (
-                    <SelectItem key={lang.code} value={lang.code}>
-                      {langName(lang.code)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                anyOption
+                className="h-8 w-[110px] text-xs"
+              />
               <ArrowDown className="size-3.5 text-muted-foreground shrink-0" />
-              <Select
+              <LanguageSelect
                 value={props.languageB}
-                onValueChange={props.onLanguageBChange}
+                onChange={props.onLanguageBChange}
                 disabled={isRecording}
-              >
-                <SelectTrigger className="h-8 w-[110px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SONIOX_LANGUAGES.map((lang) => (
-                    <SelectItem key={lang.code} value={lang.code}>
-                      {langName(lang.code)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                className="h-8 w-[110px] text-xs"
+              />
             </>
           ) : props.translationMode === "transcribe" ? (
             // Spoken languages only (hints for the speech engine)
