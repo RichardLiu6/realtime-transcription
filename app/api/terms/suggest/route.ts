@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
+import { recordSuggestion } from "@/lib/officialTerms";
 import { canUseAiTerms } from "@/lib/edge-config";
 import { verifyToken } from "@/lib/auth";
 import { getOpenRouter } from "@/lib/openrouter";
@@ -145,5 +146,7 @@ If the description is not about a meeting or topic, return an empty list.`;
   const rawTitle = (parsed as { title?: unknown })?.title;
   const title = typeof rawTitle === "string" ? rawTitle.replace(/\s+/g, " ").replace(/[<>{}]/g, "").trim().slice(0, 30) : "";
   console.log(`[terms] model=${usedModel} languages=${languages.join(",")} in=${description.length} out=${terms.length}`);
+  // Kept anonymously for the admin's official packs (after the response)
+  after(() => recordSuggestion({ title, description, languages, terms }));
   return NextResponse.json({ title, terms });
 }

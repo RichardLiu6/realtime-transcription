@@ -8,7 +8,8 @@ import { useLocale, useT } from "@/lib/i18n";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { AiTerms } from "@/components/phone/PhoneTerms";
 import { deleteTermPack, useTermPacks } from "@/lib/useTermPacks";
-import { USER_PACK_PREFIX } from "@/lib/termPackTypes";
+import { OFFICIAL_PACK_PREFIX, USER_PACK_PREFIX } from "@/lib/termPackTypes";
+import { useOfficialPacks } from "@/lib/useOfficialPacks";
 import { homeLanguage } from "@/components/phone/parts";
 import { meetingLanguagesOf } from "@/lib/phoneModes";
 import type { TranslationMode } from "@/types/bilingual";
@@ -185,18 +186,19 @@ export default function TermsPanel({
     [meeting, locale]
   );
   const { packs } = useTermPacks();
+  const officialPacks = useOfficialPacks();
   // No typing terms in: AI-suggested ones only, for accounts an admin
   // allowed
   const aiAllowed = useAiTermsAllowed();
 
   // Sync combined terms to parent
   useEffect(() => {
-    onTermsTextChange(combineTerms(selectedPresets, customTerms, packs).join(", "));
-  }, [selectedPresets, customTerms, packs, onTermsTextChange]);
+    onTermsTextChange(combineTerms(selectedPresets, customTerms, packs, officialPacks).join(", "));
+  }, [selectedPresets, customTerms, packs, officialPacks, onTermsTextChange]);
 
   const totalCount = useMemo(
-    () => combineTerms(selectedPresets, customTerms, packs).length,
-    [selectedPresets, customTerms, packs]
+    () => combineTerms(selectedPresets, customTerms, packs, officialPacks).length,
+    [selectedPresets, customTerms, packs, officialPacks]
   );
 
   const togglePreset = useCallback(
@@ -243,6 +245,21 @@ export default function TermsPanel({
             onToggle={() => togglePreset(key)}
           />
         ))}
+        {/* Official packs (published by the admin) */}
+        {officialPacks.map((pack) => {
+          const key = OFFICIAL_PACK_PREFIX + pack.id;
+          return (
+            <PresetChip
+              key={key}
+              presetKey={key}
+              label={pack.name}
+              terms={pack.terms}
+              meta={t("ph_n_terms", { n: pack.terms.length })}
+              isSelected={selectedPresets.has(key)}
+              onToggle={() => togglePreset(key)}
+            />
+          );
+        })}
         {/* Own packs (AI-generated, saved per user) */}
         {packs.map((pack) => {
           const key = USER_PACK_PREFIX + pack.id;

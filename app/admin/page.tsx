@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { MODEL_POOL } from "@/lib/models";
+import OfficialTermsAdmin from "@/components/admin/OfficialTermsAdmin";
 
 // Pool: every model ≤ $0.5 per million tokens (input and output)
 const SUPPORTED_MODELS = [
@@ -691,6 +692,19 @@ export default function AdminPage() {
             )}
           </div>
         )}
+
+        {/* Official term packs and the anonymous AI suggestions they come from */}
+        <OfficialTermsAdmin
+          onMessage={(text, isError) => {
+            if (isError) {
+              setSuccess("");
+              setError(text);
+            } else {
+              setError("");
+              setSuccess(text);
+            }
+          }}
+        />
 
         {/* Feedback: what users sent from the app, newest first */}
         {feedback && (

@@ -114,6 +114,26 @@ CREATE TABLE IF NOT EXISTS feedback (
   context jsonb
 );
 CREATE INDEX IF NOT EXISTS feedback_created ON feedback (created_at DESC);
+-- Every AI term suggestion, anonymous (no email): the admin reuses them
+CREATE TABLE IF NOT EXISTS term_suggestions (
+  id text PRIMARY KEY,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  title text NOT NULL DEFAULT '',
+  description text NOT NULL,
+  languages jsonb NOT NULL DEFAULT '[]',
+  terms jsonb NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS term_suggestions_created ON term_suggestions (created_at DESC);
+-- Term packs the admin publishes for everyone (beside the built-in presets)
+CREATE TABLE IF NOT EXISTS official_term_packs (
+  id text PRIMARY KEY,
+  name text NOT NULL,
+  languages jsonb NOT NULL DEFAULT '[]',
+  terms jsonb NOT NULL DEFAULT '[]',
+  enabled boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS sync_state (
   key text PRIMARY KEY,
   synced_to timestamptz NOT NULL

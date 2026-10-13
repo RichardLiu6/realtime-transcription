@@ -9,3 +9,5 @@ export interface TermPack {
 
 // Selected packs share the stored preset selection, as "u:<id>"
 export const USER_PACK_PREFIX = "u:";
+// Official packs (published by the admin) in the same selection, as "o:<id>"
+export const OFFICIAL_PACK_PREFIX = "o:";

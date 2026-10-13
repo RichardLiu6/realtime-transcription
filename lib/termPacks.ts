@@ -22,7 +22,7 @@ export function cleanName(value: unknown): string | null {
 }
 
 // Entries as the term list keeps them: "a=b(=c…)" or a single term
-export function cleanTerms(value: unknown): string[] | null {
+export function cleanTerms(value: unknown, max = MAX_PACK_TERMS): string[] | null {
   if (!Array.isArray(value)) return null;
   const seen = new Set<string>();
   const out: string[] = [];
@@ -35,7 +35,7 @@ export function cleanTerms(value: unknown): string[] | null {
     if (entry.length > MAX_ENTRY || seen.has(entry.toLowerCase())) continue;
     seen.add(entry.toLowerCase());
     out.push(entry);
-    if (out.length >= MAX_PACK_TERMS) break;
+    if (out.length >= max) break;
   }
   return out.length > 0 ? out : null;
 }
