@@ -1,16 +1,16 @@
 "use client";
 
-// Admin: official term packs (shown to everyone beside the built-in
-// presets) and the anonymous history of AI term suggestions they are made
-// from — reuse what was already paid for. A suggestion's terms (all, or the
+// Admin: the anonymous history of AI term suggestions, and the official
+// term packs made from it (shown to everyone beside the built-in presets)
+// — reuse what was already paid for. A suggestion's terms (all, or the
 // ticked ones) go into a new pack or are added to an existing one. The
-// history exports as JSON, and a pack accepts pasted terms, so they can
-// also be merged elsewhere (e.g. with an assistant) and pasted back.
+// history also exports as JSON (to merge elsewhere). Two page sections.
 
 import { useCallback, useEffect, useState } from "react";
-import { Download, Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { Download, Loader2, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import AdminSection, { AdminEmpty } from "@/components/admin/AdminSection";
 
 interface Pack {
   id: string;
@@ -43,21 +43,12 @@ async function call(url: string, method: string, body?: unknown): Promise<{ ok: 
   return { ok: !!r?.ok, data };
 }
 
-export default function OfficialTermsAdmin({ onMessage: report }: { onMessage: (text: string, error?: boolean) => void }) {
-  // Shown here too: the page's own message line is far up
-  const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
-  const onMessage = (text: string, error = false) => {
-    setNote({ text, error });
-    report(text, error);
-  };
+export default function OfficialTermsAdmin({ onMessage }: { onMessage: (text: string, error?: boolean) => void }) {
   const [available, setAvailable] = useState<boolean | null>(null);
   const [packs, setPacks] = useState<Pack[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [q, setQ] = useState("");
   const [loadingList, setLoadingList] = useState(false);
-  // New pack form
-  const [newName, setNewName] = useState("");
-  const [newTerms, setNewTerms] = useState("");
   // Pack whose terms are being edited
   const [editing, setEditing] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
@@ -85,14 +76,6 @@ export default function OfficialTermsAdmin({ onMessage: report }: { onMessage: (
     loadSuggestions("");
   }, [loadPacks, loadSuggestions]);
 
-  const createPack = async (name: string, terms: string[] | string, languages: string[] = []) => {
-    const { ok, data } = await call("/api/admin/official-packs", "POST", { name, terms, languages });
-    if (!ok) return onMessage(String(data.error ?? "创建失败"), true), false;
-    onMessage(`已发布官方术语包「${name}」`);
-    await loadPacks();
-    return true;
-  };
-
   const patchPack = async (id: string, body: Record<string, unknown>, done: string) => {
     const { ok, data } = await call(`/api/admin/official-packs/${id}`, "PATCH", body);
     if (!ok) return onMessage(String(data.error ?? "更新失败"), true), false;
@@ -108,7 +91,11 @@ export default function OfficialTermsAdmin({ onMessage: report }: { onMessage: (
     setBusy(s.id);
     if (to === NEW) {
       const name = window.prompt("官方术语包名称", s.title || "新术语包")?.trim();
-      if (name) await createPack(name, terms, s.languages);
+      if (name) {
+        const { ok, data } = await call("/api/admin/official-packs", "POST", { name, terms, languages: s.languages });
+        onMessage(ok ? `已发布官方术语包「${name}」` : String(data.error ?? "创建失败"), !ok);
+        if (ok) await loadPacks();
+      }
     } else {
       const pack = packs.find((p) => p.id === to);
       await patchPack(to, { addTerms: terms, languages: s.languages }, `已把 ${terms.length} 个术语加入「${pack?.name}」（重复的自动跳过）`);
@@ -119,172 +106,60 @@ export default function OfficialTermsAdmin({ onMessage: report }: { onMessage: (
   if (available === false) return null;
 
   return (
-    <div className="space-y-6" data-admin-official-terms>
-      {note && (
-        <p role="status" className={`sticky top-2 z-10 rounded-md border bg-background px-3 py-2 text-xs shadow-sm ${note.error ? "border-destructive text-destructive" : "border-border text-green-700"}`}>
-          {note.text}
-        </p>
-      )}
-      {/* Official packs */}
-      <div className="space-y-3">
-        <div>
-          <h2 className="text-sm font-semibold">官方术语包</h2>
-          <p className="text-xs text-muted-foreground">
-            启用的包对所有人可见（含访客），和内置行业包并排；选用不消耗 AI 额度。
-          </p>
-        </div>
-        {packs.length > 0 && (
-          <ul className="divide-y divide-border rounded-md border border-border">
-            {packs.map((p) => (
-              <li key={p.id} className="space-y-2 px-3 py-2 text-xs">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium">{p.name}</span>
-                  <span className="text-muted-foreground">
-                    {p.terms.length} 个术语{p.languages.length > 0 && ` · ${langs(p.languages)}`}
-                  </span>
-                  <span className="ml-auto flex items-center gap-2">
-                    <label className="flex items-center gap-1 text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        checked={p.enabled}
-                        onChange={(e) =>
-                          patchPack(p.id, { enabled: e.target.checked }, `已${e.target.checked ? "启用" : "停用"}「${p.name}」`)
-                        }
-                        className="size-3.5 accent-foreground"
-                      />
-                      启用
-                    </label>
-                    <button
-                      type="button"
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={() => {
-                        const name = window.prompt("新名称", p.name)?.trim();
-                        if (name && name !== p.name) patchPack(p.id, { name }, `已改名为「${name}」`);
-                      }}
-                    >
-                      改名
-                    </button>
-                    <button
-                      type="button"
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={() => {
-                        setEditing(editing === p.id ? null : p.id);
-                        setEditText(p.terms.join("\n"));
-                      }}
-                    >
-                      {editing === p.id ? "收起" : "编辑术语"}
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`删除 ${p.name}`}
-                      className="text-muted-foreground hover:text-destructive"
-                      onClick={async () => {
-                        if (!window.confirm(`删除官方术语包「${p.name}」？`)) return;
-                        const { ok } = await call(`/api/admin/official-packs/${p.id}`, "DELETE");
-                        onMessage(ok ? `已删除「${p.name}」` : "删除失败", !ok);
-                        loadPacks();
-                      }}
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </span>
-                </div>
-                {editing === p.id && (
-                  <div className="space-y-1.5">
-                    <textarea
-                      value={editText}
-                      onChange={(e) => setEditText(e.target.value)}
-                      rows={8}
-                      className="w-full rounded-md border border-input bg-background px-2 py-1.5 font-mono text-xs"
-                    />
-                    <Button
-                      size="sm"
-                      onClick={async () => {
-                        if (await patchPack(p.id, { terms: editText }, `已保存「${p.name}」的术语`)) setEditing(null);
-                      }}
-                    >
-                      保存
-                    </Button>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="space-y-1.5 rounded-md border border-dashed border-border p-3">
-          <p className="text-xs font-medium">新建官方包（粘贴术语：每行一个，或用逗号分隔；同一术语多语言写成 中文=English）</p>
-          <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="名称" className="h-8 text-sm" />
-          <textarea
-            value={newTerms}
-            onChange={(e) => setNewTerms(e.target.value)}
-            rows={4}
-            placeholder={"胶囊填充机=Capsule Filler\n批生产记录=Batch Production Record"}
-            className="w-full rounded-md border border-input bg-background px-2 py-1.5 font-mono text-xs"
-          />
-          <Button
-            size="sm"
-            disabled={!newName.trim() || !newTerms.trim()}
-            onClick={async () => {
-              if (await createPack(newName.trim(), newTerms)) {
-                setNewName("");
-                setNewTerms("");
-              }
-            }}
-          >
-            <Plus className="size-3.5" />
-            发布
-          </Button>
-        </div>
-      </div>
-
-      {/* Anonymous AI suggestions */}
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <h2 className="text-sm font-semibold">AI 术语生成记录</h2>
-            <p className="text-xs text-muted-foreground">匿名（不记录是谁生成的），最近 200 条。可整条或勾选部分术语发布到官方包。</p>
-          </div>
-          <a
-            href="/api/admin/term-suggestions?download=1"
-            className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted"
-          >
-            <Download className="size-3.5" />
-            导出全部 JSON
-          </a>
-        </div>
-        <form
-          className="flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            loadSuggestions(q.trim());
-          }}
-        >
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索标题、描述或术语" className="h-8 text-sm" />
-          <Button size="sm" variant="outline" type="submit">
-            {loadingList ? <Loader2 className="size-3.5 animate-spin" /> : <Search className="size-3.5" />}
-          </Button>
-        </form>
+    <>
+      <AdminSection
+        title="AI 术语生成记录"
+        count={suggestions.length}
+        info="匿名（不记录是谁生成的），最近 200 条。整条或勾选部分术语，发布为新的官方包或加入已有的包。"
+        bodyClassName="h-[28rem]"
+        data-admin-term-suggestions
+        actions={
+          <>
+            <form
+              className="flex items-center gap-1"
+              onSubmit={(e) => {
+                e.preventDefault();
+                loadSuggestions(q.trim());
+              }}
+            >
+              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索" className="h-7 w-32 text-xs" />
+              <Button size="icon-sm" variant="ghost" type="submit" aria-label="搜索">
+                {loadingList ? <Loader2 className="size-3.5 animate-spin" /> : <Search className="size-3.5" />}
+              </Button>
+            </form>
+            <a
+              href="/api/admin/term-suggestions?download=1"
+              title="导出全部 JSON"
+              aria-label="导出全部 JSON"
+              className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <Download className="size-3.5" />
+            </a>
+          </>
+        }
+      >
         {suggestions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{loadingList ? "加载中…" : "暂无"}</p>
+          <AdminEmpty>{loadingList ? "加载中…" : "暂无"}</AdminEmpty>
         ) : (
-          <ul className="divide-y divide-border rounded-md border border-border">
+          <ul className="divide-y divide-border">
             {suggestions.map((s) => {
               const off = unticked[s.id] ?? new Set<string>();
               return (
-                <li key={s.id} className="space-y-1.5 px-3 py-2 text-xs">
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
-                    <span className="whitespace-nowrap">{new Date(s.createdAt).toLocaleString("zh-CN")}</span>
-                    {s.title && <span className="font-medium text-foreground">{s.title}</span>}
+                <li key={s.id} className="space-y-1 px-3 py-2 text-xs">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-muted-foreground">
+                    <span className="font-medium text-foreground">{s.title || "（无标题）"}</span>
                     <span>{langs(s.languages)}</span>
-                    <span>{s.terms.length} 个术语</span>
+                    <span className="ml-auto whitespace-nowrap">{new Date(s.createdAt).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" })}</span>
                   </div>
-                  <p className="whitespace-pre-wrap break-words text-muted-foreground">{s.description}</p>
+                  <p className="line-clamp-2 text-muted-foreground" title={s.description}>
+                    {s.description}
+                  </p>
                   <div className="flex flex-wrap gap-1">
                     {s.terms.map((term) => (
                       <label
                         key={term}
-                        className={`inline-flex cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 ${
-                          off.has(term) ? "border-border text-muted-foreground line-through" : "border-foreground/30"
+                        className={`inline-flex cursor-pointer items-center gap-1 rounded border px-1 py-px text-[11px] ${
+                          off.has(term) ? "border-border text-muted-foreground line-through" : "border-foreground/25"
                         }`}
                       >
                         <input
@@ -302,21 +177,21 @@ export default function OfficialTermsAdmin({ onMessage: report }: { onMessage: (
                       </label>
                     ))}
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <div className="flex items-center gap-1.5">
                     <select
                       value={target[s.id] ?? NEW}
                       onChange={(e) => setTarget({ ...target, [s.id]: e.target.value })}
-                      className="h-7 rounded border border-input bg-background px-1.5 text-xs"
+                      className="h-6 min-w-0 rounded border border-input bg-background px-1 text-[11px]"
                     >
-                      <option value={NEW}>发布为新的官方包…</option>
+                      <option value={NEW}>新的官方包…</option>
                       {packs.map((p) => (
                         <option key={p.id} value={p.id}>
                           加入「{p.name}」
                         </option>
                       ))}
                     </select>
-                    <Button size="sm" variant="outline" className="h-7" disabled={busy === s.id} onClick={() => publish(s)}>
-                      {busy === s.id && <Loader2 className="size-3.5 animate-spin" />}
+                    <Button size="sm" variant="outline" className="h-6 px-2 text-[11px]" disabled={busy === s.id} onClick={() => publish(s)}>
+                      {busy === s.id && <Loader2 className="size-3 animate-spin" />}
                       发布 {s.terms.length - off.size} 个
                     </Button>
                   </div>
@@ -325,7 +200,101 @@ export default function OfficialTermsAdmin({ onMessage: report }: { onMessage: (
             })}
           </ul>
         )}
-      </div>
-    </div>
+      </AdminSection>
+
+      <AdminSection
+        title="官方术语包"
+        count={packs.length}
+        info="从左侧生成记录发布而来。启用的包对所有人可见（含访客），排在内置行业包前面；选用不消耗 AI 额度。"
+        bodyClassName="h-[28rem]"
+        data-admin-official-packs
+      >
+        {packs.length === 0 ? (
+          <AdminEmpty>暂无，从 AI 术语生成记录里发布</AdminEmpty>
+        ) : (
+          <ul className="divide-y divide-border">
+            {packs.map((p) => (
+              <li key={p.id} className="space-y-1.5 px-3 py-2 text-xs">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className={`text-sm font-medium ${p.enabled ? "" : "text-muted-foreground"}`}>{p.name}</span>
+                  <span className="text-muted-foreground">
+                    {p.terms.length} 个{p.languages.length > 0 && ` · ${langs(p.languages)}`}
+                  </span>
+                  <span className="ml-auto flex items-center gap-2.5 text-muted-foreground">
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={p.enabled}
+                        onChange={(e) =>
+                          patchPack(p.id, { enabled: e.target.checked }, `已${e.target.checked ? "启用" : "停用"}「${p.name}」`)
+                        }
+                        className="size-3.5 accent-foreground"
+                      />
+                      启用
+                    </label>
+                    <button
+                      type="button"
+                      className="hover:text-foreground"
+                      onClick={() => {
+                        const name = window.prompt("新名称", p.name)?.trim();
+                        if (name && name !== p.name) patchPack(p.id, { name }, `已改名为「${name}」`);
+                      }}
+                    >
+                      改名
+                    </button>
+                    <button
+                      type="button"
+                      className="hover:text-foreground"
+                      onClick={() => {
+                        setEditing(editing === p.id ? null : p.id);
+                        setEditText(p.terms.join("\n"));
+                      }}
+                    >
+                      {editing === p.id ? "收起" : "编辑"}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`删除 ${p.name}`}
+                      className="hover:text-destructive"
+                      onClick={async () => {
+                        if (!window.confirm(`删除官方术语包「${p.name}」？`)) return;
+                        const { ok } = await call(`/api/admin/official-packs/${p.id}`, "DELETE");
+                        onMessage(ok ? `已删除「${p.name}」` : "删除失败", !ok);
+                        loadPacks();
+                      }}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </span>
+                </div>
+                {editing === p.id ? (
+                  <div className="space-y-1.5">
+                    <textarea
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      rows={8}
+                      className="w-full rounded-md border border-input bg-background px-2 py-1.5 font-mono text-xs"
+                    />
+                    <Button
+                      size="sm"
+                      className="h-7"
+                      onClick={async () => {
+                        if (await patchPack(p.id, { terms: editText }, `已保存「${p.name}」的术语`)) setEditing(null);
+                      }}
+                    >
+                      保存
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="line-clamp-2 text-muted-foreground" title={p.terms.join("\n")}>
+                    {p.terms.map((t) => t.split("=").join(" = ")).join(" · ")}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </AdminSection>
+    </>
   );
 }
