@@ -19,6 +19,9 @@ export interface AuthUser {
   name: string;
   addedAt: string;
   model?: string;
+  // May generate terms with AI (/api/terms/suggest, saving packs); off
+  // unless an admin switched it on
+  aiTerms?: boolean;
   // Legacy (before Oct 2026, no longer written): usage now lives in
   // Postgres, see lib/usage.ts
   usage?: Record<string, MonthlyUsage>; // key = "2026-02"
@@ -49,6 +52,19 @@ export async function getUserByEmail(
 ): Promise<AuthUser | null> {
   const users = await getAuthUsers();
   return users[email.toLowerCase()] ?? null;
+}
+
+// AI-suggested terms: admins always, meeting-code guests never, users when
+// an admin allowed it. Edge Config unreadable → no.
+export async function canUseAiTerms(user: { [claim: string]: unknown }): Promise<boolean> {
+  if (user.role === "admin") return true;
+  if (user.role === "guest" || typeof user.email !== "string") return false;
+  try {
+    return (await getUserByEmail(user.email))?.aiTerms === true;
+  } catch (error) {
+    console.error("[ai-terms] access check failed:", error);
+    return false;
+  }
 }
 
 export async function getUserModel(email: string): Promise<string> {

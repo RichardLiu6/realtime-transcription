@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/auth";
+import { canUseAiTerms } from "@/lib/edge-config";
 
 export async function GET(request: NextRequest) {
   const token = request.cookies.get("auth_token")?.value;
@@ -14,5 +15,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     user: { email: payload.email, name: payload.name, role: payload.role },
+    // Admin-granted features
+    aiTerms: await canUseAiTerms(payload),
   });
 }

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { verifyToken } from "@/lib/auth";
+import { canUseAiTerms } from "@/lib/edge-config";
 import { currentUser } from "@/lib/meetings/repo";
 import { meetingsAvailable } from "@/lib/meetings/db";
 import { MAX_PACKS, PackLimitError, cleanLanguages, cleanName, cleanTerms, createPack, listPacks } from "@/lib/termPacks";
@@ -21,6 +23,12 @@ export async function POST(req: NextRequest) {
   if (!meetingsAvailable()) return NextResponse.json({ error: "Not configured" }, { status: 503 });
   const user = await currentUser(req);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Packs hold AI-suggested terms: only for accounts allowed to generate them
+  // (renaming / deleting existing packs stays open)
+  const payload = await verifyToken(req.cookies.get("auth_token")?.value ?? "");
+  if (!payload || !(await canUseAiTerms(payload))) {
+    return NextResponse.json({ error: "Not enabled for this account", code: "forbidden" }, { status: 403 });
+  }
   let body: { name?: unknown; languages?: unknown; terms?: unknown; replaceId?: unknown };
   try {
     body = await req.json();
