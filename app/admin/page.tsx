@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -12,10 +12,17 @@ import {
   Copy,
   XCircle,
   GitCompareArrows,
+  Users,
+  Ticket,
+  BarChart3,
+  Sparkles,
+  FolderClock,
+  MessageSquare,
 } from "lucide-react";
 import Link from "next/link";
 import { MODEL_POOL } from "@/lib/models";
 import OfficialTermsAdmin from "@/components/admin/OfficialTermsAdmin";
+import AdminSection, { AdminEmpty } from "@/components/admin/AdminSection";
 
 // Pool: every model ≤ $0.5 per million tokens (input and output)
 const SUPPORTED_MODELS = [
@@ -103,6 +110,27 @@ function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(n);
+}
+
+// The admin page's sections, one on screen at a time
+const SECTIONS = [
+  { key: "users", label: "用户", icon: Users },
+  { key: "codes", label: "临时会议码", icon: Ticket },
+  { key: "usage", label: "用量与费用", icon: BarChart3 },
+  { key: "terms", label: "AI 术语", icon: Sparkles },
+  { key: "saved", label: "已保存的会议", icon: FolderClock },
+  { key: "feedback", label: "意见反馈", icon: MessageSquare },
+] as const;
+type SectionKey = (typeof SECTIONS)[number]["key"];
+
+function readSection(): SectionKey {
+  const hash = window.location.hash.slice(1);
+  return SECTIONS.some((s) => s.key === hash) ? (hash as SectionKey) : "users";
+}
+
+function subscribeHash(onChange: () => void) {
+  window.addEventListener("hashchange", onChange);
+  return () => window.removeEventListener("hashchange", onChange);
 }
 
 export default function AdminPage() {
@@ -318,118 +346,216 @@ export default function AdminPage() {
     if (e.key === "Enter" && email.trim() && !loading) handleAdd();
   };
 
+  // The message toast fades after a few seconds
+  useEffect(() => {
+    if (!error && !success) return;
+    const id = setTimeout(() => {
+      setError("");
+      setSuccess("");
+    }, 5000);
+    return () => clearTimeout(id);
+  }, [error, success]);
+
+  // The section on screen, as the URL hash (#usage …): reload / back keep it
+  const section = useSyncExternalStore(subscribeHash, readSection, () => "users" as SectionKey);
+  const selectSection = (key: SectionKey) => {
+    window.location.hash = key;
+  };
+  const sectionCount = (key: SectionKey): number | undefined =>
+    key === "users"
+      ? users.length
+      : key === "codes"
+        ? meetings.filter((m) => m.active).length
+        : key === "saved"
+          ? savedMeetings?.length
+          : key === "feedback"
+            ? feedback?.length
+            : undefined;
+
+  const th = "sticky top-0 z-[1] bg-muted px-2 py-1.5 font-medium";
+
   return (
-    <div className="min-h-screen bg-background px-4 py-8">
-      <div className="mx-auto max-w-2xl space-y-8">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-foreground">用户管理</h1>
-          <div className="flex gap-2">
-            <Link href="/admin/compare">
-              <Button variant="outline" size="sm">
-                <GitCompareArrows className="size-4 mr-1" />
-                模型对比
-              </Button>
-            </Link>
-            <Link href="/">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="size-4 mr-1" />
-                返回首页
-              </Button>
-            </Link>
-          </div>
-        </div>
+    <div className="flex h-dvh flex-col bg-muted/30 md:flex-row">
+      {/* Messages: a toast, so they never push the sections around */}
+      {(error || success) && (
+        <p
+          role="status"
+          className={`fixed left-1/2 top-4 z-50 max-w-[90vw] -translate-x-1/2 rounded-md border bg-background px-4 py-2 text-sm shadow-lg ${
+            error ? "border-destructive text-destructive" : "border-border text-green-700"
+          }`}
+        >
+          {error || success}
+        </p>
+      )}
 
-        {/* Add user form */}
-        <div className="space-y-3 rounded-lg border border-border p-4">
-          <h2 className="text-sm font-medium text-muted-foreground">
-            添加用户
-          </h2>
-          <div className="flex gap-2" onKeyDown={handleKeyDown}>
-            <Input
-              type="email"
-              placeholder="邮箱地址"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="flex-1"
-              disabled={loading}
-            />
-            <Input
-              type="text"
-              placeholder="姓名（选填）"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-32"
-              disabled={loading}
-            />
-            <Button onClick={handleAdd} disabled={!email.trim() || loading}>
-              {loading ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <UserPlus className="size-4" />
-              )}
-            </Button>
-          </div>
-        </div>
-
-        {/* Meeting codes */}
-        <div className="space-y-3 rounded-lg border border-border p-4">
-          <h2 className="text-sm font-medium text-muted-foreground">
-            临时会议码
-          </h2>
-          <div className="flex gap-2 items-center">
-            <select
-              value={meetingHours}
-              onChange={(e) => setMeetingHours(e.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-              disabled={creatingMeeting}
-            >
-              <option value="1">1 小时</option>
-              <option value="2">2 小时</option>
-              <option value="4">4 小时</option>
-              <option value="8">8 小时</option>
-              <option value="12">12 小时</option>
-              <option value="24">24 小时</option>
-            </select>
-            <Button
-              onClick={handleCreateMeeting}
-              disabled={creatingMeeting}
-              className="flex-1"
-            >
-              {creatingMeeting ? (
-                <Loader2 className="size-4 animate-spin mr-2" />
-              ) : (
-                <Plus className="size-4 mr-2" />
-              )}
-              生成会议码
-            </Button>
-          </div>
-          {meetings.length > 0 && (
-            <div className="divide-y divide-border rounded-lg border border-border mt-2">
-              {meetings.map((m) => (
-                <div
-                  key={m.code}
-                  className="flex items-center justify-between px-4 py-3"
+      {/* Section list: one section at a time (remembered in the URL hash);
+          a row of tabs on phones */}
+      <nav className="flex shrink-0 flex-col border-border bg-background max-md:border-b md:w-52 md:border-r">
+        <h1 className="px-4 pt-4 pb-2 text-base font-bold text-foreground max-md:hidden">管理后台</h1>
+        <ul className="flex gap-1 overflow-x-auto px-2 py-2 md:flex-col md:overflow-visible md:py-1">
+          {SECTIONS.map(({ key, label, icon: Icon }) => {
+            const n = sectionCount(key);
+            return (
+              <li key={key} className="shrink-0">
+                <button
+                  type="button"
+                  onClick={() => selectSection(key)}
+                  aria-current={section === key ? "page" : undefined}
+                  className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm whitespace-nowrap transition-colors ${
+                    section === key ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  }`}
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm font-bold tracking-widest">
-                        {m.code}
-                      </span>
-                      <span
-                        className={`text-xs px-1.5 py-0.5 rounded-full ${
-                          m.active
-                            ? "bg-green-100 text-green-700"
-                            : "bg-gray-100 text-gray-500"
-                        }`}
-                      >
-                        {m.active ? "有效" : "已过期"}
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      到期: {new Date(m.expiresAt).toLocaleString("zh-CN")}
+                  <Icon className="size-4 shrink-0" aria-hidden />
+                  {label}
+                  {n !== undefined && <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">{n}</span>}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="mt-auto flex gap-1 border-border px-2 py-2 max-md:hidden md:flex-col md:border-t">
+          <Link href="/admin/compare" className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground">
+            <GitCompareArrows className="size-4" />
+            模型对比
+          </Link>
+          <Link href="/" className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground">
+            <ArrowLeft className="size-4" />
+            返回首页
+          </Link>
+        </div>
+      </nav>
+
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-3 md:p-4">
+          {section === "users" && (
+            <>
+          {/* Users: add in the header, one line per user */}
+          <AdminSection
+            title="已授权用户"
+            count={users.length}
+            info="AI 术语：允许该用户用 AI 生成术语（默认关闭）。下拉框：该用户的翻译模型。"
+            data-admin-users
+            actions={
+              <div className="flex items-center gap-1" onKeyDown={handleKeyDown}>
+                <Input
+                  type="email"
+                  placeholder="邮箱"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="h-7 w-40 text-xs"
+                  disabled={loading}
+                />
+                <Input
+                  type="text"
+                  placeholder="姓名"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="h-7 w-20 text-xs"
+                  disabled={loading}
+                />
+                <Button size="icon-sm" onClick={handleAdd} disabled={!email.trim() || loading} aria-label="添加用户">
+                  {loading ? <Loader2 className="size-3.5 animate-spin" /> : <UserPlus className="size-3.5" />}
+                </Button>
+              </div>
+            }
+          >
+            {users.length === 0 ? (
+              <AdminEmpty>暂无用户，请添加</AdminEmpty>
+            ) : (
+              <ul className="divide-y divide-border">
+                {users.map((user) => (
+                  <li key={user.email} className="flex items-center gap-2 px-3 py-1.5">
+                    <p className="min-w-0 flex-1 truncate text-sm" title={user.email}>
+                      <span className="font-medium text-foreground">{user.name}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">{user.email}</span>
                     </p>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0 ml-4">
+                    <label
+                      className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+                      title="允许该用户用 AI 生成术语（默认关闭）"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={user.aiTerms === true}
+                        onChange={(e) => handleAiTermsChange(user.email, e.target.checked)}
+                        className="size-3.5 accent-foreground"
+                        data-admin-ai-terms
+                      />
+                      AI 术语
+                    </label>
+                    <select
+                      value={user.model || ""}
+                      onChange={(e) => handleModelChange(user.email, e.target.value)}
+                      className="h-7 w-32 shrink-0 rounded border border-input bg-background px-1 text-xs text-muted-foreground"
+                    >
+                      {SUPPORTED_MODELS.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => handleDelete(user.email)}
+                      disabled={deleting === user.email}
+                      className="shrink-0 text-muted-foreground hover:text-destructive"
+                      aria-label={`删除 ${user.email}`}
+                    >
+                      {deleting === user.email ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </AdminSection>
+            </>
+          )}
+          {section === "codes" && (
+            <>
+          {/* Meeting codes: generate in the header */}
+          <AdminSection
+            title="临时会议码"
+            count={meetings.filter((m) => m.active).length}
+            info="访客用会议码登录，到期失效；访客不能保存会议，也不能用 AI 生成术语。"
+            data-admin-meeting-codes
+            actions={
+              <div className="flex items-center gap-1">
+                <select
+                  value={meetingHours}
+                  onChange={(e) => setMeetingHours(e.target.value)}
+                  className="h-7 rounded border border-input bg-background px-1 text-xs"
+                  disabled={creatingMeeting}
+                  aria-label="有效期"
+                >
+                  {["1", "2", "4", "8", "12", "24"].map((h) => (
+                    <option key={h} value={h}>
+                      {h} 小时
+                    </option>
+                  ))}
+                </select>
+                <Button size="sm" className="h-7 text-xs" onClick={handleCreateMeeting} disabled={creatingMeeting}>
+                  {creatingMeeting ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+                  生成
+                </Button>
+              </div>
+            }
+          >
+            {meetings.length === 0 ? (
+              <AdminEmpty>暂无会议码</AdminEmpty>
+            ) : (
+              <ul className="divide-y divide-border">
+                {meetings.map((m) => (
+                  <li key={m.code} className="flex items-center gap-2 px-3 py-1.5">
+                    <span className="font-mono text-sm font-bold tracking-widest">{m.code}</span>
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[11px] ${
+                        m.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
+                      }`}
+                    >
+                      {m.active ? "有效" : "已过期"}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                      到期 {new Date(m.expiresAt).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" })}
+                    </span>
                     {m.active && (
                       <>
                         <Button
@@ -449,159 +575,82 @@ export default function AdminPage() {
                           className="text-muted-foreground hover:text-destructive"
                           aria-label="Deactivate"
                         >
-                          {deactivating === m.code ? (
-                            <Loader2 className="size-4 animate-spin" />
-                          ) : (
-                            <XCircle className="size-4" />
-                          )}
+                          {deactivating === m.code ? <Loader2 className="size-4 animate-spin" /> : <XCircle className="size-4" />}
                         </Button>
                       </>
                     )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Messages */}
-        {error && (
-          <p className="text-sm text-destructive text-center">{error}</p>
-        )}
-        {success && (
-          <p className="text-sm text-green-600 text-center">{success}</p>
-        )}
-
-        {/* User list */}
-        <div className="space-y-2">
-          <h2 className="text-sm font-medium text-muted-foreground">
-            已授权用户 ({users.length})
-          </h2>
-          {users.length === 0 ? (
-            <p className="text-center text-sm text-muted-foreground py-8">
-              暂无用户，请添加
-            </p>
-          ) : (
-            <div className="divide-y divide-border rounded-lg border border-border">
-              {users.map((user) => {
-                return (
-                  <div
-                    key={user.email}
-                    className="flex items-center justify-between px-4 py-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground truncate">
-                        {user.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {user.email}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0 ml-4">
-                      <label
-                        className="flex items-center gap-1.5 text-xs text-muted-foreground"
-                        title="允许该用户用 AI 生成术语（默认关闭）"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={user.aiTerms === true}
-                          onChange={(e) => handleAiTermsChange(user.email, e.target.checked)}
-                          className="size-3.5 accent-foreground"
-                          data-admin-ai-terms
-                        />
-                        AI 术语
-                      </label>
-                      <select
-                        value={user.model || ""}
-                        onChange={(e) => handleModelChange(user.email, e.target.value)}
-                        className="h-7 rounded border border-input bg-background px-1.5 text-xs text-muted-foreground"
-                      >
-                        {SUPPORTED_MODELS.map((m) => (
-                          <option key={m.value} value={m.value}>
-                            {m.label}
-                          </option>
-                        ))}
-                      </select>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => handleDelete(user.email)}
-                        disabled={deleting === user.email}
-                        className="text-muted-foreground hover:text-destructive"
-                      >
-                        {deleting === user.email ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="size-4" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Usage and cost: translation cost as reported by OpenRouter,
-            transcription as billed by Soniox (its usage logs), or estimated
-            from its list price for months before per-user attribution */}
-        {usage && (
-          <div className="space-y-3" data-admin-usage>
-            <div className="flex items-end justify-between gap-2">
-              <div>
-                <h2 className="text-sm font-semibold">用量与费用</h2>
-                <p className="text-xs text-muted-foreground">
-                  翻译费用为 OpenRouter 返回的实际金额（含说话中的临时翻译和会议纪要）；
-                  {usage.stt?.source === "soniox"
-                    ? "转录时长和费用为 Soniox 用量记录中的实际值。"
-                    : `转录按 Soniox $${usage.sonioxUsdPerHour}/小时估算（这个月份还没有按用户的 Soniox 记录）。`}
-                  按 UTC 月份统计，2026 年 9 月起。
-                </p>
-              </div>
-              <select
-                value={usage.month}
-                onChange={(e) => setUsageMonth(e.target.value)}
-                aria-label="月份"
-                className="h-8 shrink-0 rounded border border-input bg-background px-2 text-xs"
-              >
-                {usage.months.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
+                  </li>
                 ))}
-              </select>
-            </div>
-            {usage.users.length === 0 ? (
-              <p className="text-sm text-muted-foreground">本月暂无用量</p>
-            ) : (
-              <div className="overflow-x-auto rounded-md border border-border">
+              </ul>
+            )}
+          </AdminSection>
+            </>
+          )}
+          {section === "usage" && (
+            <>
+          {/* Usage and cost: translation cost as reported by OpenRouter,
+              transcription as billed by Soniox (its usage logs), or estimated
+              from its list price for months before per-user attribution */}
+          {usage && (
+            <AdminSection
+              title="用量与费用"
+             
+              data-admin-usage
+              info={`翻译费用为 OpenRouter 返回的实际金额（含说话中的临时翻译和会议纪要）；${
+                usage.stt?.source === "soniox"
+                  ? "转录时长和费用为 Soniox 用量记录中的实际值。"
+                  : `转录按 Soniox $${usage.sonioxUsdPerHour}/小时估算（这个月份还没有按用户的 Soniox 记录）。`
+              }按 UTC 月份统计，2026 年 9 月起。鼠标停在用户上可以看到按模型的明细。`}
+              actions={
+                <select
+                  value={usage.month}
+                  onChange={(e) => setUsageMonth(e.target.value)}
+                  aria-label="月份"
+                  className="h-7 rounded border border-input bg-background px-1.5 text-xs"
+                >
+                  {usage.months.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              }
+              footer={
+                <span data-usage-stt-note>
+                  {usage.users.some((u) => u.email === "") && <>“未标记转录”是没有带用户的 Soniox 请求：按用户统计开始之前的，或在 Soniox 控制台里用的。</>}
+                  {usage.stt?.source === "estimate" && usage.stt.sonioxTotalUsd !== null && usage.stt.sonioxTotalUsd > 0 && (
+                    <> Soniox 本月实际账单 {usd(usage.stt.sonioxTotalUsd)}（未按用户区分）。</>
+                  )}
+                  {usage.stt?.syncedAt && <> Soniox 数据更新于 {new Date(usage.stt.syncedAt).toLocaleString("zh-CN")}。</>}
+                  {usage.stt?.error && <span className="text-destructive"> Soniox 用量读取失败：{usage.stt.error}</span>}
+                </span>
+              }
+            >
+              {usage.users.length === 0 ? (
+                <AdminEmpty>本月暂无用量</AdminEmpty>
+              ) : (
                 <table className="w-full text-xs">
-                  <thead className="bg-muted/50 text-left text-muted-foreground">
+                  <thead className="text-left text-muted-foreground">
                     <tr>
-                      <th className="px-2 py-1.5 font-medium">用户</th>
-                      <th className="px-2 py-1.5 text-right font-medium">转录</th>
-                      <th className="px-2 py-1.5 text-right font-medium" title="整句 / 临时 / 纪要">翻译调用</th>
-                      <th className="px-2 py-1.5 text-right font-medium" title="输入 / 输出">Tokens</th>
-                      <th className="px-2 py-1.5 text-right font-medium">翻译</th>
-                      <th className="px-2 py-1.5 text-right font-medium">{usage.stt?.source === "soniox" ? "转录" : "转录≈"}</th>
-                      <th className="px-2 py-1.5 text-right font-medium">合计</th>
+                      <th className={th}>用户</th>
+                      <th className={`${th} text-right`}>转录</th>
+                      <th className={`${th} text-right`} title="整句 / 临时 / 纪要">翻译调用</th>
+                      <th className={`${th} text-right`} title="输入 / 输出">Tokens</th>
+                      <th className={`${th} text-right`}>翻译</th>
+                      <th className={`${th} text-right`}>{usage.stt?.source === "soniox" ? "转录" : "转录≈"}</th>
+                      <th className={`${th} text-right`}>合计</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {usage.users.map((u) => (
                       <tr key={u.email} data-usage-user={u.email}>
                         <td
-                          className="max-w-36 truncate px-2 py-1.5"
+                          className="max-w-48 truncate px-2 py-1.5"
                           title={u.models
                             .map((m) => `${m.model}: ${m.calls} 次, ${formatTokens(m.inputTokens)}↑ ${formatTokens(m.outputTokens)}↓, ${usd(m.costUsd)}`)
                             .join("\n")}
                         >
-                          {u.email === "guest"
-                            ? "访客（会议码）"
-                            : u.email === ""
-                              ? "未标记转录"
-                              : u.email}
+                          {u.email === "guest" ? "访客（会议码）" : u.email === "" ? "未标记转录" : u.email}
                         </td>
                         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">{Math.round(u.sttSeconds / 60)} 分</td>
                         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
@@ -616,7 +665,7 @@ export default function AdminPage() {
                       </tr>
                     ))}
                   </tbody>
-                  <tfoot className="border-t border-border bg-muted/30 font-medium">
+                  <tfoot className="sticky bottom-0 bg-muted font-medium">
                     <tr data-usage-total>
                       <td className="px-2 py-1.5">合计</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">
@@ -635,52 +684,61 @@ export default function AdminPage() {
                     </tr>
                   </tfoot>
                 </table>
-              </div>
-            )}
-            <p className="text-[11px] text-muted-foreground" data-usage-stt-note>
-              鼠标停在用户上可以看到按模型的明细。
-              {usage.users.some((u) => u.email === "") && <> “未标记转录”是没有带用户的 Soniox 请求：按用户统计开始之前的，或在 Soniox 控制台里用的。</>}
-              {usage.stt?.source === "estimate" && usage.stt.sonioxTotalUsd !== null && usage.stt.sonioxTotalUsd > 0 && (
-                <> Soniox 本月实际账单 {usd(usage.stt.sonioxTotalUsd)}（未按用户区分）。</>
               )}
-              {usage.stt?.syncedAt && <> Soniox 数据更新于 {new Date(usage.stt.syncedAt).toLocaleString("zh-CN")}。</>}
-              {usage.stt?.error && <span className="text-destructive"> Soniox 用量读取失败：{usage.stt.error}</span>}
-            </p>
-          </div>
-        )}
-
-        {/* Saved meetings: overview only — titles, text and audio stay private */}
-        {savedMeetings && (
-          <div className="space-y-3" data-admin-saved-meetings>
-            <div>
-              <h2 className="text-sm font-semibold">已保存的会议</h2>
-              <p className="text-xs text-muted-foreground">
-                仅显示概况（发起人、时间、时长、大小），看不到标题、文字和录音；会议 1 年后自动删除。
-              </p>
+            </AdminSection>
+          )}
+            </>
+          )}
+          {section === "terms" && (
+            <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
+          {/* Official term packs and the anonymous AI suggestions they come from */}
+          <OfficialTermsAdmin
+            onMessage={(text, isError) => {
+              if (isError) {
+                setSuccess("");
+                setError(text);
+              } else {
+                setError("");
+                setSuccess(text);
+              }
+            }}
+          />
             </div>
-            {savedMeetings.length === 0 ? (
-              <p className="text-sm text-muted-foreground">暂无</p>
-            ) : (
-              <div className="overflow-x-auto rounded-md border border-border">
+          )}
+          {section === "saved" && (
+            <>
+          {/* Saved meetings: overview only — titles, text and audio stay private */}
+          {savedMeetings && (
+            <AdminSection
+              title="已保存的会议"
+              count={savedMeetings.length}
+              info="仅显示概况（发起人、时间、时长、大小），看不到标题、文字和录音；会议 1 年后自动删除。"
+              data-admin-saved-meetings
+            >
+              {savedMeetings.length === 0 ? (
+                <AdminEmpty>暂无</AdminEmpty>
+              ) : (
                 <table className="w-full text-xs">
-                  <thead className="bg-muted/50 text-left text-muted-foreground">
+                  <thead className="text-left text-muted-foreground">
                     <tr>
-                      <th className="px-2 py-1.5 font-medium">发起人</th>
-                      <th className="px-2 py-1.5 font-medium">时间</th>
-                      <th className="px-2 py-1.5 font-medium">时长</th>
-                      <th className="px-2 py-1.5 font-medium">句数</th>
-                      <th className="px-2 py-1.5 font-medium">录音</th>
-                      <th className="px-2 py-1.5 font-medium">分享</th>
+                      <th className={th}>发起人</th>
+                      <th className={th}>时间</th>
+                      <th className={th}>时长</th>
+                      <th className={th}>句数</th>
+                      <th className={th}>录音</th>
+                      <th className={th}>分享</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {savedMeetings.map((m, i) => (
                       <tr key={i}>
-                        <td className="max-w-40 truncate px-2 py-1.5">{m.ownerEmail}</td>
-                        <td className="whitespace-nowrap px-2 py-1.5">{new Date(m.createdAt).toLocaleString("zh-CN")}</td>
+                        <td className="max-w-40 truncate px-2 py-1.5" title={m.ownerEmail}>{m.ownerEmail}</td>
+                        <td className="whitespace-nowrap px-2 py-1.5">
+                          {new Date(m.createdAt).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" })}
+                        </td>
                         <td className="px-2 py-1.5 tabular-nums">{Math.round(m.durationMs / 60000)} 分</td>
                         <td className="px-2 py-1.5 tabular-nums">{m.entryCount}</td>
-                        <td className="px-2 py-1.5 tabular-nums">
+                        <td className="whitespace-nowrap px-2 py-1.5 tabular-nums">
                           {m.recordingBytes > 0 ? `${(m.recordingBytes / 1024 / 1024).toFixed(1)} MB` : "—"}
                         </td>
                         <td className="px-2 py-1.5 tabular-nums">{m.sharedWith || "—"}</td>
@@ -688,65 +746,54 @@ export default function AdminPage() {
                     ))}
                   </tbody>
                 </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Official term packs and the anonymous AI suggestions they come from */}
-        <OfficialTermsAdmin
-          onMessage={(text, isError) => {
-            if (isError) {
-              setSuccess("");
-              setError(text);
-            } else {
-              setError("");
-              setSuccess(text);
-            }
-          }}
-        />
-
-        {/* Feedback: what users sent from the app, newest first */}
-        {feedback && (
-          <div className="space-y-3" data-admin-feedback>
-            <div>
-              <h2 className="text-sm font-semibold">意见反馈</h2>
-              <p className="text-xs text-muted-foreground">最近 200 条，附带设备信息（界面语言、浏览器、屏幕、是否 App、页面）。</p>
-            </div>
-            {feedback.length === 0 ? (
-              <p className="text-sm text-muted-foreground">暂无</p>
-            ) : (
-              <ul className="divide-y divide-border rounded-md border border-border">
-                {feedback.map((f) => (
-                  <li key={f.id} className="space-y-1.5 px-3 py-2 text-xs">
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
-                      <span className="whitespace-nowrap">{new Date(f.createdAt).toLocaleString("zh-CN")}</span>
-                      <span className="max-w-60 truncate">{f.email}</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5 font-medium text-foreground">
-                        {FEEDBACK_TOPIC_LABEL[f.topic] ?? f.topic}
-                      </span>
-                    </div>
-                    <p className="whitespace-pre-wrap break-words text-sm">{f.message}</p>
-                    {f.context && Object.keys(f.context).length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {Object.entries(f.context).map(([k, v]) => (
-                          <span
-                            key={k}
-                            title={contextValue(v)}
-                            className="max-w-full truncate rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground sm:max-w-80"
-                          >
-                            {k}: {contextValue(v)}
-                          </span>
-                        ))}
+              )}
+            </AdminSection>
+          )}
+            </>
+          )}
+          {section === "feedback" && (
+            <>
+          {/* Feedback: what users sent from the app, newest first */}
+          {feedback && (
+            <AdminSection
+              title="意见反馈"
+              count={feedback.length}
+              info="最近 200 条，附带设备信息（界面语言、浏览器、屏幕、是否 App、页面）。"
+              data-admin-feedback
+            >
+              {feedback.length === 0 ? (
+                <AdminEmpty>暂无</AdminEmpty>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {feedback.map((f) => (
+                    <li key={f.id} className="space-y-1 px-3 py-2 text-xs">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-muted-foreground">
+                        <span className="rounded bg-muted px-1.5 py-0.5 font-medium text-foreground">
+                          {FEEDBACK_TOPIC_LABEL[f.topic] ?? f.topic}
+                        </span>
+                        <span className="max-w-60 truncate">{f.email}</span>
+                        <span className="ml-auto whitespace-nowrap">
+                          {new Date(f.createdAt).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" })}
+                        </span>
                       </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-      </div>
+                      <p className="whitespace-pre-wrap break-words text-sm">{f.message}</p>
+                      {f.context && Object.keys(f.context).length > 0 && (
+                        <p
+                          className="truncate text-[11px] text-muted-foreground"
+                          title={Object.entries(f.context).map(([k, v]) => `${k}: ${contextValue(v)}`).join("\n")}
+                        >
+                          {Object.entries(f.context).map(([k, v]) => `${k}: ${contextValue(v)}`).join(" · ")}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </AdminSection>
+          )}
+            </>
+          )}
+      </main>
     </div>
   );
 }
