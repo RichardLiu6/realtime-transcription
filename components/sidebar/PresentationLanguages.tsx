@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowDown, Check, ChevronsUpDown, X } from "lucide-react";
+import { ArrowDown, Check, ChevronsUpDown } from "lucide-react";
+import ChipRemove from "@/components/sidebar/ChipRemove";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import {
   Popover,
@@ -101,9 +102,9 @@ export default function PresentationLanguages({
                       <Badge key={code} variant="secondary" className="text-xs px-1.5 py-0 h-5">
                         {getName(code)}
                         {!disabled && (
-                          <X
-                            className="size-3 ml-0.5 cursor-pointer hover:text-destructive"
-                            onClick={(e) => { e.stopPropagation(); removeSource(code); }}
+                          <ChipRemove
+                            label={t("ph_remove_language", { name: getName(code) })}
+                            onRemove={() => removeSource(code)}
                           />
                         )}
                       </Badge>
@@ -165,9 +166,9 @@ export default function PresentationLanguages({
                     <Badge key={code} variant="secondary" className="text-xs px-1.5 py-0 h-5">
                       {getName(code)}
                       {!disabled && targetLangs.length > 1 && (
-                        <X
-                          className="size-3 ml-0.5 cursor-pointer hover:text-destructive"
-                          onClick={(e) => { e.stopPropagation(); removeTarget(code); }}
+                        <ChipRemove
+                          label={t("ph_remove_language", { name: getName(code) })}
+                          onRemove={() => removeTarget(code)}
                         />
                       )}
                     </Badge>
