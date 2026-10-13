@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { AUTO_STOP_MIN } from "@/hooks/useAutoStop";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
@@ -11,6 +12,7 @@ import {
   LayoutDashboard,
   Move,
   AudioLines,
+  TimerOff,
   Settings2,
   ChevronDown,
   MonitorPlay,
@@ -49,6 +51,9 @@ interface StatusBarProps {
   r2t2Enabled?: boolean;
   audioProcessing?: boolean;
   onAudioProcessingChange?: (on: boolean) => void;
+  // Auto stop after minutes without speech (can change while recording)
+  autoStop?: boolean;
+  onAutoStopChange?: (on: boolean) => void;
   // iOS app only: microphone, or other apps' audio + mic (ReplayKit)
   captureSource?: CaptureSource;
   onCaptureSourceChange?: (source: CaptureSource) => void;
@@ -157,6 +162,8 @@ export default function StatusBar({
   r2t2Enabled = false,
   audioProcessing,
   onAudioProcessingChange,
+  autoStop,
+  onAutoStopChange,
   captureSource,
   onCaptureSourceChange,
   translationEngine,
@@ -398,6 +405,28 @@ export default function StatusBar({
                     </button>
                     <p className="text-xs leading-snug text-muted-foreground">
                       {audioProcessing ? t("audio_processing_on") : t("audio_processing_off")}
+                    </p>
+                  </Section>
+                )}
+
+                {autoStop !== undefined && onAutoStopChange && (
+                  <Section title={t("auto_stop")}>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={autoStop}
+                      onClick={() => onAutoStopChange(!autoStop)}
+                      className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors ${
+                        autoStop
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      <TimerOff className="size-3.5" />
+                      {t("auto_stop")}
+                    </button>
+                    <p className="text-xs leading-snug text-muted-foreground">
+                      {autoStop ? t("auto_stop_on", { min: AUTO_STOP_MIN }) : t("auto_stop_off")}
                     </p>
                   </Section>
                 )}

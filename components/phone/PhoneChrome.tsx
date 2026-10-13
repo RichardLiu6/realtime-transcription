@@ -9,6 +9,7 @@
 // Desktop renders only `children` (the transcript panel).
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { AUTO_STOP_MIN } from "@/hooks/useAutoStop";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown,
@@ -103,6 +104,8 @@ export interface PhoneChromeProps {
     t3poEnabled: boolean;
     audioProcessing: boolean;
     onAudioProcessingChange: (on: boolean) => void;
+    autoStop: boolean;
+    onAutoStopChange: (on: boolean) => void;
     captureSource?: CaptureSource; // iOS app only
     onCaptureSourceChange?: (s: CaptureSource) => void;
   };
@@ -596,6 +599,13 @@ function Preferences({
             disabled={locked}
             onClick={() => settings.onAudioProcessingChange(!settings.audioProcessing)}
             value={<Switch on={settings.audioProcessing} />}
+          />
+          <Row
+            label={t("auto_stop")}
+            description={settings.autoStop ? t("auto_stop_on", { min: AUTO_STOP_MIN }) : t("auto_stop_off")}
+            chevron={false}
+            onClick={() => settings.onAutoStopChange(!settings.autoStop)}
+            value={<Switch on={settings.autoStop} />}
           />
 
           <SectionTitle>{t("ph_section_general")}</SectionTitle>

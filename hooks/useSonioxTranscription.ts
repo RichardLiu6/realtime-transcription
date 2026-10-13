@@ -1214,8 +1214,8 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         // Browser voice processing is tuned for human listeners, not speech
         // recognition: it can suppress quiet or distant speakers, cancel
         // remote participants played through the speakers as "echo", and
-        // pump the level (Chrome ties auto-gain to echoCancellation). Raw
-        // audio by default; the engines do their own noise handling.
+        // pump the level (Chrome ties auto-gain to echoCancellation). On by
+        // default (the 降噪 setting); off gives the engine raw audio.
         const processing = config.audioProcessing === true;
         const stream = native
           ? null

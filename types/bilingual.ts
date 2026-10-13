@@ -105,7 +105,7 @@ export type CaptureSource = "mic" | "system";
 export interface SonioxConfig {
   provider?: SttProvider; // default "soniox"
   captureSource?: CaptureSource; // default "mic"; "system" only in the iOS app
-  audioProcessing?: boolean; // browser noise suppression / echo cancellation / auto gain (default off)
+  audioProcessing?: boolean; // browser noise suppression / echo cancellation / auto gain (on unless switched off)
   translationEngine?: TranslationEngine; // default "llm"
   languageA: string[]; // e.g. ["*"] or ["zh", "en"]
   languageB: string; // e.g. "en"
