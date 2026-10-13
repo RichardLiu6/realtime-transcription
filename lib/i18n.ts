@@ -314,7 +314,7 @@ const en = {
   "same_as_original_title": "Same as the original",
   "ready_title": "Ready to record",
   "ready_any": "any language",
-  "ready_tip_terms": "Pick a terms preset (or add your own) for more accurate names and jargon.",
+  "ready_tip_terms": "Pick a terms pack for more accurate names and jargon.",
   "ready_tip_rename": "Click a speaker's name in the transcript to rename them.",
   "ready_tip_present": "Press F for full-screen presentation mode on a projector.",
 
@@ -428,7 +428,7 @@ const zh: Record<TranslationKey, string> = {
   "ph_n_terms": "{n} 个术语",
   "ph_show_all": "查看全部",
   "ph_hide": "收起",
-  "ph_custom_terms": "自定义术语",
+  "ph_custom_terms": "我的术语",
   "ph_remove_term": "删除 {name}",
   "ph_pack_zh_en": "仅限中英",
   "ph_packs_note": "术语包只有中英对照。会议有其他语言时，请用下面的 AI 生成。",
@@ -453,7 +453,7 @@ const zh: Record<TranslationKey, string> = {
   "ph_pack_meta": "{n} 个术语 · {langs} · {date}",
   "ph_pack_name": "术语包名称",
   "ph_save_pack": "保存为术语包",
-  "ph_add_as_custom": "只加入自定义术语",
+  "ph_add_as_custom": "只加入我的术语",
   "ph_packs_full": "已经有 {max} 个术语包了，替换哪一个？",
   "ph_replace_save": "替换并保存",
   "ph_pack_save_failed": "保存失败，请重试。",
@@ -688,7 +688,7 @@ const zh: Record<TranslationKey, string> = {
   "same_as_original_title": "与原文相同",
   "ready_title": "准备就绪",
   "ready_any": "任意语言",
-  "ready_tip_terms": "选择术语预设（或添加自定义术语），人名和专业词汇识别更准确。",
+  "ready_tip_terms": "选择术语包，人名和专业词汇识别更准确。",
   "ready_tip_rename": "点击记录里的说话人名字即可改名。",
   "ready_tip_present": "按 F 进入全屏演示模式，适合投影。",
 
@@ -1060,7 +1060,7 @@ const es: Record<TranslationKey, string> = {
   "same_as_original_title": "Igual que el original",
   "ready_title": "Listo para grabar",
   "ready_any": "cualquier idioma",
-  "ready_tip_terms": "Elija un conjunto de términos (o añada los suyos) para reconocer mejor nombres y jerga.",
+  "ready_tip_terms": "Elija un conjunto de términos para reconocer mejor nombres y jerga.",
   "ready_tip_rename": "Haga clic en el nombre de un hablante en la transcripción para cambiarlo.",
   "ready_tip_present": "Pulse F para el modo presentación a pantalla completa en un proyector.",
 
@@ -1432,7 +1432,7 @@ const vi: Record<TranslationKey, string> = {
   "same_as_original_title": "Giống bản gốc",
   "ready_title": "Sẵn sàng ghi âm",
   "ready_any": "bất kỳ ngôn ngữ nào",
-  "ready_tip_terms": "Chọn bộ thuật ngữ (hoặc tự thêm) để nhận dạng tên riêng và thuật ngữ chính xác hơn.",
+  "ready_tip_terms": "Chọn bộ thuật ngữ để nhận dạng tên riêng và thuật ngữ chính xác hơn.",
   "ready_tip_rename": "Nhấn vào tên người nói trong bản ghi để đổi tên.",
   "ready_tip_present": "Nhấn F để vào chế độ trình chiếu toàn màn hình cho máy chiếu.",
 

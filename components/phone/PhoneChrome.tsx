@@ -9,6 +9,8 @@
 // Desktop renders only `children` (the transcript panel).
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useOfficialPacks } from "@/lib/useOfficialPacks";
+import { useTermPacks } from "@/lib/useTermPacks";
 import { AUTO_STOP_MIN } from "@/hooks/useAutoStop";
 import { useRouter } from "next/navigation";
 import {
@@ -142,13 +144,22 @@ export default function PhoneChrome(props: PhoneChromeProps) {
   const close = useCallback(() => setSheet(null), []);
   const open = (s: Sheet) => () => setSheet(s);
 
+  // Selected packs by name: industry, own ("u:<id>") and official ("o:<id>")
+  const ownPacks = useTermPacks().packs;
+  const officialPacks = useOfficialPacks();
   const termsLabel = useMemo(() => {
     const names = Array.from(props.selectedPresets)
-      .map((k) => INDUSTRY_PRESETS[k] && presetLabel(k, INDUSTRY_PRESETS[k].label, t))
+      .map((k) =>
+        k.startsWith("u:")
+          ? ownPacks.find((p) => `u:${p.id}` === k)?.name
+          : k.startsWith("o:")
+            ? officialPacks.find((p) => `o:${p.id}` === k)?.name
+            : INDUSTRY_PRESETS[k] && presetLabel(k, INDUSTRY_PRESETS[k].label, t)
+      )
       .filter(Boolean);
     if (props.customTerms.length > 0) names.push(`+${props.customTerms.length}`);
     return names.length ? names.join(" · ") : t("ph_terms_none");
-  }, [props.selectedPresets, props.customTerms, t]);
+  }, [props.selectedPresets, props.customTerms, ownPacks, officialPacks, t]);
 
   return (
     <>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useOfficialPacks } from "@/lib/useOfficialPacks";
 import { useAutoStop } from "@/hooks/useAutoStop";
 import AutoStopNotice from "@/components/AutoStopNotice";
 import { useSonioxTranscription, defaultSpeakerLabel } from "@/hooks/useSonioxTranscription";
@@ -98,9 +99,11 @@ export default function Home() {
   const [customTerms, setCustomTerms] = useStoredState("customTerms", NO_TERMS, isTermList);
   // The user's own term packs (saved AI suggestions)
   const termPacks = useTermPacks();
+  const officialPacks = useOfficialPacks();
   const selectedPresets = useMemo(
-    // Industry packs, and the user's own packs ("u:<id>"; a deleted one is skipped)
-    () => new Set(presetKeys.filter((k) => k in INDUSTRY_PRESETS || k.startsWith("u:"))),
+    // Industry packs, the user's own packs ("u:<id>") and official ones
+    // ("o:<id>"); a deleted or disabled pack is skipped by combineTerms
+    () => new Set(presetKeys.filter((k) => k in INDUSTRY_PRESETS || k.startsWith("u:") || k.startsWith("o:"))),
     [presetKeys]
   );
   const setSelectedPresets = useCallback(
@@ -266,7 +269,7 @@ export default function Home() {
   const handleStart = useCallback(() => {
     // From the stored selection itself, so it doesn't depend on the terms
     // panel being mounted
-    const terms = combineTerms(selectedPresets, customTerms, termPacks.packs);
+    const terms = combineTerms(selectedPresets, customTerms, termPacks.packs, officialPacks);
     // Stopping and starting again continues the same transcript; only
     // 新会议 (handleNewMeeting) clears it
     start({
@@ -286,6 +289,7 @@ export default function Home() {
     selectedPresets,
     customTerms,
     termPacks.packs,
+    officialPacks,
     translationMode,
     targetLangs,
     sttProvider,

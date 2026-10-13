@@ -11,7 +11,8 @@ import { Check, Loader2, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { INDUSTRY_PRESETS, combineTerms, presetLabel } from "@/lib/contextTerms";
 import { useLanguageName, useLocale, useT } from "@/lib/i18n";
 import { createTermPack, deleteTermPack, renameTermPack, useTermPacks } from "@/lib/useTermPacks";
-import { USER_PACK_PREFIX, type TermPack } from "@/lib/termPackTypes";
+import { OFFICIAL_PACK_PREFIX, USER_PACK_PREFIX, type TermPack } from "@/lib/termPackTypes";
+import { useOfficialPacks } from "@/lib/useOfficialPacks";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import { BottomSheet, SectionTitle, useLangNames } from "./parts";
 
@@ -44,13 +45,14 @@ export default function PhoneTerms({
   const aiAllowed = useAiTermsAllowed();
   const [details, setDetails] = useState<string | null>(null);
   const termPacks = useTermPacks();
+  const officialPacks = useOfficialPacks();
   const [ownDetails, setOwnDetails] = useState<string | null>(null);
   const packMeta = usePackMeta();
 
   // Keep the combined list in the page state, as the desktop panel does
   useEffect(() => {
-    onTermsTextChange(combineTerms(selectedPresets, customTerms, termPacks.packs).join(", "));
-  }, [selectedPresets, customTerms, termPacks.packs, onTermsTextChange]);
+    onTermsTextChange(combineTerms(selectedPresets, customTerms, termPacks.packs, officialPacks).join(", "));
+  }, [selectedPresets, customTerms, termPacks.packs, officialPacks, onTermsTextChange]);
 
   const toggle = (key: string) => {
     const next = new Set(selectedPresets);
@@ -68,7 +70,15 @@ export default function PhoneTerms({
   };
 
 
-  const detailPreset = details ? INDUSTRY_PRESETS[details] : null;
+  // Details of an industry pack or an official one ("o:<id>")
+  const officialDetail = details?.startsWith(OFFICIAL_PACK_PREFIX)
+    ? officialPacks.find((p) => OFFICIAL_PACK_PREFIX + p.id === details)
+    : undefined;
+  const detailPreset = details
+    ? officialDetail
+      ? { label: officialDetail.name, terms: officialDetail.terms }
+      : (INDUSTRY_PRESETS[details] ?? null)
+    : null;
   const ownPack = termPacks.packs.find((p) => p.id === ownDetails) ?? null;
 
   return (
@@ -95,6 +105,20 @@ export default function PhoneTerms({
 
       <SectionTitle>{t("ph_term_packs")}</SectionTitle>
       <p className="mb-2 text-xs leading-snug text-gray-600">{t("ph_packs_note")}</p>
+      {officialPacks.length > 0 && (
+        <ul className="mb-2 space-y-2" data-official-packs>
+          {officialPacks.map((pack) => (
+            <PackCard
+              key={pack.id}
+              name={pack.name}
+              meta={t("ph_n_terms", { n: pack.terms.length })}
+              on={selectedPresets.has(OFFICIAL_PACK_PREFIX + pack.id)}
+              onToggle={() => toggle(OFFICIAL_PACK_PREFIX + pack.id)}
+              onDetails={() => setDetails(OFFICIAL_PACK_PREFIX + pack.id)}
+            />
+          ))}
+        </ul>
+      )}
       <ul className="space-y-2">
         {Object.entries(INDUSTRY_PRESETS).map(([key, preset]) => {
           const on = selectedPresets.has(key);
@@ -182,7 +206,10 @@ export default function PhoneTerms({
         tall
       >
         <p className="mb-2 text-xs text-gray-600">
-          {detailPreset && t("ph_n_terms", { n: detailPreset.terms.length })} · {t("ph_pack_zh_en")}
+          {detailPreset && t("ph_n_terms", { n: detailPreset.terms.length })}
+          {officialDetail
+            ? officialDetail.languages.length > 0 && ` · ${officialDetail.languages.map((l) => l.toUpperCase()).join("/")}`
+            : ` · ${t("ph_pack_zh_en")}`}
         </p>
         <ul>
           {detailPreset?.terms.map((term) => {
