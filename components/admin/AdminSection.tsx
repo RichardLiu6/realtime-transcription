@@ -1,8 +1,8 @@
 "use client";
 
-// One admin page section: a card whose body has a fixed height and scrolls
-// inside, so no list pushes the rest of the page down. Title, count, an ⓘ
-// with the explanation (hover) and actions share one header line.
+// One admin page section: a card filling the space it gets (the admin page
+// shows one section at a time), its body scrolling inside. Title, count, an
+// ⓘ with the explanation (hover) and actions share one header line.
 
 import type { ReactNode } from "react";
 import { Info } from "lucide-react";
@@ -26,11 +26,10 @@ export default function AdminSection({
   footer?: ReactNode;
   children: ReactNode;
   className?: string;
-  // Default: 20rem, scrolling
   bodyClassName?: string;
 } & Record<`data-${string}`, unknown>) {
   return (
-    <section className={cn("flex min-w-0 flex-col rounded-lg border border-border bg-background", className)} {...rest}>
+    <section className={cn("flex min-h-0 min-w-0 flex-1 flex-col rounded-lg border border-border bg-background", className)} {...rest}>
       <header className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 border-b border-border px-3 py-1.5">
         <h2 className="text-sm font-semibold">
           {title}
@@ -43,7 +42,7 @@ export default function AdminSection({
         )}
         {actions && <div className="ml-auto flex min-w-0 items-center gap-2">{actions}</div>}
       </header>
-      <div className={cn("h-80 overflow-auto", bodyClassName)}>{children}</div>
+      <div className={cn("min-h-0 flex-1 overflow-auto", bodyClassName)}>{children}</div>
       {footer && <footer className="border-t border-border px-3 py-1.5 text-[11px] leading-snug text-muted-foreground">{footer}</footer>}
     </section>
   );

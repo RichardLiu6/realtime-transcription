@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -12,6 +12,12 @@ import {
   Copy,
   XCircle,
   GitCompareArrows,
+  Users,
+  Ticket,
+  BarChart3,
+  Sparkles,
+  FolderClock,
+  MessageSquare,
 } from "lucide-react";
 import Link from "next/link";
 import { MODEL_POOL } from "@/lib/models";
@@ -104,6 +110,27 @@ function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(n);
+}
+
+// The admin page's sections, one on screen at a time
+const SECTIONS = [
+  { key: "users", label: "用户", icon: Users },
+  { key: "codes", label: "临时会议码", icon: Ticket },
+  { key: "usage", label: "用量与费用", icon: BarChart3 },
+  { key: "terms", label: "AI 术语", icon: Sparkles },
+  { key: "saved", label: "已保存的会议", icon: FolderClock },
+  { key: "feedback", label: "意见反馈", icon: MessageSquare },
+] as const;
+type SectionKey = (typeof SECTIONS)[number]["key"];
+
+function readSection(): SectionKey {
+  const hash = window.location.hash.slice(1);
+  return SECTIONS.some((s) => s.key === hash) ? (hash as SectionKey) : "users";
+}
+
+function subscribeHash(onChange: () => void) {
+  window.addEventListener("hashchange", onChange);
+  return () => window.removeEventListener("hashchange", onChange);
 }
 
 export default function AdminPage() {
@@ -329,10 +356,26 @@ export default function AdminPage() {
     return () => clearTimeout(id);
   }, [error, success]);
 
+  // The section on screen, as the URL hash (#usage …): reload / back keep it
+  const section = useSyncExternalStore(subscribeHash, readSection, () => "users" as SectionKey);
+  const selectSection = (key: SectionKey) => {
+    window.location.hash = key;
+  };
+  const sectionCount = (key: SectionKey): number | undefined =>
+    key === "users"
+      ? users.length
+      : key === "codes"
+        ? meetings.filter((m) => m.active).length
+        : key === "saved"
+          ? savedMeetings?.length
+          : key === "feedback"
+            ? feedback?.length
+            : undefined;
+
   const th = "sticky top-0 z-[1] bg-muted px-2 py-1.5 font-medium";
 
   return (
-    <div className="min-h-screen bg-muted/30 px-4 py-6">
+    <div className="flex h-dvh flex-col bg-muted/30 md:flex-row">
       {/* Messages: a toast, so they never push the sections around */}
       {(error || success) && (
         <p
@@ -345,26 +388,46 @@ export default function AdminPage() {
         </p>
       )}
 
-      <div className="mx-auto max-w-6xl space-y-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold text-foreground">管理后台</h1>
-          <div className="flex gap-2">
-            <Link href="/admin/compare">
-              <Button variant="outline" size="sm">
-                <GitCompareArrows className="size-4 mr-1" />
-                模型对比
-              </Button>
-            </Link>
-            <Link href="/">
-              <Button variant="ghost" size="sm">
-                <ArrowLeft className="size-4 mr-1" />
-                返回首页
-              </Button>
-            </Link>
-          </div>
+      {/* Section list: one section at a time (remembered in the URL hash);
+          a row of tabs on phones */}
+      <nav className="flex shrink-0 flex-col border-border bg-background max-md:border-b md:w-52 md:border-r">
+        <h1 className="px-4 pt-4 pb-2 text-base font-bold text-foreground max-md:hidden">管理后台</h1>
+        <ul className="flex gap-1 overflow-x-auto px-2 py-2 md:flex-col md:overflow-visible md:py-1">
+          {SECTIONS.map(({ key, label, icon: Icon }) => {
+            const n = sectionCount(key);
+            return (
+              <li key={key} className="shrink-0">
+                <button
+                  type="button"
+                  onClick={() => selectSection(key)}
+                  aria-current={section === key ? "page" : undefined}
+                  className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm whitespace-nowrap transition-colors ${
+                    section === key ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  }`}
+                >
+                  <Icon className="size-4 shrink-0" aria-hidden />
+                  {label}
+                  {n !== undefined && <span className="ml-auto pl-2 text-xs tabular-nums text-muted-foreground">{n}</span>}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="mt-auto flex gap-1 border-border px-2 py-2 max-md:hidden md:flex-col md:border-t">
+          <Link href="/admin/compare" className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground">
+            <GitCompareArrows className="size-4" />
+            模型对比
+          </Link>
+          <Link href="/" className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground">
+            <ArrowLeft className="size-4" />
+            返回首页
+          </Link>
         </div>
+      </nav>
 
-        <div className="grid gap-4 lg:grid-cols-2">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 p-3 md:p-4">
+          {section === "users" && (
+            <>
           {/* Users: add in the header, one line per user */}
           <AdminSection
             title="已授权用户"
@@ -444,7 +507,10 @@ export default function AdminPage() {
               </ul>
             )}
           </AdminSection>
-
+            </>
+          )}
+          {section === "codes" && (
+            <>
           {/* Meeting codes: generate in the header */}
           <AdminSection
             title="临时会议码"
@@ -518,15 +584,17 @@ export default function AdminPage() {
               </ul>
             )}
           </AdminSection>
-
+            </>
+          )}
+          {section === "usage" && (
+            <>
           {/* Usage and cost: translation cost as reported by OpenRouter,
               transcription as billed by Soniox (its usage logs), or estimated
               from its list price for months before per-user attribution */}
           {usage && (
             <AdminSection
               title="用量与费用"
-              className="lg:col-span-2"
-              bodyClassName="h-[22rem]"
+             
               data-admin-usage
               info={`翻译费用为 OpenRouter 返回的实际金额（含说话中的临时翻译和会议纪要）；${
                 usage.stt?.source === "soniox"
@@ -619,7 +687,10 @@ export default function AdminPage() {
               )}
             </AdminSection>
           )}
-
+            </>
+          )}
+          {section === "terms" && (
+            <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
           {/* Official term packs and the anonymous AI suggestions they come from */}
           <OfficialTermsAdmin
             onMessage={(text, isError) => {
@@ -632,7 +703,10 @@ export default function AdminPage() {
               }
             }}
           />
-
+            </div>
+          )}
+          {section === "saved" && (
+            <>
           {/* Saved meetings: overview only — titles, text and audio stay private */}
           {savedMeetings && (
             <AdminSection
@@ -675,7 +749,10 @@ export default function AdminPage() {
               )}
             </AdminSection>
           )}
-
+            </>
+          )}
+          {section === "feedback" && (
+            <>
           {/* Feedback: what users sent from the app, newest first */}
           {feedback && (
             <AdminSection
@@ -714,8 +791,9 @@ export default function AdminPage() {
               )}
             </AdminSection>
           )}
-        </div>
-      </div>
+            </>
+          )}
+      </main>
     </div>
   );
 }

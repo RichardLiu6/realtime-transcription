@@ -111,7 +111,6 @@ export default function OfficialTermsAdmin({ onMessage }: { onMessage: (text: st
         title="AI 术语生成记录"
         count={suggestions.length}
         info="匿名（不记录是谁生成的），最近 200 条。整条或勾选部分术语，发布为新的官方包或加入已有的包。"
-        bodyClassName="h-[28rem]"
         data-admin-term-suggestions
         actions={
           <>
@@ -206,7 +205,6 @@ export default function OfficialTermsAdmin({ onMessage }: { onMessage: (text: st
         title="官方术语包"
         count={packs.length}
         info="从左侧生成记录发布而来。启用的包对所有人可见（含访客），排在内置行业包前面；选用不消耗 AI 额度。"
-        bodyClassName="h-[28rem]"
         data-admin-official-packs
       >
         {packs.length === 0 ? (
