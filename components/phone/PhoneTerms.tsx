@@ -6,8 +6,9 @@
 // turn on, 详情 for the list. Same state as the desktop TermsPanel.
 
 import { useEffect, useState } from "react";
+import { useAiTermsAllowed } from "@/lib/useAiTerms";
 import { Check, Loader2, Plus, Sparkles, Trash2, X } from "lucide-react";
-import { INDUSTRY_PRESETS, combineTerms, presetLabel, splitTermInput } from "@/lib/contextTerms";
+import { INDUSTRY_PRESETS, combineTerms, presetLabel } from "@/lib/contextTerms";
 import { useLanguageName, useLocale, useT } from "@/lib/i18n";
 import { createTermPack, deleteTermPack, renameTermPack, useTermPacks } from "@/lib/useTermPacks";
 import { USER_PACK_PREFIX, type TermPack } from "@/lib/termPackTypes";
@@ -38,7 +39,9 @@ export default function PhoneTerms({
   meetingLanguages,
 }: PhoneTermsProps) {
   const t = useT();
-  const [input, setInput] = useState("");
+  // No typing terms in: AI-suggested ones only, for accounts an admin
+  // allowed
+  const aiAllowed = useAiTermsAllowed();
   const [details, setDetails] = useState<string | null>(null);
   const termPacks = useTermPacks();
   const [ownDetails, setOwnDetails] = useState<string | null>(null);
@@ -64,10 +67,6 @@ export default function PhoneTerms({
     if (next.length !== customTerms.length) onCustomTermsChange(next);
   };
 
-  const addTyped = () => {
-    addTerms(splitTermInput(input));
-    setInput("");
-  };
 
   const detailPreset = details ? INDUSTRY_PRESETS[details] : null;
   const ownPack = termPacks.packs.find((p) => p.id === ownDetails) ?? null;
@@ -142,49 +141,22 @@ export default function PhoneTerms({
         })}
       </ul>
 
-      <AiTerms
-        meetingLanguages={meetingLanguages}
-        onAdd={addTerms}
-        onSaved={(pack) => {
-          const next = new Set(selectedPresets);
-          next.add(USER_PACK_PREFIX + pack.id);
-          onSelectedPresetsChange(next);
-        }}
-      />
-
-      <SectionTitle>{t("ph_custom_terms")}</SectionTitle>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          addTyped();
-        }}
-        className="flex gap-2"
-      >
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          // Typed but not added (closed the sheet): keep it
-          onBlur={() => {
-            if (input.trim()) addTyped();
+      {aiAllowed && (
+        <AiTerms
+          meetingLanguages={meetingLanguages}
+          onAdd={addTerms}
+          onSaved={(pack) => {
+            const next = new Set(selectedPresets);
+            next.add(USER_PACK_PREFIX + pack.id);
+            onSelectedPresetsChange(next);
           }}
-          placeholder={t("ph_custom_placeholder")}
-          enterKeyHint="done"
-          autoCapitalize="off"
-          autoCorrect="off"
-          className="h-11 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-base outline-none focus:border-ring"
         />
-        <button
-          type="submit"
-          disabled={!input.trim()}
-          className="inline-flex h-11 shrink-0 items-center gap-1 rounded-xl bg-foreground px-4 text-[15px] font-semibold text-background disabled:opacity-40"
-        >
-          <Plus className="size-4" aria-hidden />
-          {t("ph_add")}
-        </button>
-      </form>
-      <p className="mt-2 text-xs leading-snug text-gray-600">{t("ph_custom_hint")}</p>
+      )}
+
+      {/* Added terms (from AI suggestions; older typed ones too) */}
+      {customTerms.length > 0 && <SectionTitle>{t("ph_custom_terms")}</SectionTitle>}
       {customTerms.length > 0 && (
-        <ul className="mt-3 flex flex-wrap gap-2">
+        <ul className="flex flex-wrap gap-2">
           {customTerms.map((term, i) => (
             <li key={`${term}-${i}`} className="inline-flex items-center gap-1 rounded-full bg-muted py-1 pl-3 pr-1 text-sm">
               <span className="max-w-[70vw] truncate">{term.split("=").join(" = ")}</span>

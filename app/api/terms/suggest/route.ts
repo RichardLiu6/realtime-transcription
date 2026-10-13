@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { canUseAiTerms } from "@/lib/edge-config";
 import { verifyToken } from "@/lib/auth";
 import { getOpenRouter } from "@/lib/openrouter";
 import { openRouterUsage, trackUsage } from "@/lib/usage";
@@ -39,6 +40,10 @@ export async function POST(req: NextRequest) {
   const payload = token ? await verifyToken(token).catch(() => null) : null;
   if (!payload || typeof payload.email !== "string") {
     return NextResponse.json({ error: "Unauthorized", code: "unauthorized" }, { status: 401 });
+  }
+  // An admin turns this on per user (admin page)
+  if (!(await canUseAiTerms(payload))) {
+    return NextResponse.json({ error: "Not enabled for this account", code: "forbidden" }, { status: 403 });
   }
 
   let body: { description?: unknown; languages?: unknown };

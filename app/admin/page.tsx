@@ -87,6 +87,7 @@ interface User {
   name: string;
   addedAt: string;
   model?: string;
+  aiTerms?: boolean;
   usage?: Record<string, MonthlyUsage>;
 }
 
@@ -279,7 +280,7 @@ export default function AdminPage() {
       const res = await fetch("/api/admin/users", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: userEmail, model: model || undefined }),
+        body: JSON.stringify({ email: userEmail, model: model || null }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -287,6 +288,25 @@ export default function AdminPage() {
         return;
       }
       setSuccess(`已更新 ${userEmail} 的模型`);
+      fetchUsers();
+    } catch {
+      setError("网络错误");
+    }
+  };
+
+  const handleAiTermsChange = async (userEmail: string, aiTerms: boolean) => {
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: userEmail, aiTerms }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "更新失败");
+        return;
+      }
+      setSuccess(`已${aiTerms ? "开通" : "关闭"} ${userEmail} 的 AI 生成术语`);
       fetchUsers();
     } catch {
       setError("网络错误");
@@ -477,6 +497,19 @@ export default function AdminPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0 ml-4">
+                      <label
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                        title="允许该用户用 AI 生成术语（默认关闭）"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={user.aiTerms === true}
+                          onChange={(e) => handleAiTermsChange(user.email, e.target.checked)}
+                          className="size-3.5 accent-foreground"
+                          data-admin-ai-terms
+                        />
+                        AI 术语
+                      </label>
                       <select
                         value={user.model || ""}
                         onChange={(e) => handleModelChange(user.email, e.target.value)}

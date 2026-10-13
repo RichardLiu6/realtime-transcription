@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
+import { useAiTermsAllowed } from "@/lib/useAiTerms";
 import { X, Info, Sparkles, Trash2 } from "lucide-react";
 import { INDUSTRY_PRESETS, combineTerms, presetLabel, splitTermInput } from "@/lib/contextTerms";
 import { useLocale, useT } from "@/lib/i18n";
@@ -184,8 +185,9 @@ export default function TermsPanel({
     [meeting, locale]
   );
   const { packs } = useTermPacks();
-  const [inputValue, setInputValue] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+  // No typing terms in: AI-suggested ones only, for accounts an admin
+  // allowed
+  const aiAllowed = useAiTermsAllowed();
 
   // Sync combined terms to parent
   useEffect(() => {
@@ -207,8 +209,8 @@ export default function TermsPanel({
     [selectedPresets, onSelectedPresetsChange]
   );
 
-  // One entry may hold several terms ("千问=Qwen，硬胶囊=hard capsule", a
-  // pasted list): each becomes its own tag
+  // AI-suggested terms added to the list (one entry may hold several:
+  // each becomes its own tag)
   const addCustomTag = useCallback(
     (input: string) => {
       const next = [...customTerms];
@@ -226,17 +228,6 @@ export default function TermsPanel({
     },
     [customTerms, onCustomTermsChange]
   );
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" || e.key === "," || e.key === "，" || e.key === "、") {
-      e.preventDefault();
-      addCustomTag(inputValue);
-      setInputValue("");
-    }
-    if (e.key === "Backspace" && !inputValue && customTerms.length > 0) {
-      removeCustomTag(customTerms.length - 1);
-    }
-  };
 
   const content = (
     <>
@@ -280,48 +271,29 @@ export default function TermsPanel({
         })}
       </div>
 
-      {/* Custom terms */}
-      <div
-        className="flex flex-wrap items-center gap-1 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-[2rem] cursor-text focus-within:border-ring focus-within:ring-1 focus-within:ring-ring"
-        onClick={() => inputRef.current?.focus()}
-      >
-        {customTerms.map((tag, i) => (
-          <span
-            key={`${tag}-${i}`}
-            className="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary"
-          >
-            {tag}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                removeCustomTag(i);
-              }}
-              className="text-primary/60 hover:text-primary"
+      {/* Added terms (from AI suggestions; older typed ones too) */}
+      {customTerms.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1">
+          {customTerms.map((tag, i) => (
+            <span
+              key={`${tag}-${i}`}
+              className="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary"
             >
-              <X className="size-2.5" />
-            </button>
-          </span>
-        ))}
-        <input
-          ref={inputRef}
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onBlur={() => {
-            if (inputValue.trim()) {
-              addCustomTag(inputValue);
-              setInputValue("");
-            }
-          }}
-          placeholder={
-            customTerms.length === 0 ? t("add_term_placeholder") : ""
-          }
-          className="flex-1 min-w-[60px] bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none"
-        />
-      </div>
+              {tag}
+              <button
+                type="button"
+                aria-label={t("ph_remove_term", { name: tag })}
+                onClick={() => removeCustomTag(i)}
+                className="text-primary/60 hover:text-primary"
+              >
+                <X className="size-2.5" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
-      {meeting && (
+      {meeting && aiAllowed && (
         <button
           type="button"
           onClick={() => setAiOpen(true)}
@@ -339,7 +311,7 @@ export default function TermsPanel({
           : t("terms_effect_start")}
       </p>
 
-      {meeting && (
+      {meeting && aiAllowed && (
         <Sheet open={aiOpen} onOpenChange={setAiOpen}>
           <SheetContent side="right" className="w-full gap-0 overflow-y-auto sm:max-w-md">
             <SheetHeader>
