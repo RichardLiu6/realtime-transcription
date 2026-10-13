@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useAutoStop } from "@/hooks/useAutoStop";
+import AutoStopNotice from "@/components/AutoStopNotice";
 import { useSonioxTranscription, defaultSpeakerLabel } from "@/hooks/useSonioxTranscription";
 import { useSpeakerManager, speakerDisplayName } from "@/hooks/useSpeakerManager";
 import { useLiveShare } from "@/hooks/useLiveShare";
@@ -31,9 +33,9 @@ const AUDIO_PROCESSING_KEY = "audioProcessing";
 
 function readAudioProcessing(): boolean {
   try {
-    return localStorage.getItem(AUDIO_PROCESSING_KEY) === "on";
+    return localStorage.getItem(AUDIO_PROCESSING_KEY) !== "off";
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -43,6 +45,26 @@ function subscribeAudioProcessing(onChange: () => void) {
   window.addEventListener("storage", onChange);
   return () => {
     window.removeEventListener(AUDIO_PROCESSING_KEY, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+// Auto stop after minutes without speech: on unless switched off
+const AUTO_STOP_KEY = "autoStop";
+
+function readAutoStop(): boolean {
+  try {
+    return localStorage.getItem(AUTO_STOP_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+function subscribeAutoStop(onChange: () => void) {
+  window.addEventListener(AUTO_STOP_KEY, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(AUTO_STOP_KEY, onChange);
     window.removeEventListener("storage", onChange);
   };
 }
@@ -96,13 +118,15 @@ export default function Home() {
   const [r2t2Enabled, setR2t2Enabled] = useState(false);
   const [translationEngine, setTranslationEngine] = useState<TranslationEngine>("llm");
   const [t3poEnabled, setT3poEnabled] = useState(false);
-  // Browser noise suppression etc. Off by default: raw audio transcribes
-  // better. Stored in localStorage; false during server render.
+  // Browser noise suppression etc. On by default (owner's choice,
+  // 2026-10-12); switching it off gives raw audio. Stored in localStorage.
   const audioProcessing = useSyncExternalStore(
     subscribeAudioProcessing,
     readAudioProcessing,
-    () => false
+    () => true
   );
+
+  const autoStop = useSyncExternalStore(subscribeAutoStop, readAutoStop, () => true);
 
   // iOS app: transcribe what the phone plays (Zoom, WeChat…) + the mic
   const canCaptureSystem = useSyncExternalStore(noSubscribe, broadcastAvailable, () => false);
@@ -173,6 +197,15 @@ export default function Home() {
     } catch {
       // storage unavailable: the choice just won't stick
     }
+  }, []);
+
+  const handleAutoStopChange = useCallback((on: boolean) => {
+    try {
+      localStorage.setItem(AUTO_STOP_KEY, on ? "on" : "off");
+    } catch {
+      // storage unavailable: the toggle just won't stick
+    }
+    window.dispatchEvent(new Event(AUTO_STOP_KEY));
   }, []);
 
   const handleAudioProcessingChange = useCallback((on: boolean) => {
@@ -268,6 +301,18 @@ export default function Home() {
   const handleStop = useCallback(() => {
     stop();
   }, [stop]);
+
+  // Auto stop after AUTO_STOP_MIN minutes without new text; afterwards a
+  // reminder when someone speaks (browser only)
+  const lastEntry = entries[entries.length - 1];
+  const autoStopper = useAutoStop({
+    enabled: autoStop,
+    recording: recordingState === "recording",
+    paused,
+    activity: `${entries.length}|${lastEntry?.originalText.length ?? 0}|${currentInterim}`,
+    canListen: canPause,
+    onAutoStop: stop,
+  });
 
   // Live caption sharing: multilingual mode (viewers pick from its
   // columns) and transcribe only (the original alone). Leaving those modes
@@ -485,6 +530,8 @@ export default function Home() {
           r2t2Enabled={r2t2Enabled}
           audioProcessing={audioProcessing}
           onAudioProcessingChange={handleAudioProcessingChange}
+          autoStop={autoStop}
+          onAutoStopChange={handleAutoStopChange}
           {...(canCaptureSystem ? { captureSource, onCaptureSourceChange: setCaptureSource } : {})}
           translationEngine={translationEngine}
           onTranslationEngineChange={handleTranslationEngineChange}
@@ -585,6 +632,8 @@ export default function Home() {
             t3poEnabled,
             audioProcessing,
             onAudioProcessingChange: handleAudioProcessingChange,
+            autoStop,
+            onAutoStopChange: handleAutoStopChange,
             ...(canCaptureSystem ? { captureSource, onCaptureSourceChange: setCaptureSource } : {}),
           }}
         >
@@ -624,6 +673,16 @@ export default function Home() {
           <DesktopFloatingBar {...sharedProps} />
         </div>
       )}
+
+      <AutoStopNotice
+        state={autoStopper.state}
+        listening={canPause}
+        onContinue={() => {
+          autoStopper.dismiss();
+          handleStart();
+        }}
+        onDismiss={autoStopper.dismiss}
+      />
 
       {presentation.open && (
         <PresentationMode
