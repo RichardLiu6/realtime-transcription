@@ -244,14 +244,14 @@ export default function StatusBar({
           {isRecording && (
             <>
               <span
-                className={paused ? "h-2 w-2 shrink-0 rounded-full bg-amber-600" : "h-2 w-2 shrink-0 rounded-full bg-red-500 recording-pulse"}
+                className={paused ? "h-2 w-2 shrink-0 rounded-full bg-muted-foreground" : "h-2 w-2 shrink-0 rounded-full bg-red-500 recording-pulse"}
               />
               <span className="sr-only">{t(paused ? "paused" : "recording_status")}</span>
               <span className="font-mono text-sm font-semibold text-foreground">
                 {minutes}:{seconds}
               </span>
               {paused && (
-                <span className="truncate text-sm font-medium text-amber-700 dark:text-amber-400" title={t("paused_hint")}>
+                <span className="truncate text-sm text-muted-foreground" title={t("paused_hint")}>
                   {t("paused")}
                 </span>
               )}

@@ -100,11 +100,15 @@ export default function Sidebar({
             recordingState={recordingState}
             onStart={onStart}
             onStop={onStop}
-            audioAnalyser={audioAnalyser}
+            // Paused: the stop button's waves calm down (no microphone level)
+            audioAnalyser={paused ? null : audioAnalyser}
+            compact={isRecording && !!onPause}
           />
         </div>
         {isRecording && onPause && onResume && (
-          <PauseButton paused={paused} onPause={onPause} onResume={onResume} className="h-12" />
+          // Icon only: the sidebar is narrow and "Stop Recording" / "Detener
+          // grabación" needs the room (label in the tooltip and aria-label)
+          <PauseButton paused={paused} onPause={onPause} onResume={onResume} iconOnly className="size-12 px-0" />
         )}
         {onCollapse && (
           <Tooltip>

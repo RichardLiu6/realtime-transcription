@@ -9,7 +9,6 @@
 // Desktop renders only `children` (the transcript panel).
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
-import PauseButton from "@/components/PauseButton";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown,
@@ -20,7 +19,9 @@ import {
   Menu,
   Mic,
   MoreHorizontal,
+  Pause,
   PictureInPicture2,
+  Play,
   Square,
 } from "lucide-react";
 import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
@@ -234,13 +235,26 @@ export default function PhoneChrome(props: PhoneChromeProps) {
                   </button>
                 </div>
               ) : isRecording && props.onPause && props.onResume ? (
+                // Same round button as 更多 on the right; solid while paused
                 <div className="flex justify-start">
-                  <PauseButton
-                    paused={!!props.paused}
-                    onPause={props.onPause}
-                    onResume={props.onResume}
-                    className="h-11 rounded-full px-4"
-                  />
+                  <button
+                    type="button"
+                    onClick={props.paused ? props.onResume : props.onPause}
+                    aria-pressed={!!props.paused}
+                    data-pause-button
+                    className="flex flex-col items-center gap-1 text-xs text-gray-700"
+                  >
+                    <span
+                      className={`grid size-11 place-items-center rounded-full border ${
+                        props.paused
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-muted/60"
+                      }`}
+                    >
+                      {props.paused ? <Play className="size-5" /> : <Pause className="size-5" />}
+                    </span>
+                    {t(props.paused ? "resume_recording" : "pause_recording")}
+                  </button>
                 </div>
               ) : (
                 <span />
@@ -258,11 +272,11 @@ export default function PhoneChrome(props: PhoneChromeProps) {
                 </button>
                 <span className="flex items-center gap-1.5 font-mono text-sm tabular-nums text-foreground">
                   <span
-                    className={props.paused ? "size-2 rounded-full bg-amber-600" : "size-2 rounded-full bg-red-600 recording-pulse"}
+                    className={props.paused ? "size-2 rounded-full bg-muted-foreground" : "size-2 rounded-full bg-red-600 recording-pulse"}
                     aria-hidden
                   />
                   {formatElapsed(props.elapsedSeconds)}
-                  {props.paused && <span className="font-sans text-amber-700 dark:text-amber-400">{t("paused")}</span>}
+                  {props.paused && <span className="sr-only">{t("paused")}</span>}
                 </span>
               </div>
               <div className="flex justify-end">

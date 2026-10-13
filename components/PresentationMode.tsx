@@ -643,7 +643,7 @@ export default function PresentationMode({
           {isRecording && (
             <>
               <span
-                className={paused ? "size-2.5 shrink-0 rounded-full bg-amber-500" : "size-2.5 shrink-0 rounded-full bg-red-500 recording-pulse"}
+                className={paused ? "size-2.5 shrink-0 rounded-full bg-current opacity-60" : "size-2.5 shrink-0 rounded-full bg-red-500 recording-pulse"}
               />
               <span className="sr-only">{t(paused ? "paused" : "recording_status")}</span>
               {onStop && (

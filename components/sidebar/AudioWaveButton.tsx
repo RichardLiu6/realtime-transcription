@@ -10,6 +10,9 @@ interface AudioWaveButtonProps {
   onStart: () => void;
   onStop: () => void;
   audioAnalyser: AnalyserNode | null;
+  // A pause button sits beside it: the short "Stop" label, so the long
+  // ones ("Detener grabación") still fit the narrow sidebar
+  compact?: boolean;
 }
 
 // 3-layer wave configuration
@@ -31,6 +34,7 @@ export default function AudioWaveButton({
   onStart,
   onStop,
   audioAnalyser,
+  compact = false,
 }: AudioWaveButtonProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animFrameRef = useRef<number>(0);
@@ -179,7 +183,7 @@ export default function AudioWaveButton({
         {isRecording ? (
           <>
             <Square className="size-4" />
-            {t("stop_recording")}
+            {t(compact ? "stop" : "stop_recording")}
           </>
         ) : isConnecting ? (
           <>

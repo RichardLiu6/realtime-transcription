@@ -6,8 +6,7 @@ import { useT } from "@/lib/i18n";
 
 // Pause / resume a running recording (= mute yourself): the session stays
 // open, nothing is transcribed until resumed. Sits next to the stop button
-// in every layout, as solid as it: amber 暂停, green 继续 (white text
-// ≥ 4.5:1 on both).
+// in every layout.
 export default function PauseButton({
   paused,
   onPause,
@@ -32,8 +31,12 @@ export default function PauseButton({
       title={label}
       data-pause-button
       className={cn(
-        "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md px-3 text-sm font-medium text-white shadow-xs transition-colors",
-        paused ? "bg-emerald-700 hover:bg-emerald-800" : "bg-amber-700 hover:bg-amber-800",
+        "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md px-3 text-sm font-medium shadow-xs transition-colors",
+        // The app's own button styles: outline while recording (stop stays
+        // the one red button), primary 继续 while paused
+        paused
+          ? "bg-primary text-primary-foreground hover:bg-primary/90"
+          : "border border-border bg-background text-foreground hover:bg-muted",
         className
       )}
     >
