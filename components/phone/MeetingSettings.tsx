@@ -5,6 +5,7 @@
 // then the languages, then one line saying what will happen.
 
 import { useMemo, useState } from "react";
+import { languageMatches } from "@/lib/languageSearch";
 import { ArrowUpDown, Check, Headphones, Minus, Plus, Search, Text, Users, UsersRound } from "lucide-react";
 import { SONIOX_LANGUAGES, type TranslationMode } from "@/types/bilingual";
 import { useLocale, useT } from "@/lib/i18n";
@@ -255,12 +256,11 @@ export function LanguagePicker({
   const { native, local } = useLangNames();
   const [query, setQuery] = useState("");
 
-  const languages = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return SONIOX_LANGUAGES.filter((l) => !exclude.includes(l.code)).filter(
-      (l) => !q || `${l.name} ${local(l.code)} ${l.code}`.toLowerCase().includes(q)
-    );
-  }, [query, exclude, local]);
+  // Found by its name in any interface language, its own name or the code
+  const languages = useMemo(
+    () => SONIOX_LANGUAGES.filter((l) => !exclude.includes(l.code) && languageMatches(l.code, query)),
+    [query, exclude]
+  );
 
   const choose = (code: string) => {
     if (!multi) {

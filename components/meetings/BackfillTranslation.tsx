@@ -1,10 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { AddLanguageButton } from "@/components/LanguageSelect";
 import { useOfficialPacks } from "@/lib/useOfficialPacks";
 import { useTermPacks } from "@/lib/useTermPacks";
 import { Languages, Loader2, X } from "lucide-react";
-import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import { getLocale, useLanguageName, useT } from "@/lib/i18n";
 import { combineTerms } from "@/lib/contextTerms";
 import type { SavedEntry } from "@/lib/meetings/types";
@@ -192,20 +192,14 @@ export default function BackfillTranslation({ meetingId, entries, existing, onTr
             {langName(l)}
           </button>
         ))}
-        <select
-          aria-label={t("meeting_translate_add")}
-          value=""
+        <AddLanguageButton
+          exclude={offered}
+          onAdd={toggle}
           disabled={running}
-          onChange={(ev) => ev.target.value && toggle(ev.target.value)}
-          className="h-7 rounded-full border border-border bg-background px-2 text-xs text-gray-700"
+          className="h-7 rounded-full border border-border bg-background px-2 text-xs text-gray-700 hover:bg-muted disabled:opacity-60"
         >
-          <option value="">+ {t("meeting_translate_add")}</option>
-          {SONIOX_LANGUAGES.filter((x) => !offered.includes(x.code)).map((x) => (
-            <option key={x.code} value={x.code}>
-              {langName(x.code)}
-            </option>
-          ))}
-        </select>
+          + {t("meeting_translate_add")}
+        </AddLanguageButton>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {running ? (

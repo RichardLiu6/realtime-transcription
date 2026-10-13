@@ -6,14 +6,14 @@
 // turn on, 详情 for the list. Same state as the desktop TermsPanel.
 
 import { useEffect, useState } from "react";
+import { AddLanguageButton } from "@/components/LanguageSelect";
 import { useAiTermsAllowed } from "@/lib/useAiTerms";
 import { Check, Loader2, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { INDUSTRY_PRESETS, combineTerms, presetLabel } from "@/lib/contextTerms";
-import { useLanguageName, useLocale, useT } from "@/lib/i18n";
+import { useLocale, useT } from "@/lib/i18n";
 import { createTermPack, deleteTermPack, renameTermPack, useTermPacks } from "@/lib/useTermPacks";
 import { OFFICIAL_PACK_PREFIX, USER_PACK_PREFIX, type TermPack } from "@/lib/termPackTypes";
 import { useOfficialPacks } from "@/lib/useOfficialPacks";
-import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import { BottomSheet, SectionTitle, useLangNames } from "./parts";
 
 interface PhoneTermsProps {
@@ -363,7 +363,6 @@ export function AiTerms({
   const [saveFailed, setSaveFailed] = useState(false);
   const full = termPacks.packs.length >= termPacks.max;
   const { native } = useLangNames();
-  const langName = useLanguageName();
   const [languages, setLanguages] = useState<string[]>(meetingLanguages.slice(0, MAX_LANGUAGES));
   const [description, setDescription] = useState("");
   const [state, setState] = useState<"idle" | "loading" | "limit" | "failed" | "empty">("idle");
@@ -426,24 +425,15 @@ export function AiTerms({
           </span>
         ))}
         {languages.length < MAX_LANGUAGES && (
-          // A native list: the system picker on phones, a menu on desktop
-          <label className="relative inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-3 py-1 text-sm text-blue-700">
+          // Searchable in any interface language
+          <AddLanguageButton
+            exclude={languages}
+            onAdd={(code) => setLanguages([...languages, code].slice(0, MAX_LANGUAGES))}
+            className="inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-3 py-1 text-sm text-blue-700"
+          >
             <Plus className="size-3.5" aria-hidden />
             {t("ph_add_language")}
-            <select
-              value=""
-              onChange={(e) => e.target.value && setLanguages([...languages, e.target.value].slice(0, MAX_LANGUAGES))}
-              aria-label={t("ph_add_language")}
-              className="absolute inset-0 cursor-pointer opacity-0"
-            >
-              <option value="" />
-              {SONIOX_LANGUAGES.filter((l) => !languages.includes(l.code)).map((l) => (
-                <option key={l.code} value={l.code}>
-                  {langName(l.code)}
-                </option>
-              ))}
-            </select>
-          </label>
+          </AddLanguageButton>
         )}
       </div>
 
