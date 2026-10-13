@@ -107,13 +107,25 @@ export default function FromToLanguages({
                       >
                         {getLanguageName(code)}
                         {!disabled && (
-                          <X
-                            className="size-3 ml-0.5 cursor-pointer hover:text-destructive"
+                          // A span, not the bare icon: Button and Badge set
+                          // pointer-events-none on their svgs, so a click on
+                          // the icon fell through and opened the popover.
+                          <span
+                            role="button"
+                            aria-label={t("ph_remove_language", { name: getLanguageName(code) })}
+                            className="-my-1 -mr-1 ml-0.5 inline-flex cursor-pointer rounded-sm p-1 hover:text-destructive"
+                            onPointerDown={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
                             onClick={(e) => {
+                              e.preventDefault();
                               e.stopPropagation();
                               removeLanguage(code);
                             }}
-                          />
+                          >
+                            <X className="size-3" />
+                          </span>
                         )}
                       </Badge>
                     ))
