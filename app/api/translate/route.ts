@@ -1,9 +1,10 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { NextRequest, NextResponse } from "next/server";
 import { getOpenRouter } from "@/lib/openrouter";
 import { verifyToken } from "@/lib/auth";
 import { getUserModel, getDefaultModel } from "@/lib/edge-config";
 import { openRouterUsage, trackUsage } from "@/lib/usage";
-import { FALLBACK_CHAIN, isSupportedModel, modelLabel } from "@/lib/models";
+import { FALLBACK_CHAIN, isSupportedModel, modelLabel, TRIAL_MODELS } from "@/lib/models";
 import { jwtVerify } from "jose";
 
 function getLanguageName(code: string): string {
@@ -25,9 +26,14 @@ function isHyMT(model: string): boolean {
 //   is pure latency here; OpenRouter ignores the field for models that don't
 // - by default OpenRouter load-balances toward the cheapest provider;
 //   sort by latency instead (it still falls back to the next provider)
+// An admin test (compare page, /api/eval) can pin one OpenRouter provider
+// ("together", "deepseek", …), with no fallback to others, for this request
+const pinnedProvider = new AsyncLocalStorage<string>();
+
 function applyProviderParams(params: Record<string, unknown>) {
   params.reasoning = { enabled: false };
-  params.provider = { sort: "latency" };
+  const pinned = pinnedProvider.getStore();
+  params.provider = pinned ? { order: [pinned], allow_fallbacks: false } : { sort: "latency" };
 }
 
 // One line per translation in the Vercel logs, to see where time goes.
@@ -68,8 +74,8 @@ async function isAdmin(req: NextRequest): Promise<boolean> {
 }
 
 async function resolveModel(req: NextRequest, requestedModel?: string): Promise<string> {
-  // Admin can override model (for compare page)
-  if (isSupportedModel(requestedModel)) {
+  // Admin can override model (for compare page), also with a trial model
+  if (isSupportedModel(requestedModel) || (typeof requestedModel === "string" && TRIAL_MODELS.includes(requestedModel))) {
     if (await isAdmin(req)) {
       return requestedModel;
     }
@@ -629,7 +635,7 @@ export async function POST(req: NextRequest) {
   let model: string = getDefaultModel();
   let locale: UiLocale = "zh";
   try {
-    const { text, sourceLang, targetLang, targetLangs, context, terms: rawTerms, uiLocale: rawUiLocale, memory, model: rawRequestedModel, provisional: rawProvisional, continuation: rawContinuation } = await req.json();
+    const { text, sourceLang, targetLang, targetLangs, context, terms: rawTerms, uiLocale: rawUiLocale, memory, model: rawRequestedModel, provisional: rawProvisional, continuation: rawContinuation, provider: rawProvider } = await req.json();
     const continuation = parseContinuation(
       rawContinuation,
       Array.isArray(targetLangs) && targetLangs.length > 0 ? targetLangs : typeof targetLang === "string" ? [targetLang] : []
@@ -663,8 +669,15 @@ export async function POST(req: NextRequest) {
         : handleSingleTarget(req, text, sourceLang, targetLang, context, terms, m, provisional, responseModel, continuation);
     };
 
+    // Pinned provider: admins only, a plain provider slug
+    const pinned =
+      typeof rawProvider === "string" && /^[a-z0-9][a-z0-9/._-]{0,63}$/.test(rawProvider) && (await isAdmin(req))
+        ? rawProvider
+        : undefined;
     try {
-      return await run(primary, rawRequestedModel || primary);
+      return pinned
+        ? await pinnedProvider.run(pinned, () => run(primary, rawRequestedModel || primary))
+        : await run(primary, rawRequestedModel || primary);
     } catch (error) {
       // The compare page asks for a specific model — don't substitute there
       if (rawRequestedModel || !isProviderFailure(error)) throw error;
