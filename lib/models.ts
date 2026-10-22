@@ -49,7 +49,7 @@ export const FALLBACK_CHAIN: readonly TranslationModel[] = [
 
 // Models an admin may request explicitly (the compare page, /api/eval) to
 // try them out, though they're not in the pool (e.g. above the price cap)
-export const TRIAL_MODELS: readonly string[] = ["deepseek/deepseek-v4.1-flash"];
+export const TRIAL_MODELS: readonly string[] = ["deepseek/deepseek-v4.1-flash-1017", "deepseek/deepseek-v4.1-flash"];
 
 export function modelLabel(id: string): string {
   return MODEL_POOL.find((m) => m.id === id)?.label ?? id;
