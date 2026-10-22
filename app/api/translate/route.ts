@@ -4,7 +4,7 @@ import { getOpenRouter } from "@/lib/openrouter";
 import { verifyToken } from "@/lib/auth";
 import { getUserModel, getDefaultModel } from "@/lib/edge-config";
 import { openRouterUsage, trackUsage } from "@/lib/usage";
-import { FALLBACK_CHAIN, isSupportedModel, modelLabel, TRIAL_MODELS } from "@/lib/models";
+import { FALLBACK_CHAIN, isSupportedModel, MAX_PRICE, modelLabel, TRIAL_MODELS } from "@/lib/models";
 import { jwtVerify } from "jose";
 
 function getLanguageName(code: string): string {
@@ -34,9 +34,17 @@ const pinnedProvider = new AsyncLocalStorage<string>();
 const MANDATORY_REASONING = new Set(["z-ai/glm-5.3-flash", "openai/gpt-5-nano"]);
 
 function applyProviderParams(params: Record<string, unknown>) {
-  params.reasoning = MANDATORY_REASONING.has(String(params.model)) ? { effort: "minimal" } : { enabled: false };
+  const model = String(params.model);
+  params.reasoning = MANDATORY_REASONING.has(model) ? { effort: "minimal" } : { enabled: false };
   const pinned = pinnedProvider.getStore();
-  params.provider = pinned ? { order: [pinned], allow_fallbacks: false } : { sort: "latency" };
+  const cap = MAX_PRICE[model];
+  params.provider = pinned
+    ? { order: [pinned], allow_fallbacks: false }
+    : cap
+      ? // Only the providers at or under the cap, and only those that take every
+        // parameter sent (a provider without json_schema would ignore it)
+        { sort: "latency", max_price: cap, require_parameters: true }
+      : { sort: "latency" };
 }
 
 // One line per translation in the Vercel logs, to see where time goes.

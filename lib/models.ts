@@ -60,6 +60,14 @@ export const TRIAL_MODELS: readonly string[] = [
   "openai/gpt-5-nano",
 ];
 
+// Models whose OpenRouter providers differ widely in price (the same model
+// costs 0.005–0.225 in / 0.13–2 out across hosts): route only to providers
+// at or under Seed 2.0 Mini's price, USD per million tokens
+export const MAX_PRICE: Record<string, { prompt: number; completion: number }> = {
+  "z-ai/glm-5.3-flash": { prompt: 0.1, completion: 0.4 },
+  "deepseek/deepseek-v4-flash-0731": { prompt: 0.1, completion: 0.4 },
+};
+
 export function modelLabel(id: string): string {
   return MODEL_POOL.find((m) => m.id === id)?.label ?? id;
 }
