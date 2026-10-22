@@ -35,6 +35,7 @@ const INDEX_COLUMN_WIDTH = 72;
 const FILTER_ALL = "all";
 const FILTER_ORIGINAL = "original";
 const isString = (v: unknown): v is string => typeof v === "string" && v.length > 0;
+const isBoolean = (v: unknown): v is boolean => typeof v === "boolean";
 
 const Cursor = () => (
   <span className="blink-cursor ml-0.5 inline-block h-4 w-0.5 bg-gray-400 align-text-bottom" />
@@ -56,9 +57,21 @@ function OriginalText({ entry }: { entry: BilingualEntry }) {
 // One language's text of a sentence. A same-language column that only
 // repeats the original is muted and marked "= 原文" rather than shown at
 // full weight a second time (still there to read or copy).
-function TargetText({ entry, lang, markSame }: { entry: BilingualEntry; lang: string; markSame: boolean }) {
+function TargetText({
+  entry,
+  lang,
+  markSame,
+  finalOnly,
+}: {
+  entry: BilingualEntry;
+  lang: string;
+  markSame: boolean;
+  finalOnly: boolean;
+}) {
   const t = useT();
-  const text = entry.translations?.[lang];
+  // Complete sentences only: a provisional translation (rewritten every
+  // second while it is being revised) waits for the final one
+  const text = finalOnly && entry.translationProvisional ? undefined : entry.translations?.[lang];
   if (!text) {
     return entry.isFinal ? (
       <span className="text-muted-foreground animate-pulse">{t("translating")}</span>
@@ -109,19 +122,38 @@ interface RowProps {
   showOriginal: boolean;
   speakerName: string;
   speakerColor: string;
+  // The previous row is someone else: name the speaker. Further sentences
+  // of the same speaker stay short (one line instead of three in the #
+  // column), so a busy meeting moves less
+  speakerChange: boolean;
+  finalOnly: boolean;
 }
 
 // Memoized: while someone is speaking only the live row re-renders
-const Row = memo(function Row({ entry, index, targetLangs, showOriginal, speakerName, speakerColor }: RowProps) {
+const Row = memo(function Row({
+  entry,
+  index,
+  targetLangs,
+  showOriginal,
+  speakerName,
+  speakerColor,
+  speakerChange,
+  finalOnly,
+}: RowProps) {
   return (
-    <tr className="align-top">
+    <tr
+      className={`align-top ${speakerChange ? "border-t border-border" : ""}`}
+      data-speaker-change={speakerChange || undefined}
+    >
       <td className="px-3 py-2 text-muted-foreground">
-        <div>{index + 1}</div>
         {/* Who said it, in their color (same source as the speaker panel) */}
-        <div data-speaker className="mt-0.5 break-words text-xs font-medium" style={{ color: speakerColor }}>
-          {speakerName}
-        </div>
-        <div className="mt-1">
+        {speakerChange && (
+          <div data-speaker className="mb-0.5 break-words text-xs font-medium" style={{ color: speakerColor }}>
+            {speakerName}
+          </div>
+        )}
+        <div className="flex items-center gap-1.5 text-xs tabular-nums">
+          {index + 1}
           <LanguageChip code={entry.language} />
         </div>
       </td>
@@ -136,7 +168,7 @@ const Row = memo(function Row({ entry, index, targetLangs, showOriginal, speaker
           which gets a clean version fully in that language */}
       {targetLangs.map((lang) => (
         <td key={lang} className="px-3 py-2">
-          <TargetText entry={entry} lang={lang} markSame />
+          <TargetText entry={entry} lang={lang} markSame finalOnly={finalOnly} />
         </td>
       ))}
     </tr>
@@ -149,20 +181,38 @@ interface CardProps extends RowProps {
 
 // Narrow screens: one card per sentence — speaker and original on top, then
 // each language with its name. A filter shows just one language.
-const Card = memo(function Card({ entry, index, targetLangs, showOriginal, speakerName, speakerColor, filter }: CardProps) {
+const Card = memo(function Card({
+  entry,
+  index,
+  targetLangs,
+  showOriginal,
+  speakerName,
+  speakerColor,
+  speakerChange,
+  finalOnly,
+  filter,
+}: CardProps) {
   const t = useT();
   const langName = useLanguageName();
   const single = filter !== FILTER_ALL && filter !== FILTER_ORIGINAL ? filter : null;
-  const text = single ? sentenceIn(entry, single, "presentation", [], "") : null;
+  const raw = single ? sentenceIn(entry, single, "presentation", [], "") : null;
+  const text = raw && finalOnly ? (raw.provisional ? null : { ...raw, interim: "" }) : raw;
   return (
-    <article data-card className="px-4 py-3">
-      <div className="mb-1 flex items-center gap-2 text-xs">
-        <span className="font-semibold" style={{ color: speakerColor }}>
-          {speakerName}
-        </span>
-        <span className="tabular-nums text-muted-foreground">#{index + 1}</span>
-        <LanguageChip code={entry.language} />
-      </div>
+    <article
+      data-card
+      data-speaker-change={speakerChange || undefined}
+      className={`px-4 ${speakerChange ? "border-t border-border pt-3 pb-1.5" : "pt-1.5 pb-1.5"}`}
+    >
+      {/* The speaker once per turn; their next sentences follow under it */}
+      {speakerChange && (
+        <div className="mb-1 flex items-center gap-2 text-xs">
+          <span data-speaker className="font-semibold" style={{ color: speakerColor }}>
+            {speakerName}
+          </span>
+          <span className="tabular-nums text-muted-foreground">#{index + 1}</span>
+          <LanguageChip code={entry.language} />
+        </div>
+      )}
       {single ? (
         // Just the chosen language: its translation, or the original while
         // a sentence spoken in it is still being translated
@@ -171,7 +221,9 @@ const Card = memo(function Card({ entry, index, targetLangs, showOriginal, speak
             <>
               <span
                 data-translation={text.isOriginal ? undefined : ""}
-                className={text.provisional ? "underline decoration-dotted decoration-gray-400 underline-offset-4" : undefined}
+                className={
+                  text.provisional ? "underline decoration-dotted decoration-gray-400 underline-offset-4" : undefined
+                }
               >
                 {text.text}
               </span>
@@ -192,7 +244,7 @@ const Card = memo(function Card({ entry, index, targetLangs, showOriginal, speak
             targetLangs.map((lang) => (
               <div key={lang} className="mt-2 border-l-2 border-gray-200 pl-2.5 leading-relaxed">
                 <div className="text-xs font-medium text-gray-600">{langName(lang)}</div>
-                <TargetText entry={entry} lang={lang} markSame />
+                <TargetText entry={entry} lang={lang} markSame finalOnly={finalOnly} />
               </div>
             ))}
         </>
@@ -228,6 +280,9 @@ function PresentationPanel({
   // viewer has already picked its columns
   const filter =
     !viewer && (storedFilter === FILTER_ORIGINAL || targetLangs.includes(storedFilter)) ? storedFilter : FILTER_ALL;
+  // Complete sentences only: no live row, no provisional translations —
+  // calmer when many people talk (a viewer chooses for themselves)
+  const [finalOnly, setFinalOnly] = useStoredState("multiFinalOnly", false, isBoolean);
 
   // The panel's own width (the sidebar takes part of the window)
   useEffect(() => {
@@ -238,7 +293,8 @@ function PresentationPanel({
     return () => observer.disconnect();
   }, []);
   const columns = targetLangs.length + (showOriginal ? 1 : 0);
-  const cards = width > 0 && width < columns * MIN_COLUMN_WIDTH + INDEX_COLUMN_WIDTH;
+  // One language (or the original) is a single column: a list reads better
+  const cards = (width > 0 && width < columns * MIN_COLUMN_WIDTH + INDEX_COLUMN_WIDTH) || filter !== FILTER_ALL;
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -251,23 +307,33 @@ function PresentationPanel({
   }, []);
 
   // Follow new text (instant, once per frame — a smooth scroll restarted on
-  // every update stutters)
+  // every update stutters). Not while text in the panel is selected: someone
+  // is reading or copying it
   useEffect(() => {
     if (!isAtBottom) return;
     const el = scrollRef.current;
     if (!el) return;
     const frame = requestAnimationFrame(() => {
+      const selection = document.getSelection();
+      if (selection && !selection.isCollapsed && el.contains(selection.anchorNode)) return;
       el.scrollTop = el.scrollHeight;
     });
     return () => cancelAnimationFrame(frame);
-  }, [entries, isAtBottom, cards, filter]);
+  }, [entries, isAtBottom, cards, filter, finalOnly]);
 
   const scrollToBottom = useCallback(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, []);
 
-  // Rows with visible content (live rows appear once text arrives)
-  const rows = entries.filter((e) => e.isFinal || e.originalText || e.interimOriginal);
+  // Rows with visible content (live rows appear once text arrives; none
+  // with complete sentences only)
+  const rows = entries.filter((e) => e.isFinal || (!finalOnly && (e.originalText || e.interimOriginal)));
+  // Scrolled up to read: how many sentences arrived since (the page holds
+  // still meanwhile; the button says there is more)
+  const [rowsWhenLeft, setRowsWhenLeft] = useState<number | null>(null);
+  if (!isAtBottom && rowsWhenLeft === null) setRowsWhenLeft(rows.length);
+  if (isAtBottom && rowsWhenLeft !== null) setRowsWhenLeft(null);
+  const newRows = rowsWhenLeft === null ? 0 : Math.max(0, rows.length - rowsWhenLeft);
   const speakerOf = (e: BilingualEntry) => {
     const info = speakers.get(e.speaker);
     return {
@@ -284,26 +350,40 @@ function PresentationPanel({
 
   return (
     <div ref={rootRef} className="relative flex flex-1 flex-col overflow-hidden">
-      {cards && !viewer && rows.length > 0 && (
-        <div
-          role="radiogroup"
-          aria-label={t("multi_filter")}
-          data-multi-filter
-          className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border px-4 py-2"
-        >
-          <span className="mr-1 shrink-0 text-xs text-gray-600">{t("multi_filter")}</span>
-          {filterOptions.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              role="radio"
-              aria-checked={filter === o.value}
-              onClick={() => setFilter(o.value)}
-              className="shrink-0 rounded-full border border-border px-2.5 py-1 text-xs text-gray-700 transition-colors hover:bg-muted aria-checked:border-foreground aria-checked:bg-foreground aria-checked:text-background"
+      {entries.length > 0 && (
+        <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border px-4 py-2">
+          {!viewer && (
+            <div
+              role="radiogroup"
+              aria-label={t("multi_filter")}
+              data-multi-filter
+              className="flex shrink-0 items-center gap-1.5"
             >
-              {o.label}
-            </button>
-          ))}
+              <span className="mr-1 shrink-0 text-xs text-gray-600">{t("multi_filter")}</span>
+              {filterOptions.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={filter === o.value}
+                  onClick={() => setFilter(o.value)}
+                  className="shrink-0 rounded-full border border-border px-2.5 py-1 text-xs text-gray-700 transition-colors hover:bg-muted aria-checked:border-foreground aria-checked:bg-foreground aria-checked:text-background"
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          )}
+          <label className="ml-auto flex shrink-0 cursor-pointer items-center gap-1.5 pl-2 text-xs text-gray-700">
+            <input
+              type="checkbox"
+              data-final-only
+              checked={finalOnly}
+              onChange={(e) => setFinalOnly(e.target.checked)}
+              className="size-3.5 accent-foreground"
+            />
+            {t("present_final_only")}
+          </label>
         </div>
       )}
 
@@ -326,9 +406,11 @@ function PresentationPanel({
             )}
           </div>
         ) : cards ? (
-          <div className="divide-y divide-border text-sm">
+          <div className="text-sm">
             {rows.map((entry, idx) => (
               <Card
+                speakerChange={idx === 0 || rows[idx - 1].speaker !== entry.speaker}
+                finalOnly={finalOnly}
                 key={entry.id}
                 entry={entry}
                 index={idx}
@@ -360,9 +442,11 @@ function PresentationPanel({
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody>
               {rows.map((entry, idx) => (
                 <Row
+                  speakerChange={idx === 0 || rows[idx - 1].speaker !== entry.speaker}
+                  finalOnly={finalOnly}
                   key={entry.id}
                   entry={entry}
                   index={idx}
@@ -376,18 +460,31 @@ function PresentationPanel({
         )}
       </div>
 
-      {/* Scrolled up to read: a way back to the live sentence */}
-      {!isAtBottom && rows.length > 0 && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={scrollToBottom}
-          aria-label={t("scroll_to_latest")}
-          className="absolute bottom-4 right-4 z-20 rounded-full bg-zinc-500/30 text-white shadow-lg backdrop-blur-sm hover:bg-zinc-600/80 hover:text-white"
-        >
-          <ChevronDown className="size-4" />
-        </Button>
-      )}
+      {/* Scrolled up to read: a way back to the live sentence, with how
+          much was said meanwhile */}
+      {!isAtBottom &&
+        rows.length > 0 &&
+        (newRows > 0 ? (
+          <button
+            type="button"
+            onClick={scrollToBottom}
+            data-new-rows={newRows}
+            aria-label={`${t("scroll_to_latest")} (${t("new_items", { count: newRows })})`}
+            className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-full bg-foreground px-3 py-1.5 text-xs font-medium text-background shadow-lg hover:bg-foreground/90"
+          >
+            {t("new_items", { count: newRows })}
+          </button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={scrollToBottom}
+            aria-label={t("scroll_to_latest")}
+            className="absolute bottom-4 right-4 z-20 rounded-full bg-zinc-500/30 text-white shadow-lg backdrop-blur-sm hover:bg-zinc-600/80 hover:text-white"
+          >
+            <ChevronDown className="size-4" />
+          </Button>
+        ))}
     </div>
   );
 }
