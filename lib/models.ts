@@ -49,7 +49,16 @@ export const FALLBACK_CHAIN: readonly TranslationModel[] = [
 
 // Models an admin may request explicitly (the compare page, /api/eval) to
 // try them out, though they're not in the pool (e.g. above the price cap)
-export const TRIAL_MODELS: readonly string[] = ["deepseek/deepseek-v4.1-flash-1017", "deepseek/deepseek-v4.1-flash"];
+export const TRIAL_MODELS: readonly string[] = [
+  "deepseek/deepseek-v4.1-flash-1017",
+  "deepseek/deepseek-v4.1-flash",
+  // Cheaper per call than Seed 2.0 Mini (Oct 2026 comparison)
+  "z-ai/glm-5.3-flash",
+  "inclusionai/ling-3.0-flash",
+  "inception/mercury-2.5",
+  "deepseek/deepseek-v4-flash-0731",
+  "openai/gpt-5-nano",
+];
 
 export function modelLabel(id: string): string {
   return MODEL_POOL.find((m) => m.id === id)?.label ?? id;
