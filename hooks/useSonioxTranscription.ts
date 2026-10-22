@@ -8,6 +8,7 @@ import { ClauseEngine } from "@/lib/clause/engine";
 import { getLocale, t } from "@/lib/i18n";
 import { singleTargetLanguage } from "@/lib/meetingLanguages";
 import { NativeSocket, nativeStt, type SocketLike } from "@/lib/native/stt";
+import { getPipPrefs, setPipSupported } from "@/lib/native/pip";
 
 const TARGET_SAMPLE_RATE = 16000;
 
@@ -32,6 +33,8 @@ const PROVISIONAL_INTERVAL_MS = 1000;
 const PROVISIONAL_MIN_CHARS = 4;
 // How long stop() waits for the engine to flush trailing text
 const DRAIN_TIMEOUT_MS = 3000;
+// Soniox closes a session that gets neither audio nor a keepalive for ~20 s
+const KEEPALIVE_MS = 5000;
 
 // Language names accepted by Qwen3-ASR (R2T2's base model)
 const R2T2_LANGUAGE_NAMES: Record<string, string> = {
@@ -226,6 +229,9 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [currentInterim, setCurrentInterim] = useState("");
   const [audioAnalyser, setAudioAnalyser] = useState<AnalyserNode | null>(null);
+  // Paused: the session stays open but no audio goes to the engine (the
+  // user muted themselves); the timer and the transcript timeline stop too
+  const [paused, setPaused] = useState(false);
 
   // Keep latest options in ref to avoid stale closures in finalizeSegment
   const optionsRef = useRef(options);
@@ -251,6 +257,12 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
   const stoppingRef = useRef(false);
   const sessionRef = useRef(0);
   const startedAtRef = useRef(0);
+  const pausedRef = useRef(false);
+  const pausedAtRef = useRef(0);
+  // Paused time already shifted out of startedAtRef (the timer skips it,
+  // Soniox still bills it)
+  const pausedTotalRef = useRef(0);
+  const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const samplesSentRef = useRef(0);
   // Recording again continues the transcript: timestamps of the new session
   // start after the last entry instead of at 00:00
@@ -1202,8 +1214,8 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         // Browser voice processing is tuned for human listeners, not speech
         // recognition: it can suppress quiet or distant speakers, cancel
         // remote participants played through the speakers as "echo", and
-        // pump the level (Chrome ties auto-gain to echoCancellation). Raw
-        // audio by default; the engines do their own noise handling.
+        // pump the level (Chrome ties auto-gain to echoCancellation). On by
+        // default (the 降噪 setting); off gives the engine raw audio.
         const processing = config.audioProcessing === true;
         const stream = native
           ? null
@@ -1227,6 +1239,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
                 sampleRate: TARGET_SAMPLE_RATE,
                 frameMs: FRAME_MS[provider],
                 audioProcessing: processing,
+                ...(config.captureSource === "system" ? { source: "broadcast" as const } : {}),
                 notificationTitle: "ABL Translate",
                 notificationText: t("native_recording_notice"),
                 ...(provider === "soniox" ? { keepaliveMessage: JSON.stringify({ type: "keepalive" }) } : {}),
@@ -1288,6 +1301,12 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
             clearInterval(timerRef.current);
             timerRef.current = null;
           }
+          if (keepaliveRef.current) {
+            clearInterval(keepaliveRef.current);
+            keepaliveRef.current = null;
+          }
+          pausedRef.current = false;
+          setPaused(false);
           teardownAudio();
           wsRef.current = null;
           setRecordingState("idle");
@@ -1301,7 +1320,31 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
 
         // 4. Audio graph (browser only)
         if (!stream) {
+          // iOS app: floating captions, built natively from the engine's
+          // messages (Soniox only; R2T2 sends no tokens)
+          if (native?.pipConfigure && provider === "soniox") {
+            const home = getLocale();
+            const targets = config.targetLangs ?? [];
+            native
+              .pipConfigure({
+                mode: config.translationMode,
+                languageA: config.languageA,
+                languageB: config.languageB,
+                displayLang: targets.includes(home) ? home : (targets[0] ?? home),
+                terms: config.contextTerms,
+                uiLocale: home,
+                translateUrl: new URL("/api/translate", window.location.href).href,
+                prefs: getPipPrefs(),
+                labels: { waiting: t("pip_waiting"), reviewing: t("pip_reviewing"), held: t("pip_held") },
+                autoStart: true,
+              })
+              .then((r) => setPipSupported(r.supported))
+              .catch((error) => console.error("[native] pip:", error));
+          } else {
+            setPipSupported(false);
+          }
           startedAtRef.current = Date.now();
+          pausedTotalRef.current = 0;
           setElapsedSeconds(0);
           timerRef.current = setInterval(() => {
             setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
@@ -1326,7 +1369,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
 
         workletNode.port.onmessage = (event: MessageEvent<Float32Array>) => {
           const socket = wsRef.current;
-          if (!socket || socket.readyState !== WebSocket.OPEN || stoppingRef.current) return;
+          if (!socket || socket.readyState !== WebSocket.OPEN || stoppingRef.current || pausedRef.current) return;
           let samples = event.data;
           if (audioContext.sampleRate !== TARGET_SAMPLE_RATE) {
             samples = resampleAudio(samples, audioContext.sampleRate, TARGET_SAMPLE_RATE);
@@ -1344,6 +1387,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         workletNode.connect(audioContext.destination);
 
         startedAtRef.current = Date.now();
+        pausedTotalRef.current = 0;
         setElapsedSeconds(0);
         timerRef.current = setInterval(() => {
           setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
@@ -1366,6 +1410,12 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
   const stop = useCallback(() => {
     stoppingRef.current = true;
     const provider = configRef.current?.provider ?? "soniox";
+    if (keepaliveRef.current) {
+      clearInterval(keepaliveRef.current);
+      keepaliveRef.current = null;
+    }
+    pausedRef.current = false;
+    setPaused(false);
 
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -1393,9 +1443,10 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     }
 
     // Report STT usage (fire-and-forget). R2T2 is self-hosted, so only
-    // Soniox minutes are billed.
+    // Soniox minutes are billed — for the whole session, paused time
+    // included (Soniox bills the stream duration, keepalives too).
     const seconds = startedAtRef.current
-      ? Math.round((Date.now() - startedAtRef.current) / 1000)
+      ? Math.round((Date.now() - startedAtRef.current + pausedTotalRef.current) / 1000)
       : 0;
     startedAtRef.current = 0;
     if (provider === "soniox" && seconds > 0) {
@@ -1408,6 +1459,46 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
 
     setRecordingState("idle");
   }, [finalizeSegment, teardownAudio]);
+
+  // Pause = mute: keep the engine session, stop sending audio. Soniox gets
+  // a keepalive meanwhile (it closes a silent session after ~20 s) and a
+  // finalize, so the sentence in progress completes now. R2T2 has no
+  // keepalive: a long pause may end its session. Browser only — the app's
+  // native audio has no pause yet (canPause).
+  const canPause = !nativeStt();
+  const pause = useCallback(() => {
+    const ws = wsRef.current;
+    if (recordingState !== "recording" || pausedRef.current || !ws || !canPause) return;
+    pausedRef.current = true;
+    pausedAtRef.current = Date.now();
+    setPaused(true);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if ((configRef.current?.provider ?? "soniox") === "soniox" && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "finalize" }));
+      keepaliveRef.current = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "keepalive" }));
+      }, KEEPALIVE_MS);
+    }
+  }, [recordingState, canPause]);
+
+  const resume = useCallback(() => {
+    if (!pausedRef.current) return;
+    if (keepaliveRef.current) {
+      clearInterval(keepaliveRef.current);
+      keepaliveRef.current = null;
+    }
+    const pausedFor = Date.now() - pausedAtRef.current;
+    startedAtRef.current += pausedFor;
+    pausedTotalRef.current += pausedFor;
+    pausedRef.current = false;
+    setPaused(false);
+    timerRef.current = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
+    }, 1000);
+  }, []);
 
   // Reassign a single (finalized) entry's speaker — a manual correction of
   // one sentence; the speakers' other sentences stay where they are.
@@ -1472,6 +1563,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     return () => {
       sessionRef.current++;
       if (timerRef.current) clearInterval(timerRef.current);
+      if (keepaliveRef.current) clearInterval(keepaliveRef.current);
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       wsRef.current?.close();
       workletNodeRef.current?.disconnect();
@@ -1492,6 +1584,10 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     getTranscriptTimeMs,
     start,
     stop,
+    paused,
+    canPause,
+    pause,
+    resume,
     clearEntries,
     reassignSpeaker,
     mergeSpeaker,

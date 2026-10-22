@@ -23,7 +23,9 @@ import {
 const CHUNK_MS = 5000;
 const BITRATE = 32_000;
 const MULTIPART_ABOVE = 8 * 1024 * 1024;
-const MIME_TYPES = ["audio/webm;codecs=opus", "audio/mp4", "audio/ogg;codecs=opus"];
+// AAC in MP4 first: it plays everywhere, iPhones included (Chrome's WebM
+// fails there); WebM / Ogg only for browsers that can't record MP4
+const MIME_TYPES = ["audio/mp4;codecs=mp4a.40.2", "audio/mp4", "audio/webm;codecs=opus", "audio/ogg;codecs=opus"];
 
 export type RecordingsMode = "blob" | "local";
 
@@ -44,7 +46,7 @@ async function uploadSegment(meta: SegmentMeta, mode: RecordingsMode): Promise<v
   }
   // A segment left by a crash has no stop time: estimate it from the size
   const durationMs = meta.stoppedAt
-    ? meta.stoppedAt - meta.startedAt
+    ? meta.stoppedAt - meta.startedAt - (meta.pausedMs ?? 0)
     : Math.round((blob.size * 8 * 1000) / BITRATE);
   const contentType = meta.mimeType.split(";")[0];
   // MediaRecorder WebM has no duration: players can't show it or seek well
@@ -88,9 +90,12 @@ interface Options {
   enabled: boolean;
   mode: RecordingsMode | null;
   getTranscriptTimeMs: () => number;
+  // Recording paused: the audio pauses too, so it stays in step with the
+  // transcript timeline (which stops while paused)
+  paused?: boolean;
 }
 
-export function useMeetingRecorder({ meetingId, stream, enabled, mode, getTranscriptTimeMs }: Options) {
+export function useMeetingRecorder({ meetingId, stream, enabled, mode, getTranscriptTimeMs, paused = false }: Options) {
   const [active, setActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -100,6 +105,10 @@ export function useMeetingRecorder({ meetingId, stream, enabled, mode, getTransc
   const flushing = useRef(false);
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+  const pause = useRef({ since: 0, total: 0 });
 
   // Upload every finished segment (and any left by an earlier page), one
   // at a time; failures stay in IndexedDB for the next attempt
@@ -165,22 +174,45 @@ export function useMeetingRecorder({ meetingId, stream, enabled, mode, getTransc
       if (ev.data.size > 0) writes.push(saved.then(() => addChunk(meta.key, ev.data)));
     };
     recorder.onstop = async () => {
+      const p = pause.current;
+      const pausedMs = p.total + (p.since ? Date.now() - p.since : 0);
       try {
         await Promise.all(writes);
-        await putSegment({ ...meta, stoppedAt: Date.now() });
+        await putSegment({ ...meta, stoppedAt: Date.now(), pausedMs });
       } catch (error) {
         console.error("[recording] cache write failed:", error);
       }
       if (activeKey.current === meta.key) activeKey.current = null;
       flush();
     };
+    pause.current = { since: 0, total: 0 };
     recorder.start(CHUNK_MS);
+    recorderRef.current = recorder;
+    if (pausedRef.current) {
+      recorder.pause();
+      pause.current.since = Date.now();
+    }
     setActive(true);
     return () => {
+      recorderRef.current = null;
       setActive(false);
       if (recorder.state !== "inactive") recorder.stop();
     };
   }, [meetingId, stream, enabled, mode, getTranscriptTimeMs, flush]);
+
+  useEffect(() => {
+    const recorder = recorderRef.current;
+    if (!recorder) return;
+    const p = pause.current;
+    if (paused && recorder.state === "recording") {
+      recorder.pause();
+      p.since = Date.now();
+    } else if (!paused && recorder.state === "paused") {
+      recorder.resume();
+      if (p.since) p.total += Date.now() - p.since;
+      p.since = 0;
+    }
+  }, [paused]);
 
   return { active, uploading, failed, unsupported };
 }

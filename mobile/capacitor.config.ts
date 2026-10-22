@@ -8,7 +8,8 @@ const config: CapacitorConfig = {
   appName: "ABL Translate",
   webDir: "www",
   server: {
-    url: "https://translate.americanbestlife.com",
+    // CAP_SERVER_URL=http://localhost:3000 to try a local dev server
+    url: process.env.CAP_SERVER_URL ?? "https://translate.americanbestlife.com",
     // Shown when the site can't be reached (offline)
     errorPath: "offline.html",
   },

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { AUTO_STOP_MIN } from "@/hooks/useAutoStop";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
@@ -11,10 +12,12 @@ import {
   LayoutDashboard,
   Move,
   AudioLines,
+  TimerOff,
   Settings2,
   ChevronDown,
   MonitorPlay,
   FolderClock,
+  MessageSquare,
 } from "lucide-react";
 import {
   Popover,
@@ -28,12 +31,18 @@ import {
 } from "@/components/ui/tooltip";
 import { useT, type TranslationKey } from "@/lib/i18n";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
+import { sidebarShortcutLabel } from "@/components/Sidebar";
+import FeedbackForm from "@/components/FeedbackForm";
 import type { DesktopLayout } from "@/app/page";
-import type { SttProvider, TranslationEngine } from "@/types/bilingual";
+import type { CaptureSource, SttProvider, TranslationEngine } from "@/types/bilingual";
 
 interface StatusBarProps {
+  // Sidebar layout with the sidebar collapsed: the button that opens it
+  onExpandSidebar?: () => void;
   recordingState: "idle" | "connecting" | "recording";
   elapsedSeconds: number;
+  // Paused recording: shown next to the timer (the button is by stop)
+  paused?: boolean;
   error: string | null;
   desktopLayout?: DesktopLayout;
   onDesktopLayoutChange?: (layout: DesktopLayout) => void;
@@ -42,6 +51,12 @@ interface StatusBarProps {
   r2t2Enabled?: boolean;
   audioProcessing?: boolean;
   onAudioProcessingChange?: (on: boolean) => void;
+  // Auto stop after minutes without speech (can change while recording)
+  autoStop?: boolean;
+  onAutoStopChange?: (on: boolean) => void;
+  // iOS app only: microphone, or other apps' audio + mic (ReplayKit)
+  captureSource?: CaptureSource;
+  onCaptureSourceChange?: (source: CaptureSource) => void;
   translationEngine?: TranslationEngine;
   onTranslationEngineChange?: (engine: TranslationEngine) => void;
   t3poEnabled?: boolean;
@@ -138,6 +153,7 @@ function RadioRow({ label, children }: { label: string; children: ReactNode }) {
 export default function StatusBar({
   recordingState,
   elapsedSeconds,
+  paused = false,
   error,
   desktopLayout,
   onDesktopLayoutChange,
@@ -146,6 +162,10 @@ export default function StatusBar({
   r2t2Enabled = false,
   audioProcessing,
   onAudioProcessingChange,
+  autoStop,
+  onAutoStopChange,
+  captureSource,
+  onCaptureSourceChange,
   translationEngine,
   onTranslationEngineChange,
   t3poEnabled = false,
@@ -153,6 +173,7 @@ export default function StatusBar({
   shareButton,
   saveControls,
   meetingsLink = false,
+  onExpandSidebar,
 }: StatusBarProps) {
   const t = useT();
   const router = useRouter();
@@ -166,6 +187,10 @@ export default function StatusBar({
 
   const [userName, setUserName] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isGuest, setIsGuest] = useState(false);
+  // User menu: the menu, or the feedback form in its place
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [feedbackView, setFeedbackView] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -174,6 +199,7 @@ export default function StatusBar({
         if (d.user) {
           setUserName(d.user.name);
           if (d.user.role === "admin") setIsAdmin(true);
+          if (d.user.role === "guest") setIsGuest(true);
         }
       })
       .catch(() => {});
@@ -206,13 +232,37 @@ export default function StatusBar({
           language, advanced settings and the user menu on the right */}
       <div className="flex min-w-0 items-center justify-between gap-2 border-b border-border bg-background px-3 py-2 sm:px-4">
         <div className="flex min-w-0 items-center gap-2">
+          {onExpandSidebar && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onClick={onExpandSidebar}
+                  aria-label={t("sidebar_expand")}
+                  data-sidebar-expand
+                >
+                  <PanelLeft className="size-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{t("sidebar_expand")} · {sidebarShortcutLabel()}</TooltipContent>
+            </Tooltip>
+          )}
           {isRecording && (
             <>
-              <span className="h-2 w-2 shrink-0 rounded-full bg-red-500 recording-pulse" />
-              <span className="sr-only">{t("recording_status")}</span>
+              <span
+                className={paused ? "h-2 w-2 shrink-0 rounded-full bg-muted-foreground" : "h-2 w-2 shrink-0 rounded-full bg-red-500 recording-pulse"}
+              />
+              <span className="sr-only">{t(paused ? "paused" : "recording_status")}</span>
               <span className="font-mono text-sm font-semibold text-foreground">
                 {minutes}:{seconds}
               </span>
+              {paused && (
+                <span className="truncate text-sm text-muted-foreground" title={t("paused_hint")}>
+                  {t("paused")}
+                </span>
+              )}
+
             </>
           )}
           {isConnecting && (
@@ -317,6 +367,25 @@ export default function StatusBar({
                   </Section>
                 )}
 
+                {captureSource && onCaptureSourceChange && (
+                  <Section title={t("capture_source")}>
+                    <RadioRow label={t("capture_source")}>
+                      {(["mic", "system"] as const).map((value) => (
+                        <Option
+                          key={value}
+                          label={t(value === "mic" ? "capture_mic" : "capture_system")}
+                          checked={captureSource === value}
+                          disabled={locked}
+                          onSelect={() => onCaptureSourceChange(value)}
+                        />
+                      ))}
+                    </RadioRow>
+                    <p className="text-xs leading-snug text-muted-foreground">
+                      {t(captureSource === "mic" ? "capture_mic_desc" : "capture_system_desc")}
+                    </p>
+                  </Section>
+                )}
+
                 {audioProcessing !== undefined && onAudioProcessingChange && (
                   <Section title={t("audio_processing")}>
                     <button
@@ -336,6 +405,28 @@ export default function StatusBar({
                     </button>
                     <p className="text-xs leading-snug text-muted-foreground">
                       {audioProcessing ? t("audio_processing_on") : t("audio_processing_off")}
+                    </p>
+                  </Section>
+                )}
+
+                {autoStop !== undefined && onAutoStopChange && (
+                  <Section title={t("auto_stop")}>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={autoStop}
+                      onClick={() => onAutoStopChange(!autoStop)}
+                      className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors ${
+                        autoStop
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      <TimerOff className="size-3.5" />
+                      {t("auto_stop")}
+                    </button>
+                    <p className="text-xs leading-snug text-muted-foreground">
+                      {autoStop ? t("auto_stop_on", { min: AUTO_STOP_MIN }) : t("auto_stop_off")}
                     </p>
                   </Section>
                 )}
@@ -369,9 +460,15 @@ export default function StatusBar({
 
           <LanguageSwitcher />
 
-          {/* User menu: name, admin panel, log out */}
+          {/* User menu: name, meetings, feedback, admin panel, log out */}
           {userName && (
-            <Popover>
+            <Popover
+              open={menuOpen}
+              onOpenChange={(o) => {
+                setMenuOpen(o);
+                if (!o) setFeedbackView(false);
+              }}
+            >
               <PopoverTrigger asChild>
                 <button
                   type="button"
@@ -383,39 +480,58 @@ export default function StatusBar({
                   <ChevronDown className="size-3 shrink-0" aria-hidden />
                 </button>
               </PopoverTrigger>
-              <PopoverContent side="bottom" align="end" className="w-52 p-1">
-                <p className="truncate px-2 py-1.5 text-xs text-muted-foreground">{userName}</p>
-                {meetingsLink && (
-                  // New tab: leaving this page would lose the live transcript
-                  <a
-                    href="/meetings"
-                    target="_blank"
-                    rel="noopener"
-                    data-meetings-link
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
-                  >
-                    <FolderClock className="size-3.5" aria-hidden />
-                    {t("my_meetings")}
-                  </a>
+              <PopoverContent side="bottom" align="end" className={feedbackView ? "w-80 space-y-2 p-3" : "w-52 p-1"}>
+                {feedbackView ? (
+                  <>
+                    <p className="text-sm font-medium">{t("fb_title")}</p>
+                    <FeedbackForm topic="general" />
+                  </>
+                ) : (
+                  <>
+                    <p className="truncate px-2 py-1.5 text-xs text-muted-foreground">{userName}</p>
+                    {meetingsLink && (
+                      // New tab: leaving this page would lose the live transcript
+                      <a
+                        href="/meetings"
+                        target="_blank"
+                        rel="noopener"
+                        data-meetings-link
+                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                      >
+                        <FolderClock className="size-3.5" aria-hidden />
+                        {t("my_meetings")}
+                      </a>
+                    )}
+                    {!isGuest && (
+                      <button
+                        type="button"
+                        onClick={() => setFeedbackView(true)}
+                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                      >
+                        <MessageSquare className="size-3.5" aria-hidden />
+                        {t("fb_title")}
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => router.push("/admin")}
+                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                      >
+                        <Shield className="size-3.5" aria-hidden />
+                        {t("admin_panel")}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-destructive hover:bg-destructive/10"
+                    >
+                      <LogOut className="size-3.5" aria-hidden />
+                      {t("logout")}
+                    </button>
+                  </>
                 )}
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => router.push("/admin")}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
-                  >
-                    <Shield className="size-3.5" aria-hidden />
-                    {t("admin_panel")}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-destructive hover:bg-destructive/10"
-                >
-                  <LogOut className="size-3.5" aria-hidden />
-                  {t("logout")}
-                </button>
               </PopoverContent>
             </Popover>
           )}

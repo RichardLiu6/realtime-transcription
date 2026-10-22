@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Loader2, Mic, Minus, Plus, Square, X } from "lucide-react";
+import { Loader2, Mic, Minus, Pause, Play, Plus, Square, X } from "lucide-react";
 import type { BilingualEntry, SpeakerInfo, TranslationMode } from "@/types/bilingual";
 import { useLanguageName, useLocale, useT, type TranslationKey } from "@/lib/i18n";
 import { useStoredState } from "@/lib/useStoredState";
+import { setStatusBarHidden } from "@/lib/native/statusBar";
 import { meetingLanguages, sameText, sentenceIn, type SentenceText } from "@/lib/meetingLanguages";
 import { FALLBACK_SPEAKER_COLOR, speakerDisplayName } from "@/hooks/useSpeakerManager";
 
@@ -108,7 +109,9 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 // Open / close, with the F shortcut and the Fullscreen API. Full screen is
 // best effort: without it (iOS Safari, iframes) the mode is a full-viewport
-// overlay.
+// overlay. Touch screens always get the overlay: in the iPhone's full screen
+// the safe-area insets read 0 and the controls slid under the status bar;
+// in the app the status bar is hidden instead.
 export function usePresentationMode() {
   const [open, setOpen] = useState(false);
   const openRef = useRef(false);
@@ -118,8 +121,10 @@ export function usePresentationMode() {
   const enter = useCallback(() => {
     openRef.current = true;
     setOpen(true);
+    setStatusBarHidden(true);
     const el = document.documentElement;
-    if (!document.fullscreenElement && typeof el.requestFullscreen === "function") {
+    const touch = window.matchMedia("(pointer: coarse)").matches;
+    if (!touch && !document.fullscreenElement && typeof el.requestFullscreen === "function") {
       el.requestFullscreen()
         .then(() => {
           ownFullscreen.current = true;
@@ -133,6 +138,7 @@ export function usePresentationMode() {
   const exit = useCallback(() => {
     openRef.current = false;
     setOpen(false);
+    setStatusBarHidden(false);
     if (ownFullscreen.current) {
       ownFullscreen.current = false;
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -149,6 +155,7 @@ export function usePresentationMode() {
         ownFullscreen.current = false;
         openRef.current = false;
         setOpen(false);
+        setStatusBarHidden(false);
       }
     };
     const onKeyDown = (e: KeyboardEvent) => {
@@ -186,6 +193,10 @@ interface PresentationModeProps {
   // Absent for a shared-captions viewer: nothing to record
   onStart?: () => void;
   onStop?: () => void;
+  // Pause / resume while recording (absent = no button)
+  paused?: boolean;
+  onPause?: () => void;
+  onResume?: () => void;
   onExit: () => void;
 }
 
@@ -285,6 +296,9 @@ export default function PresentationMode({
   elapsedSeconds,
   onStart,
   onStop,
+  paused = false,
+  onPause,
+  onResume,
   onExit,
 }: PresentationModeProps) {
   const t = useT();
@@ -602,7 +616,7 @@ export default function PresentationMode({
       onMouseMove={poke}
       onPointerDown={poke}
       onKeyDown={poke}
-      className="fixed inset-0 z-[100] flex flex-col outline-none"
+      className="safe-top safe-x fixed inset-0 z-[100] flex flex-col outline-none"
       style={style}
     >
       {/* Control strip: over the captions (they never move when it shows) */}
@@ -619,7 +633,7 @@ export default function PresentationMode({
         onMouseLeave={() => {
           pointerOnStrip.current = false;
         }}
-        className={`absolute inset-x-0 top-0 z-10 flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 text-sm shadow-lg transition-opacity duration-300 ${
+        className={`absolute top-[env(safe-area-inset-top,0px)] right-[env(safe-area-inset-right,0px)] left-[env(safe-area-inset-left,0px)] z-10 flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 text-sm shadow-lg transition-opacity duration-300 ${
           controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         style={{ backgroundColor: colors.strip, borderBottom: `1px solid ${colors.rule}` }}
@@ -628,14 +642,28 @@ export default function PresentationMode({
         <div className="flex items-center gap-2">
           {isRecording && (
             <>
-              <span className="size-2.5 shrink-0 rounded-full bg-red-500 recording-pulse" />
-              <span className="sr-only">{t("recording_status")}</span>
+              <span
+                className={paused ? "size-2.5 shrink-0 rounded-full bg-current opacity-60" : "size-2.5 shrink-0 rounded-full bg-red-500 recording-pulse"}
+              />
+              <span className="sr-only">{t(paused ? "paused" : "recording_status")}</span>
               {onStop && (
                 <span className="font-mono font-semibold tabular-nums">
                   {minutes}:{seconds}
                 </span>
               )}
+              {paused && <span className="font-medium">{t("paused")}</span>}
             </>
+          )}
+          {isRecording && onPause && onResume && (
+            <button
+              type="button"
+              onClick={paused ? onResume : onPause}
+              aria-pressed={paused}
+              className="inline-flex items-center gap-1.5 rounded-md border border-current/40 px-2.5 py-1 text-xs font-medium hover:border-current"
+            >
+              {paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+              {t(paused ? "resume_recording" : "pause_recording")}
+            </button>
           )}
           {!onStart || !onStop ? null : isRecording ? (
             <button
@@ -755,14 +783,16 @@ export default function PresentationMode({
           className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-current/30 px-2.5 py-1 text-xs hover:border-current"
         >
           <X className="size-3.5" />
-          <span>{t("present_exit")}</span>
+          {/* No Esc key on a phone */}
+          <span className="pointer-coarse:hidden">{t("present_exit")}</span>
+          <span className="hidden pointer-coarse:inline">{t("present_exit_touch")}</span>
         </button>
       </div>
 
       {/* Captions: anchored to the bottom, so the live sentence stays in
           one place and older ones scroll off the top (faded). The column
           is ~70 characters wide (in the caption font), left-aligned. */}
-      <div className="flex min-h-0 flex-1 overflow-hidden" style={{ padding: "4vh max(16px, 4vw)" }}>
+      <div className="flex min-h-0 flex-1 overflow-hidden" style={{ padding: "4vh max(16px, 4vw) calc(4vh + env(safe-area-inset-bottom, 0px))" }}>
         <div
           className="mx-auto flex h-full w-full min-w-0 flex-col"
           style={{

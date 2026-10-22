@@ -13,6 +13,13 @@ without a new app version. The native part adds what a web page can't do:
   - Android: `android/app/src/main/java/com/americanbestlife/translate/NativeSttPlugin.java`
     (AudioRecord, OkHttp) + `TranscriptionService.java` (foreground service of type
     microphone, ongoing notification) + a partial wake lock.
+- iOS floating captions (Picture in Picture): `ios/App/App/CaptionPip.swift`.
+  The page is suspended in the background, so native builds the sentences from
+  the engine's Soniox messages and, only while the window shows, translates them
+  through the site's `/api/translate` with the web view's login cookie. Opens with
+  the 悬浮 button while recording, or by itself when the app leaves the screen.
+  The simulator has no PiP: there the frame is drawn in a corner of the screen.
+  Needs a TestFlight build with this file; older builds just don't show the button.
 - In the app the 录音存档 (meeting audio) switch is hidden: the browser recorder
   needs the web microphone. Text is saved as usual.
 - Neither platform lets an app record the other side of a phone / WeChat call.
@@ -33,13 +40,16 @@ the phone, open it, allow "install unknown apps" when asked.
 **iPhone (TestFlight, internal testing — up to 100 people, no App Review)**, on a Mac
 with Xcode and the Apple developer account:
 
-1. `cd mobile && npm ci && npx cap sync ios && npx cap open ios`
-2. In Xcode: target *App* → Signing & Capabilities → choose the team; check that
-   *Background Modes → Audio* is listed (it comes from Info.plist).
-3. Product → Archive → Distribute App → TestFlight & App Store → Upload.
-4. App Store Connect → the app → TestFlight → add colleagues as internal testers;
-   they install the *TestFlight* app and accept the invitation.
-5. Builds expire after 90 days: upload a new one before (only the shell; the
+1. `cd mobile && npm ci && scripts/ios-testflight.sh` — syncs, archives with
+   automatic signing (team `WRR3ADG534`, build number = time) and uploads
+   (`ios/ExportOptions.plist`). Xcode must be signed in to the account
+   (Settings → Accounts) and the membership active. Or by hand in Xcode:
+   Product → Archive → Distribute App → TestFlight & App Store → Upload.
+2. App Store Connect → *ABL Translate* (app id 6820208548) → TestFlight → group
+   *ABL Internal*: new builds are added after processing (~10 min). Internal
+   testers must be App Store Connect users of the team (Users and Access →
+   invite them first); they install the *TestFlight* app and accept the invitation.
+3. Builds expire after 90 days: upload a new one before (only the shell; the
    site itself updates without it).
 
 The bundle id is `com.americanbestlife.translate` (`capacitor.config.ts`).

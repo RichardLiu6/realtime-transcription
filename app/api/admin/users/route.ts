@@ -61,10 +61,11 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PATCH: update user model
+// PATCH: update a user's model and/or AI-terms access (only the fields sent)
 export async function PATCH(request: NextRequest) {
   try {
-    const { email, model } = await request.json();
+    const body = await request.json();
+    const { email, model } = body;
 
     if (!email || typeof email !== "string") {
       return NextResponse.json({ error: "请指定邮箱" }, { status: 400 });
@@ -81,10 +82,19 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
     }
 
-    if (model) {
-      users[normalizedEmail].model = model;
-    } else {
-      delete users[normalizedEmail].model;
+    if ("model" in body) {
+      if (model) {
+        users[normalizedEmail].model = model;
+      } else {
+        delete users[normalizedEmail].model;
+      }
+    }
+    if ("aiTerms" in body) {
+      if (body.aiTerms === true) {
+        users[normalizedEmail].aiTerms = true;
+      } else {
+        delete users[normalizedEmail].aiTerms;
+      }
     }
 
     await updateAuthUsers(users);

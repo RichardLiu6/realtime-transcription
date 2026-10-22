@@ -27,6 +27,10 @@ interface NativeSttPlugin {
     // Sent when no audio has gone out for a few seconds (a phone call took
     // the microphone), so the engine doesn't close the session
     keepaliveMessage?: string;
+    // iOS: "broadcast" captures what the phone plays (meeting apps, WeChat)
+    // plus the microphone, through the ReplayKit extension; the system asks
+    // the user to start it
+    source?: "mic" | "broadcast";
   }): Promise<void>;
   // Stop the microphone, send end-of-audio (empty binary frame, or `text`),
   // and close once the engine closes (or after a few seconds)
@@ -37,19 +41,54 @@ interface NativeSttPlugin {
   addListener(event: "closed", fn: (e: { code: number; reason: string }) => void): Promise<PluginListener>;
   addListener(event: "error", fn: (e: { message: string }) => void): Promise<PluginListener>;
   addListener(event: "progress", fn: (e: { samples: number }) => void): Promise<PluginListener>;
+  // iOS floating captions (PiP; builds from 2026-10): native builds the
+  // captions from the engine's messages and translates them itself, since
+  // the page is suspended in the background. Older builds lack these.
+  pipConfigure?(options: PipConfig): Promise<{ supported: boolean }>;
+  pipStart?(): Promise<{ started: boolean }>;
+  pipStop?(): Promise<void>;
+  pipPrefs?(prefs: { fontSize: number; originalShare: number }): Promise<void>;
+  pipStats?(): Promise<Record<string, unknown>>;
+  addListener(event: "pip", fn: (e: { active: boolean }) => void): Promise<PluginListener>;
+}
+
+export interface PipConfig {
+  mode: string;
+  languageA: string[];
+  languageB: string;
+  // Multilingual: the one translation shown
+  displayLang: string;
+  terms: string[];
+  uiLocale: string;
+  translateUrl: string;
+  // The user's font size / original share
+  prefs: { fontSize: number; originalShare: number };
+  // Window texts: before the first sentence, browsing back, held
+  labels: { waiting: string; reviewing: string; held: string };
+  // Start PiP when the app leaves the screen while recording
+  autoStart: boolean;
 }
 
 interface CapacitorGlobal {
   isNativePlatform?: () => boolean;
+  getPlatform?: () => string;
   Plugins?: { NativeStt?: NativeSttPlugin };
 }
 
-// The plugin, when this page runs inside the mobile app
+// The plugin, when this page runs inside the mobile app. (iOS builds before
+// the SceneDelegate fix never registered it: those keep the web microphone.)
 export function nativeStt(): NativeSttPlugin | null {
   if (typeof window === "undefined") return null;
   const cap = (window as unknown as { Capacitor?: CapacitorGlobal }).Capacitor;
   if (!cap?.isNativePlatform?.()) return null;
   return cap.Plugins?.NativeStt ?? null;
+}
+
+// Capturing other apps' audio (ReplayKit broadcast) exists in the iOS app only
+export function broadcastAvailable(): boolean {
+  if (typeof window === "undefined") return false;
+  const cap = (window as unknown as { Capacitor?: CapacitorGlobal }).Capacitor;
+  return nativeStt() !== null && cap?.getPlatform?.() === "ios";
 }
 
 export function isNativeApp(): boolean {

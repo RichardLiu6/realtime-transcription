@@ -1,19 +1,16 @@
 "use client";
 
-import { ArrowDown, Check, ChevronsUpDown, X } from "lucide-react";
+import { ArrowDown, Check, ChevronsUpDown } from "lucide-react";
+import { LanguageSearchInput, NoLanguageMatch } from "@/components/LanguageSelect";
+import { languageMatches } from "@/lib/languageSearch";
+import LanguageSelect from "@/components/LanguageSelect";
+import ChipRemove from "@/components/sidebar/ChipRemove";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -41,6 +38,8 @@ export default function FromToLanguages({
   const t = useT();
   const langName = useLanguageName();
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const matches = SONIOX_LANGUAGES.filter((l) => languageMatches(l.code, query));
 
   const isAny = languageA.length === 1 && languageA[0] === "*";
 
@@ -86,7 +85,13 @@ export default function FromToLanguages({
           <label className="mb-1 block text-xs text-muted-foreground">
             {t(sourceOnly ? "spoken_languages" : "source_language")}
           </label>
-          <Popover open={open} onOpenChange={setOpen}>
+          <Popover
+            open={open}
+            onOpenChange={(o) => {
+              setOpen(o);
+              if (!o) setQuery("");
+            }}
+          >
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
@@ -107,12 +112,9 @@ export default function FromToLanguages({
                       >
                         {getLanguageName(code)}
                         {!disabled && (
-                          <X
-                            className="size-3 ml-0.5 cursor-pointer hover:text-destructive"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removeLanguage(code);
-                            }}
+                          <ChipRemove
+                            label={t("ph_remove_language", { name: getLanguageName(code) })}
+                            onRemove={() => removeLanguage(code)}
                           />
                         )}
                       </Badge>
@@ -123,29 +125,39 @@ export default function FromToLanguages({
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+              <LanguageSearchInput
+                value={query}
+                onChange={setQuery}
+                onEnter={() => matches[0] && toggleLanguage(matches[0].code)}
+              />
               <div className="max-h-64 overflow-y-auto">
-                {/* Any option */}
-                <button
-                  type="button"
-                  className={cn(
-                    "flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent cursor-pointer",
-                    isAny && "bg-accent"
-                  )}
-                  onClick={() => toggleLanguage("*")}
-                >
-                  <Check
-                    className={cn(
-                      "size-4 shrink-0",
-                      isAny ? "opacity-100" : "opacity-0"
-                    )}
-                  />
-                  {t("any_language")}
-                </button>
+                {/* Any option (not while searching) */}
+                {!query.trim() && (
+                  <>
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent cursor-pointer",
+                        isAny && "bg-accent"
+                      )}
+                      onClick={() => toggleLanguage("*")}
+                    >
+                      <Check
+                        className={cn(
+                          "size-4 shrink-0",
+                          isAny ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                      {t("any_language")}
+                    </button>
 
-                <div className="h-px bg-border" />
+                    <div className="h-px bg-border" />
+                  </>
+                )}
 
                 {/* Language list */}
-                {SONIOX_LANGUAGES.map((lang) => {
+                {matches.length === 0 && <NoLanguageMatch />}
+                {matches.map((lang) => {
                   const selected =
                     !isAny && languageA.includes(lang.code);
                   return (
@@ -183,22 +195,12 @@ export default function FromToLanguages({
               <label className="mb-1 block text-xs text-muted-foreground">
                 {t("target_language")}
               </label>
-              <Select
+              <LanguageSelect
                 value={languageB}
-                onValueChange={onLanguageBChange}
+                onChange={onLanguageBChange}
                 disabled={disabled}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SONIOX_LANGUAGES.map((lang) => (
-                    <SelectItem key={lang.code} value={lang.code}>
-                      {langName(lang.code)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                className="w-full"
+              />
             </div>
           </>
         )}

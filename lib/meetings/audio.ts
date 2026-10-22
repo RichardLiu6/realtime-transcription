@@ -12,7 +12,8 @@
 import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
-import { del, issueSignedToken, presignUrl } from "@vercel/blob";
+import { del, get, head, issueSignedToken, presignUrl, put } from "@vercel/blob";
+import { toAacM4a } from "./transcode";
 
 export type AudioMode = "blob" | "local";
 
@@ -64,14 +65,71 @@ export async function signedPlaybackUrl(pathname: string): Promise<string> {
   return presignedUrl;
 }
 
+// --- AAC copies for iPhones / Safari ---
+
+// Chrome records WebM, which iPhones and Safari fail to play; they get an
+// AAC copy next to it, made the first time one of them asks
+export function aacCopyPathname(pathname: string): string {
+  return pathname.replace(/\.webm$/, ".aac.m4a");
+}
+
+// One conversion per recording at a time (on this instance): concurrent
+// requests wait for the same one
+const converting = new Map<string, Promise<string>>();
+
+export class ConversionLimitError extends Error {}
+
+// `mayConvert` runs only when a copy has to be made (a per-user limit)
+export function ensureAacCopy(pathname: string, mayConvert: () => Promise<boolean>): Promise<string> {
+  const running = converting.get(pathname);
+  if (running) return running;
+  const job = makeAacCopy(pathname, mayConvert).finally(() => converting.delete(pathname));
+  converting.set(pathname, job);
+  return job;
+}
+
+async function makeAacCopy(pathname: string, mayConvert: () => Promise<boolean>): Promise<string> {
+  const copy = aacCopyPathname(pathname);
+  if (copy === pathname) return pathname;
+  const mode = audioMode();
+  if (mode === "blob") {
+    if (await head(copy).then(() => true, () => false)) return copy;
+    if (!(await mayConvert())) throw new ConversionLimitError("Conversion limit reached");
+    const original = await get(pathname, { access: "private", useCache: false });
+    if (!original || original.statusCode !== 200) throw new Error("Recording not found in storage");
+    if ((original.blob.size ?? 0) > MAX_RECORDING_BYTES) throw new Error("Recording too large to convert");
+    const input = new Uint8Array(await new Response(original.stream).arrayBuffer());
+    const started = Date.now();
+    const output = await toAacM4a(input);
+    await put(copy, Buffer.from(output), {
+      access: "private",
+      contentType: "audio/mp4",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+    });
+    console.log(`[audio] aac copy ${copy} in=${input.byteLength} out=${output.byteLength} ms=${Date.now() - started}`);
+    return copy;
+  }
+  if (mode === "local") {
+    const done = await fs.access(localPath(copy)).then(() => true, () => false);
+    if (!done && !(await mayConvert())) throw new ConversionLimitError("Conversion limit reached");
+    if (!done) await writeLocal(copy, await toAacM4a(await fs.readFile(localPath(pathname))));
+    return copy;
+  }
+  throw new Error("Recordings not configured");
+}
+
 // --- Deletion ---
 
 export async function deleteRecordingFiles(files: { pathname: string; url: string }[]): Promise<void> {
   if (files.length === 0) return;
   const mode = audioMode();
+  // With the AAC copies of WebM recordings (there or not)
+  const copies = files.map((f) => aacCopyPathname(f.pathname)).filter((p, i) => p !== files[i].pathname);
   if (mode === "blob") {
     await del(files.map((f) => f.url || f.pathname));
+    if (copies.length > 0) await del(copies).catch((error) => console.error("[audio] delete copies:", error));
   } else if (mode === "local") {
-    await Promise.all(files.map((f) => fs.rm(localPath(f.pathname), { force: true })));
+    await Promise.all([...files.map((f) => f.pathname), ...copies].map((p) => fs.rm(localPath(p), { force: true })));
   }
 }

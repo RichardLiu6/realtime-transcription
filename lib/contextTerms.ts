@@ -6,9 +6,21 @@ export function splitTermInput(text: string): string[] {
   return text.split(TERM_SEPARATORS).map((t) => t.trim()).filter(Boolean);
 }
 
-// Selected presets + custom terms, deduplicated, in order
-export function combineTerms(presetKeys: Iterable<string>, customTerms: string[]): string[] {
-  const presetTerms = Array.from(presetKeys).flatMap((key) => INDUSTRY_PRESETS[key]?.terms ?? []);
+// Selected presets (industry packs, the user's own packs as "u:<id>",
+// official packs as "o:<id>") + custom terms, deduplicated, in order
+export function combineTerms(
+  presetKeys: Iterable<string>,
+  customTerms: string[],
+  userPacks: { id: string; terms: string[] }[] = [],
+  officialPacks: { id: string; terms: string[] }[] = []
+): string[] {
+  const presetTerms = Array.from(presetKeys).flatMap((key) =>
+    key.startsWith("u:")
+      ? (userPacks.find((p) => `u:${p.id}` === key)?.terms ?? [])
+      : key.startsWith("o:")
+        ? (officialPacks.find((p) => `o:${p.id}` === key)?.terms ?? [])
+        : (INDUSTRY_PRESETS[key]?.terms ?? [])
+  );
   return [...new Set([...presetTerms, ...customTerms])];
 }
 
@@ -55,7 +67,9 @@ export const INDUSTRY_PRESETS: Record<string, IndustryPreset> = {
       "瓶子=Bottle", "瓶盖=Cap", "干燥剂=Desiccant", "铝箔封口=Induction Seal",
       "标签=Label", "外箱=Shipping Carton",
       // 生产工艺
-      "主生产记录=Master Manufacturing Record", "批生产记录=Batch Record",
+      "主生产记录=Master Manufacturing Record", "MMR",
+      "批生产记录=Batch Production Record", "BPR", "工单=Work Order",
+      "备料待产=Staging", "设备日志=Equipment Logbook", "清洁记录=Cleaning Log",
       "批号=Lot Number", "批次=Batch", "配料=Dispensing", "称量=Weighing",
       "投料=Charging", "混合=Blending", "制粒=Granulation", "干燥=Drying",
       "筛分=Sieving", "压片=Tableting", "包衣=Coating", "胶囊填充=Encapsulation",
@@ -67,7 +81,8 @@ export const INDUSTRY_PRESETS: Record<string, IndustryPreset> = {
       "制粒机=Granulator", "混合机=Blender", "包衣机=Coating Machine",
       "抛光机=Capsule Polisher", "数粒机=Counting Machine", "灌装机=Filling Machine",
       "封口机=Induction Sealer", "贴标机=Labeling Machine", "铝塑泡罩机=Blister Machine",
-      "送囊梳=Conveying Comb", "胶囊梳", "拨囊管", "Tamping Pin",
+      "金属检测机=Metal Detector", "测试块=Test Piece", "检重秤=Checkweigher",
+      "空压机=Air Compressor", "送囊梳=Conveying Comb", "胶囊梳", "拨囊管", "Tamping Pin",
       // 洁净车间
       "洁净车间=Clean Room", "风淋室=Air Shower", "传递窗=Pass Box",
       "层流罩=Laminar Flow Hood", "压差=Differential Pressure", "尘埃粒子=Particle Count",
@@ -79,7 +94,7 @@ export const INDUSTRY_PRESETS: Record<string, IndustryPreset> = {
       "微生物限度=Microbial Limits", "重金属检测=Heavy Metals Testing",
       "崩解时限=Disintegration Time", "溶出度=Dissolution", "第三方检测=Third-party Testing",
       "偏差=Deviation", "纠正预防措施=CAPA", "不合格品=Nonconforming Product",
-      "标准操作规程=SOP", "验证=Validation", "客户投诉=Customer Complaint",
+      "标准操作规程=SOP", "验证=Validation", "校准=Calibration", "虫害控制=Pest Control", "客户投诉=Customer Complaint",
       "召回=Recall", "审核=Audit", "飞行检查=Unannounced Audit",
       // 法规 / 认证
       "GMP", "cGMP", "FDA", "NSF", "USP", "HACCP", "21 CFR 111", "DSHEA", "FSMA", "GRAS",

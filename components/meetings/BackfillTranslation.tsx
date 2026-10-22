@@ -1,8 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { AddLanguageButton } from "@/components/LanguageSelect";
+import { useOfficialPacks } from "@/lib/useOfficialPacks";
+import { useTermPacks } from "@/lib/useTermPacks";
 import { Languages, Loader2, X } from "lucide-react";
-import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import { getLocale, useLanguageName, useT } from "@/lib/i18n";
 import { combineTerms } from "@/lib/contextTerms";
 import type { SavedEntry } from "@/lib/meetings/types";
@@ -20,13 +22,13 @@ const CONTEXT_SENTENCES = 3;
 const COMMON = ["zh", "en", "es", "vi"];
 
 // The terms selected on the recording page (same browser)
-function storedTerms(): string[] {
+function storedTerms(packs: { id: string; terms: string[] }[], official: { id: string; terms: string[] }[]): string[] {
   try {
     const read = (key: string): string[] => {
       const v = JSON.parse(localStorage.getItem(key) ?? "[]");
       return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
     };
-    return combineTerms(read("termPresets"), read("customTerms"));
+    return combineTerms(read("termPresets"), read("customTerms"), packs, official);
   } catch {
     return [];
   }
@@ -47,6 +49,8 @@ interface Props {
 export default function BackfillTranslation({ meetingId, entries, existing, onTranslated }: Props) {
   const t = useT();
   const langName = useLanguageName();
+  const termPacks = useTermPacks();
+  const officialPacks = useOfficialPacks();
   const [open, setOpen] = useState(false);
   const [langs, setLangs] = useState<string[]>([]);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
@@ -71,7 +75,7 @@ export default function BackfillTranslation({ meetingId, entries, existing, onTr
     stopRef.current = false;
     setResult(null);
     setProgress({ done: 0, total: work.length });
-    const terms = storedTerms();
+    const terms = storedTerms(termPacks.packs, officialPacks);
     const order = new Map(entries.map((e, i) => [e.id, i]));
     const pending: SavedEntry[] = [];
     let done = 0;
@@ -188,20 +192,14 @@ export default function BackfillTranslation({ meetingId, entries, existing, onTr
             {langName(l)}
           </button>
         ))}
-        <select
-          aria-label={t("meeting_translate_add")}
-          value=""
+        <AddLanguageButton
+          exclude={offered}
+          onAdd={toggle}
           disabled={running}
-          onChange={(ev) => ev.target.value && toggle(ev.target.value)}
-          className="h-7 rounded-full border border-border bg-background px-2 text-xs text-gray-700"
+          className="h-7 rounded-full border border-border bg-background px-2 text-xs text-gray-700 hover:bg-muted disabled:opacity-60"
         >
-          <option value="">+ {t("meeting_translate_add")}</option>
-          {SONIOX_LANGUAGES.filter((x) => !offered.includes(x.code)).map((x) => (
-            <option key={x.code} value={x.code}>
-              {langName(x.code)}
-            </option>
-          ))}
-        </select>
+          + {t("meeting_translate_add")}
+        </AddLanguageButton>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {running ? (

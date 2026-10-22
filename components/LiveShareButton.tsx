@@ -18,19 +18,6 @@ interface LiveShareButtonProps {
 // and shows its link (copy / stop) while it runs
 export default function LiveShareButton({ sharing, starting, failing, viewerUrl, onStart, onStop }: LiveShareButtonProps) {
   const t = useT();
-  const [copied, setCopied] = useState(false);
-
-  const copy = async () => {
-    if (!viewerUrl) return;
-    try {
-      await navigator.clipboard.writeText(viewerUrl);
-    } catch {
-      // Clipboard blocked: the link stays selectable in the field
-      return;
-    }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
   return (
     <Popover>
@@ -54,6 +41,32 @@ export default function LiveShareButton({ sharing, starting, failing, viewerUrl,
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 max-w-[calc(100vw-1.5rem)] space-y-3 p-3" data-live-share>
+        <LiveSharePanel sharing={sharing} starting={starting} failing={failing} viewerUrl={viewerUrl} onStart={onStart} onStop={onStop} />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// What the button's popover shows (also the phone layout's 更多 sheet):
+// start sharing, or the link with copy / stop
+export function LiveSharePanel({ sharing, starting, failing, viewerUrl, onStart, onStop }: LiveShareButtonProps) {
+  const t = useT();
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    if (!viewerUrl) return;
+    try {
+      await navigator.clipboard.writeText(viewerUrl);
+    } catch {
+      // Clipboard blocked: the link stays selectable in the field
+      return;
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="space-y-3">
         <p className="text-sm font-semibold">{t("share_captions")}</p>
         <p className="text-xs text-gray-600">{t("share_hint")}</p>
         {sharing && viewerUrl ? (
@@ -108,7 +121,6 @@ export default function LiveShareButton({ sharing, starting, failing, viewerUrl,
             </button>
           </>
         )}
-      </PopoverContent>
-    </Popover>
+      </div>
   );
 }

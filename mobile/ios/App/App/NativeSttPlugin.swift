@@ -1,6 +1,8 @@
 import Foundation
 import AVFoundation
 import Capacitor
+import ReplayKit
+import UIKit
 
 // Native speech-engine connection for the app (JS side: lib/native/stt.ts
 // in the web app). The microphone (AVAudioEngine) and the WebSocket to the
@@ -8,6 +10,16 @@ import Capacitor
 // locked or another app in front (Info.plist: UIBackgroundModes audio). The
 // page gets every engine message numbered; messages that arrive while the
 // page is suspended are kept and handed over by drain().
+//
+// source "broadcast": the ReplayKit extension (Broadcast/SampleHandler) does
+// the capturing and the engine connection instead — what the phone plays plus
+// the microphone, across apps — and passes the engine's messages through the
+// App Group (BroadcastShared); this plugin shows the system picker and feeds
+// those messages into the same numbered stream.
+//
+// Floating captions (CaptionPip.swift): pipConfigure at the start of a
+// recording builds captions from the same messages; PiP shows them when the
+// page asks (pipStart) or the app leaves the screen.
 @objc(NativeSttPlugin)
 public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "NativeSttPlugin"
@@ -17,6 +29,11 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "finish", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "drain", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pipConfigure", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pipStart", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pipStop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pipPrefs", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pipStats", returnType: CAPPluginReturnPromise),
     ]
 
     // Messages kept for drain() (a long meeting sends a few per second)
@@ -30,7 +47,17 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
     private let queue = DispatchQueue(label: "com.americanbestlife.translate.NativeStt")
     private var session: URLSession?
     private var task: URLSessionWebSocketTask?
-    private let engine = AVAudioEngine()
+    // Replaced on every restart: after a route change (headphones, Bluetooth,
+    // another app's audio) the old engine's input format is stale, and
+    // installing a tap with it throws (an uncatchable NSException)
+    private var engine = AVAudioEngine()
+    private var restartWork: DispatchWorkItem?
+    // Broadcast mode: the extension records, so this app has no active audio
+    // session — iOS then refuses PiP and suspends the app in the background.
+    // Silence played while broadcasting (mixed, so other apps' sound — the
+    // video being watched — is untouched) keeps both working
+    private var silence: AVAudioEngine?
+    private var restartTries = 0
     private var tapInstalled = false
     private var pending: [Int16] = []
     private var frameSamples = 1600
@@ -45,6 +72,22 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
     private var finishing = false
     private var timer: DispatchSourceTimer?
     private var finishWork: DispatchWorkItem?
+    // Broadcast mode
+    private var broadcastId: String?
+    private var broadcastStart: CAPPluginCall?
+    private var broadcastDeadline = Date()
+    private var broadcastPoll: DispatchSourceTimer?
+    private var broadcastPollTicks = 0
+    private var readOffset: UInt64 = 0
+    private var picker: RPSystemBroadcastPickerView?
+    // Ask the user to start the broadcast for this long
+    private static let broadcastStartTimeout: TimeInterval = 55
+    // Floating captions: the model on this queue, the window on the main thread
+    private var captions: CaptionModel?
+    private var pip: CaptionPip?
+    private var pipGeneration = 0
+    // The last recording's translation stats, for feedback
+    private var lastPipStats: [String: Any] = [:]
 
     override public func load() {
         let center = NotificationCenter.default
@@ -53,7 +96,7 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
         center.addObserver(self, selector: #selector(audioChanged(_:)),
                            name: AVAudioSession.routeChangeNotification, object: nil)
         center.addObserver(self, selector: #selector(audioChanged(_:)),
-                           name: .AVAudioEngineConfigurationChange, object: engine)
+                           name: .AVAudioEngineConfigurationChange, object: nil)
         center.addObserver(self, selector: #selector(audioChanged(_:)),
                            name: AVAudioSession.mediaServicesWereResetNotification, object: nil)
     }
@@ -70,6 +113,14 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
         let frameMs = call.getDouble("frameMs") ?? 100
         let processing = call.getBool("audioProcessing") ?? false
         let keepalive = call.getString("keepaliveMessage")
+
+        if call.getString("source") == "broadcast" {
+            let config = BroadcastShared.Config(id: UUID().uuidString, url: urlString, openMessage: openMessage,
+                                                keepaliveMessage: keepalive, sampleRate: sampleRate,
+                                                frameMs: frameMs, createdAt: Date())
+            queue.async { self.startBroadcast(call, config) }
+            return
+        }
 
         requestMicrophone { granted in
             self.queue.async {
@@ -106,6 +157,8 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
                             return
                         }
                         do {
+                            // A new engine per recording (the last one may predate a route change)
+                            self.engine = AVAudioEngine()
                             try self.startAudio()
                         } catch {
                             task.cancel(with: .normalClosure, reason: nil)
@@ -127,6 +180,20 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func finish(_ call: CAPPluginCall) {
         let text = call.getString("text")
         queue.async {
+            if let id = self.broadcastId {
+                // The extension sends end-of-audio and ends the broadcast;
+                // its "closed" state ends the session here
+                if self.running && !self.finishing {
+                    self.finishing = true
+                    BroadcastShared.write(BroadcastShared.Command(id: id, cmd: "finish", text: text), to: "command.json")
+                    self.queue.asyncAfter(deadline: .now() + 6) {
+                        guard self.broadcastId == id else { return }
+                        self.broadcastClosed(code: 1000, reason: "")
+                    }
+                }
+                call.resolve()
+                return
+            }
             guard self.running, !self.finishing, let task = self.task else {
                 call.resolve()
                 return
@@ -157,6 +224,13 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func cancel(_ call: CAPPluginCall) {
         queue.async {
+            if let id = self.broadcastId {
+                BroadcastShared.write(BroadcastShared.Command(id: id, cmd: "cancel", text: nil), to: "command.json")
+                self.broadcastStart?.reject("Cancelled")
+                self.teardownBroadcast()
+                call.resolve()
+                return
+            }
             self.task?.cancel(with: .normalClosure, reason: nil)
             self.teardown()
             call.resolve()
@@ -170,6 +244,212 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
                 .filter { $0.seq > after }
                 .map { ["seq": $0.seq, "data": $0.data] as [String: Any] }
             call.resolve(["messages": messages])
+        }
+    }
+
+    // MARK: - Floating captions
+
+    @objc func pipConfigure(_ call: CAPPluginCall) {
+        guard CaptionPip.supported, let config = CaptionConfig(call.options) else {
+            call.resolve(["supported": false])
+            return
+        }
+        DispatchQueue.main.async {
+            guard let view = self.bridge?.viewController?.view else {
+                call.resolve(["supported": false])
+                return
+            }
+            self.pipGeneration += 1
+            let pip = self.pip ?? CaptionPip()
+            self.pip = pip
+            pip.onActive = { [weak self] active in
+                guard let self = self else { return }
+                self.queue.async { self.captions?.showing = active }
+                self.notifyListeners("pip", data: ["active": active])
+            }
+            pip.attach(to: view)
+            pip.reset(config)
+            let model = CaptionModel(config: config, queue: self.queue)
+            model.onChange = { [weak pip] lines in DispatchQueue.main.async { pip?.update(lines) } }
+            let showing = pip.isActive
+            self.queue.async {
+                self.captions = model
+                model.showing = showing
+            }
+            // The login cookie for /api/translate (the web view keeps its own cookies)
+            let host = config.translateURL.host ?? ""
+            self.bridge?.webView?.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+                let cookie = cookies.first { c in
+                    let domain = c.domain.hasPrefix(".") ? String(c.domain.dropFirst()) : c.domain
+                    return c.name == "auth_token" && (host == domain || host.hasSuffix("." + domain))
+                }
+                self.queue.async { model.cookie = cookie.map { "\($0.name)=\($0.value)" } }
+            }
+            call.resolve(["supported": true])
+        }
+    }
+
+    @objc func pipStart(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let pip = self.pip else {
+                call.resolve(["started": false])
+                return
+            }
+            pip.start { started in call.resolve(["started": started]) }
+        }
+    }
+
+    // Font size / original share changed on the page: applies at once
+    @objc func pipPrefs(_ call: CAPPluginCall) {
+        let prefs = CaptionPrefs(call.options)
+        DispatchQueue.main.async {
+            self.pip?.setPrefs(prefs)
+            call.resolve()
+        }
+    }
+
+    // For feedback: how the floating captions' translation went
+    @objc func pipStats(_ call: CAPPluginCall) {
+        queue.async {
+            call.resolve(self.captions?.stats ?? self.lastPipStats)
+        }
+    }
+
+    @objc func pipStop(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.pip?.stop()
+            call.resolve()
+        }
+    }
+
+    // The recording ended: no automatic PiP; close the window after the last
+    // sentence has been on screen a moment (unless a new recording started)
+    private func endCaptions() {
+        if let stats = captions?.stats { lastPipStats = stats }
+        captions = nil
+        DispatchQueue.main.async {
+            self.pip?.setAutoStart(false)
+            let generation = self.pipGeneration
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                if self.pipGeneration == generation { self.pip?.stop() }
+            }
+        }
+    }
+
+    // MARK: - Broadcast (ReplayKit extension)
+
+    private func startBroadcast(_ call: CAPPluginCall, _ config: BroadcastShared.Config) {
+        guard !running, task == nil, broadcastId == nil else {
+            call.reject("Already recording")
+            return
+        }
+        guard let messagesURL = BroadcastShared.url("messages.txt") else {
+            call.reject("App Group unavailable")
+            return
+        }
+        seq = 0
+        kept = []
+        samplesSent = 0
+        finishing = false
+        readOffset = 0
+        BroadcastShared.remove("state.json")
+        BroadcastShared.remove("command.json")
+        try? Data().write(to: messagesURL, options: .atomic)
+        BroadcastShared.write(config, to: "config.json")
+        broadcastId = config.id
+        broadcastStart = call
+        broadcastDeadline = Date().addingTimeInterval(NativeSttPlugin.broadcastStartTimeout)
+
+        // The system picker ("Start Broadcast"); only its own button starts it
+        DispatchQueue.main.async {
+            guard let view = self.bridge?.viewController?.view else { return }
+            self.picker?.removeFromSuperview()
+            let picker = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+            picker.preferredExtension = BroadcastShared.extensionBundleId
+            picker.showsMicrophoneButton = true
+            picker.alpha = 0.01
+            view.addSubview(picker)
+            self.picker = picker
+            for case let button as UIButton in picker.subviews {
+                button.sendActions(for: .touchUpInside)
+            }
+        }
+
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 0.25, repeating: 0.25)
+        timer.setEventHandler { [weak self] in self?.pollBroadcast() }
+        timer.resume()
+        broadcastPoll = timer
+    }
+
+    private func pollBroadcast() {
+        guard let id = broadcastId else { return }
+        let state = BroadcastShared.read(BroadcastShared.State.self, from: "state.json")
+        guard let state = state, state.id == id else {
+            if let call = broadcastStart, Date() > broadcastDeadline {
+                call.reject("没有开始直播，请重试并点“开始直播”。The broadcast was not started.")
+                teardownBroadcast()
+            }
+            return
+        }
+        samplesSent = state.samples
+        if let call = broadcastStart, state.status == "started" {
+            broadcastStart = nil
+            running = true
+            startSilence()
+            call.resolve()
+        }
+        readBroadcastMessages()
+        broadcastPollTicks += 1
+        if running, broadcastPollTicks % 4 == 0 {
+            notifyListeners("progress", data: ["samples": samplesSent])
+        }
+        if state.status == "closed" {
+            if let call = broadcastStart {
+                call.reject(state.reason?.isEmpty == false ? state.reason! : "Broadcast ended")
+                teardownBroadcast()
+            } else {
+                broadcastClosed(code: state.code ?? 1000, reason: state.reason ?? "")
+            }
+        }
+    }
+
+    // Complete lines appended since the last read (also after being suspended)
+    private func readBroadcastMessages() {
+        guard let url = BroadcastShared.url("messages.txt"),
+              let handle = try? FileHandle(forReadingFrom: url) else { return }
+        defer { try? handle.close() }
+        guard (try? handle.seek(toOffset: readOffset)) != nil,
+              let data = try? handle.readToEnd(), !data.isEmpty,
+              let end = data.lastIndex(of: 0x0A) else { return }
+        let complete = data[data.startIndex...end]
+        readOffset += UInt64(complete.count)
+        for line in complete.split(separator: 0x0A) {
+            if let array = try? JSONSerialization.jsonObject(with: Data(line)) as? [String], let text = array.first {
+                deliver(text)
+            }
+        }
+    }
+
+    private func broadcastClosed(code: Int, reason: String) {
+        guard broadcastId != nil else { return }
+        readBroadcastMessages()
+        teardownBroadcast()
+        notifyListeners("closed", data: ["code": code, "reason": reason])
+    }
+
+    private func teardownBroadcast() {
+        endCaptions()
+        stopSilence()
+        broadcastPoll?.cancel()
+        broadcastPoll = nil
+        broadcastId = nil
+        broadcastStart = nil
+        running = false
+        finishing = false
+        DispatchQueue.main.async {
+            self.picker?.removeFromSuperview()
+            self.picker = nil
         }
     }
 
@@ -206,6 +486,7 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
         kept.append((seq: seq, data: text))
         if kept.count > NativeSttPlugin.maxKept { kept.removeFirst(kept.count - NativeSttPlugin.maxKept) }
         notifyListeners("message", data: ["seq": seq, "data": text])
+        captions?.ingest(text)
     }
 
     private func closed(code: Int, reason: String) {
@@ -216,6 +497,10 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // Stop everything without telling the page
     private func teardown() {
+        endCaptions()
+        restartWork?.cancel()
+        restartWork = nil
+        restartTries = 0
         stopAudio()
         timer?.cancel()
         timer = nil
@@ -265,19 +550,26 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
         try audioSession.setActive(true)
 
         let input = engine.inputNode
-        let inFormat = input.outputFormat(forBus: 0)
-        guard inFormat.sampleRate > 0, inFormat.channelCount > 0 else {
+        // The hardware's format right now (no input mid route change: retried)
+        let hwFormat = input.inputFormat(forBus: 0)
+        guard hwFormat.sampleRate > 0, hwFormat.channelCount > 0 else {
             throw NSError(domain: "NativeStt", code: 1, userInfo: [NSLocalizedDescriptionKey: "No microphone input"])
         }
         guard let outFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: targetRate,
-                                            channels: 1, interleaved: true),
-              let converter = AVAudioConverter(from: inFormat, to: outFormat) else {
+                                            channels: 1, interleaved: true) else {
             throw NSError(domain: "NativeStt", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unsupported audio format"])
         }
         if tapInstalled { input.removeTap(onBus: 0) }
-        // Runs on an audio thread; the converter is only used there
-        input.installTap(onBus: 0, bufferSize: 4096, format: inFormat) { [weak self] buffer, _ in
+        // format nil: the node's own format, which can't mismatch the
+        // hardware; the converter follows whatever the buffers carry. Runs
+        // on an audio thread; the converter is only used there
+        var converter: AVAudioConverter?
+        input.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buffer, _ in
             guard let self = self else { return }
+            if converter?.inputFormat != buffer.format {
+                converter = AVAudioConverter(from: buffer.format, to: outFormat)
+            }
+            guard let converter = converter else { return }
             let ratio = outFormat.sampleRate / buffer.format.sampleRate
             let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 32
             guard let out = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: capacity) else { return }
@@ -340,18 +632,68 @@ public class NativeSttPlugin: CAPPlugin, CAPBridgedPlugin {
     // the input format may have changed, so set the microphone up again
     @objc private func audioChanged(_ note: Notification) {
         restartAudio()
+        queue.async {
+            if self.broadcastId != nil, self.running, self.silence?.isRunning != true { self.startSilence() }
+        }
     }
 
-    private func restartAudio() {
-        queue.async {
-            guard self.running, !self.finishing else { return }
-            if self.engine.isRunning && self.tapInstalled { return }
-            self.stopAudio()
-            do {
-                try self.startAudio()
-            } catch {
-                self.notifyListeners("error", data: ["message": "Microphone: \(error.localizedDescription)"])
+    private func startSilence() {
+        stopSilence()
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true)
+            let engine = AVAudioEngine()
+            let rate = engine.outputNode.outputFormat(forBus: 0).sampleRate
+            guard let format = AVAudioFormat(standardFormatWithSampleRate: rate > 0 ? rate : 48000, channels: 1) else { return }
+            // Zeros, not flagged as silence: the output must really render
+            let source = AVAudioSourceNode { _, _, _, buffers in
+                for buffer in UnsafeMutableAudioBufferListPointer(buffers) {
+                    if let data = buffer.mData { memset(data, 0, Int(buffer.mDataByteSize)) }
+                }
+                return noErr
             }
+            engine.attach(source)
+            engine.connect(source, to: engine.mainMixerNode, format: format)
+            try engine.start()
+            silence = engine
+        } catch {
+            NSLog("[broadcast] silence failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func stopSilence() {
+        guard let engine = silence else { return }
+        silence = nil
+        engine.stop()
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    // Route changes come in bursts: one restart after they settle, on a new
+    // engine; a few retries while the new route has no input yet
+    private func restartAudio(after delay: TimeInterval = 0.3) {
+        queue.async {
+            self.restartWork?.cancel()
+            let work = DispatchWorkItem {
+                guard self.running, !self.finishing, self.broadcastId == nil else { return }
+                if self.engine.isRunning && self.tapInstalled { return }
+                self.stopAudio()
+                self.engine = AVAudioEngine()
+                do {
+                    try self.startAudio()
+                    self.restartTries = 0
+                } catch {
+                    self.restartTries += 1
+                    if self.restartTries < 5 {
+                        self.restartAudio(after: 1)
+                    } else {
+                        self.restartTries = 0
+                        self.notifyListeners("error", data: ["message": "Microphone: \(error.localizedDescription)"])
+                    }
+                }
+            }
+            self.restartWork = work
+            self.queue.asyncAfter(deadline: .now() + delay, execute: work)
         }
     }
 }

@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useOfficialPacks } from "@/lib/useOfficialPacks";
+import { useAutoStop } from "@/hooks/useAutoStop";
+import AutoStopNotice from "@/components/AutoStopNotice";
 import { useSonioxTranscription, defaultSpeakerLabel } from "@/hooks/useSonioxTranscription";
 import { useSpeakerManager, speakerDisplayName } from "@/hooks/useSpeakerManager";
 import { useLiveShare } from "@/hooks/useLiveShare";
@@ -9,17 +12,19 @@ import { useMeetingRecorder } from "@/hooks/useMeetingRecorder";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
 import { useStoredState } from "@/lib/useStoredState";
 import { combineTerms, INDUSTRY_PRESETS } from "@/lib/contextTerms";
-import type { SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
+import { useTermPacks } from "@/lib/useTermPacks";
+import type { CaptureSource, SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
+import { broadcastAvailable } from "@/lib/native/stt";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { t } from "@/lib/i18n";
-import Sidebar from "@/components/Sidebar";
+import Sidebar, { isSidebarShortcut } from "@/components/Sidebar";
 import StatusBar from "@/components/StatusBar";
 import TranscriptPanel from "@/components/TranscriptPanel";
 import PresentationPanel from "@/components/PresentationPanel";
 import PresentationMode, { usePresentationMode } from "@/components/PresentationMode";
 import LiveShareButton from "@/components/LiveShareButton";
 import MeetingSaveControls from "@/components/MeetingSaveControls";
-import MobileBottom from "@/components/mobile/MobileBottom";
+import PhoneChrome from "@/components/phone/PhoneChrome";
 import DesktopTopBar from "@/components/desktop/DesktopTopBar";
 import DesktopFloatingBar from "@/components/desktop/DesktopFloatingBar";
 
@@ -29,9 +34,9 @@ const AUDIO_PROCESSING_KEY = "audioProcessing";
 
 function readAudioProcessing(): boolean {
   try {
-    return localStorage.getItem(AUDIO_PROCESSING_KEY) === "on";
+    return localStorage.getItem(AUDIO_PROCESSING_KEY) !== "off";
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -44,6 +49,29 @@ function subscribeAudioProcessing(onChange: () => void) {
     window.removeEventListener("storage", onChange);
   };
 }
+
+// Auto stop after minutes without speech: on unless switched off
+const AUTO_STOP_KEY = "autoStop";
+
+function readAutoStop(): boolean {
+  try {
+    return localStorage.getItem(AUTO_STOP_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+function subscribeAutoStop(onChange: () => void) {
+  window.addEventListener(AUTO_STOP_KEY, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(AUTO_STOP_KEY, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+const noSubscribe = () => () => {};
+const isCaptureSource = (v: unknown): v is CaptureSource => v === "mic" || v === "system";
 
 // Meeting settings, remembered across reloads (useStoredState)
 const DEFAULT_LANGUAGE_A = ["*"];
@@ -69,8 +97,13 @@ export default function Home() {
   // Terms survive a reload too (stored as arrays; the panel works with a Set)
   const [presetKeys, setPresetKeys] = useStoredState("termPresets", NO_TERMS, isTermList);
   const [customTerms, setCustomTerms] = useStoredState("customTerms", NO_TERMS, isTermList);
+  // The user's own term packs (saved AI suggestions)
+  const termPacks = useTermPacks();
+  const officialPacks = useOfficialPacks();
   const selectedPresets = useMemo(
-    () => new Set(presetKeys.filter((k) => k in INDUSTRY_PRESETS)),
+    // Industry packs, the user's own packs ("u:<id>") and official ones
+    // ("o:<id>"); a deleted or disabled pack is skipped by combineTerms
+    () => new Set(presetKeys.filter((k) => k in INDUSTRY_PRESETS || k.startsWith("u:") || k.startsWith("o:"))),
     [presetKeys]
   );
   const setSelectedPresets = useCallback(
@@ -88,13 +121,38 @@ export default function Home() {
   const [r2t2Enabled, setR2t2Enabled] = useState(false);
   const [translationEngine, setTranslationEngine] = useState<TranslationEngine>("llm");
   const [t3poEnabled, setT3poEnabled] = useState(false);
-  // Browser noise suppression etc. Off by default: raw audio transcribes
-  // better. Stored in localStorage; false during server render.
+  // Browser noise suppression etc. On by default (owner's choice,
+  // 2026-10-12); switching it off gives raw audio. Stored in localStorage.
   const audioProcessing = useSyncExternalStore(
     subscribeAudioProcessing,
     readAudioProcessing,
-    () => false
+    () => true
   );
+
+  const autoStop = useSyncExternalStore(subscribeAutoStop, readAutoStop, () => true);
+
+  // iOS app: transcribe what the phone plays (Zoom, WeChat…) + the mic
+  const canCaptureSystem = useSyncExternalStore(noSubscribe, broadcastAvailable, () => false);
+  const [captureSource, setCaptureSource] = useStoredState<CaptureSource>("captureSource", "mic", isCaptureSource);
+
+  // Sidebar layout: the sidebar can be collapsed (the floating toolbar then
+  // keeps record / export / terms at hand); remembered per browser
+  const [sidebarCollapsed, setSidebarCollapsed] = useStoredState<boolean>(
+    "sidebarCollapsed",
+    false,
+    (v): v is boolean => typeof v === "boolean"
+  );
+  const toggleSidebar = useCallback(() => setSidebarCollapsed(!sidebarCollapsed), [sidebarCollapsed, setSidebarCollapsed]);
+  useEffect(() => {
+    if (desktopLayout !== "sidebar") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!isSidebarShortcut(e)) return;
+      e.preventDefault();
+      toggleSidebar();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [desktopLayout, toggleSidebar]);
 
   useEffect(() => {
     const saved = localStorage.getItem("desktopLayout");
@@ -144,6 +202,15 @@ export default function Home() {
     }
   }, []);
 
+  const handleAutoStopChange = useCallback((on: boolean) => {
+    try {
+      localStorage.setItem(AUTO_STOP_KEY, on ? "on" : "off");
+    } catch {
+      // storage unavailable: the toggle just won't stick
+    }
+    window.dispatchEvent(new Event(AUTO_STOP_KEY));
+  }, []);
+
   const handleAudioProcessingChange = useCallback((on: boolean) => {
     try {
       localStorage.setItem(AUDIO_PROCESSING_KEY, on ? "on" : "off");
@@ -174,10 +241,16 @@ export default function Home() {
     getTranscriptTimeMs,
     start,
     stop,
+    paused,
+    canPause,
+    pause,
+    resume,
     clearEntries,
     reassignSpeaker,
     mergeSpeaker,
   } = useSonioxTranscription();
+  // Pause / resume (mute yourself) — the same props for every layout
+  const pauseProps = canPause ? { paused, onPause: pause, onResume: resume } : {};
 
   const { speakers, registerSpeaker, renameSpeaker, removeSpeaker, clearSpeakers } =
     useSpeakerManager();
@@ -196,12 +269,13 @@ export default function Home() {
   const handleStart = useCallback(() => {
     // From the stored selection itself, so it doesn't depend on the terms
     // panel being mounted
-    const terms = combineTerms(selectedPresets, customTerms);
+    const terms = combineTerms(selectedPresets, customTerms, termPacks.packs, officialPacks);
     // Stopping and starting again continues the same transcript; only
     // 新会议 (handleNewMeeting) clears it
     start({
       provider: sttProvider === "r2t2" && r2t2Enabled ? "r2t2" : "soniox",
       audioProcessing,
+      captureSource: canCaptureSystem ? captureSource : "mic",
       translationEngine: translationEngine === "t3po" && !t3poEnabled ? "llm" : translationEngine,
       languageA,
       languageB,
@@ -214,11 +288,15 @@ export default function Home() {
     languageB,
     selectedPresets,
     customTerms,
+    termPacks.packs,
+    officialPacks,
     translationMode,
     targetLangs,
     sttProvider,
     r2t2Enabled,
     audioProcessing,
+    canCaptureSystem,
+    captureSource,
     translationEngine,
     t3poEnabled,
     start,
@@ -227,6 +305,18 @@ export default function Home() {
   const handleStop = useCallback(() => {
     stop();
   }, [stop]);
+
+  // Auto stop after AUTO_STOP_MIN minutes without new text; afterwards a
+  // reminder when someone speaks (browser only)
+  const lastEntry = entries[entries.length - 1];
+  const autoStopper = useAutoStop({
+    enabled: autoStop,
+    recording: recordingState === "recording",
+    paused,
+    activity: `${entries.length}|${lastEntry?.originalText.length ?? 0}|${currentInterim}`,
+    canListen: canPause,
+    onAutoStop: stop,
+  });
 
   // Live caption sharing: multilingual mode (viewers pick from its
   // columns) and transcribe only (the original alone). Leaving those modes
@@ -270,6 +360,7 @@ export default function Home() {
     enabled: archiveOn,
     mode: autosave.recordingsMode,
     getTranscriptTimeMs,
+    paused,
   });
 
   // Projector view of the same state (button in the status bar, or F);
@@ -377,6 +468,17 @@ export default function Home() {
     [speakers, mergeSpeaker, removeSpeaker, renameSpeaker]
   );
 
+  // 会议设置 on the phone changes the same stored settings
+  const meetingSetters = useMemo(
+    () => ({
+      setMode: handleTranslationModeChange,
+      setLanguageA: handleLanguageAChange,
+      setLanguageB: handleLanguageBChange,
+      setTargetLangs: handleTargetLangsChange,
+    }),
+    [handleTranslationModeChange, handleLanguageAChange, handleLanguageBChange, handleTargetLangsChange]
+  );
+
   const sharedProps = {
     translationMode,
     onTranslationModeChange: handleTranslationModeChange,
@@ -398,6 +500,7 @@ export default function Home() {
     elapsedSeconds,
     onStart: handleStart,
     onStop: handleStop,
+    ...pauseProps,
     audioAnalyser,
     entries,
     onExport: handleExport,
@@ -407,19 +510,22 @@ export default function Home() {
 
   return (
     <TooltipProvider delayDuration={300}>
-    <div className="flex h-dvh overflow-hidden">
+    <div className="safe-top safe-x flex h-dvh overflow-hidden">
       {/* Desktop sidebar (only in sidebar layout) */}
-      {desktopLayout === "sidebar" && (
+      {desktopLayout === "sidebar" && !sidebarCollapsed && (
         <div className="hidden lg:block">
-          <Sidebar {...sharedProps} />
+          <Sidebar {...sharedProps} onCollapse={toggleSidebar} />
         </div>
       )}
 
       {/* Main content */}
       <main className="flex flex-1 flex-col min-w-0">
+        {/* Desktop status bar; the phone layout has its own (PhoneChrome) */}
+        <div className="shrink-0 max-lg:hidden">
         <StatusBar
           recordingState={recordingState}
           elapsedSeconds={elapsedSeconds}
+          paused={paused}
           error={error}
           desktopLayout={desktopLayout}
           onDesktopLayoutChange={handleDesktopLayoutChange}
@@ -428,10 +534,14 @@ export default function Home() {
           r2t2Enabled={r2t2Enabled}
           audioProcessing={audioProcessing}
           onAudioProcessingChange={handleAudioProcessingChange}
+          autoStop={autoStop}
+          onAutoStopChange={handleAutoStopChange}
+          {...(canCaptureSystem ? { captureSource, onCaptureSourceChange: setCaptureSource } : {})}
           translationEngine={translationEngine}
           onTranslationEngineChange={handleTranslationEngineChange}
           t3poEnabled={t3poEnabled}
           onPresent={presentation.enter}
+          {...(desktopLayout === "sidebar" && sidebarCollapsed ? { onExpandSidebar: toggleSidebar } : {})}
           meetingsLink={autosave.available}
           saveControls={
             autosave.available ? (
@@ -461,6 +571,7 @@ export default function Home() {
             ) : undefined
           }
         />
+        </div>
 
         {/* Desktop top bar (only in topbar layout) */}
         {desktopLayout === "topbar" && (
@@ -469,46 +580,113 @@ export default function Home() {
           </div>
         )}
 
-        {translationMode === "presentation" ? (
-          <PresentationPanel
-            entries={entries}
-            currentInterim={currentInterim}
-            speakers={speakers}
-            isRecording={recordingState === "recording"}
-            isConnecting={recordingState === "connecting"}
-            languageA={languageA}
-            targetLangs={targetLangs}
-            onStart={handleStart}
-          />
-        ) : (
-          <TranscriptPanel
-            entries={entries}
-            currentInterim={currentInterim}
-            speakers={speakers}
-            isRecording={recordingState === "recording"}
-            isConnecting={recordingState === "connecting"}
-            translationMode={translationMode}
-            onStart={handleStart}
-            languageA={languageA}
-            languageB={languageB}
-            onRenameSpeaker={handleRenameSpeaker}
-            // One sentence to another speaker; their other sentences stay
-            onReassignSpeaker={reassignSpeaker}
-          />
-        )}
-
-        {/* Mobile bottom bar (hidden on desktop) */}
-        <div className="lg:hidden">
-          <MobileBottom {...sharedProps} />
-        </div>
+        {/* Phone: top bar, one big button, bottom bar and sheets around the
+            transcript; desktop: just the transcript */}
+        <PhoneChrome
+          gesturesDisabled={presentation.open}
+          error={error}
+          translationMode={translationMode}
+          languageA={languageA}
+          languageB={languageB}
+          targetLangs={targetLangs}
+          setters={meetingSetters}
+          termsText={termsText}
+          onTermsTextChange={setTermsText}
+          selectedPresets={selectedPresets}
+          onSelectedPresetsChange={setSelectedPresets}
+          customTerms={customTerms}
+          onCustomTermsChange={setCustomTerms}
+          speakers={speakers}
+          onRenameSpeaker={handleRenameSpeaker}
+          entries={entries}
+          recordingState={recordingState}
+          elapsedSeconds={elapsedSeconds}
+          {...pauseProps}
+          onStart={handleStart}
+          onStop={handleStop}
+          onExport={handleExport}
+          onNewMeeting={handleNewMeeting}
+          onPresent={presentation.enter}
+          share={
+            shareable && liveShare.available
+              ? {
+                  sharing: liveShare.sharing,
+                  starting: liveShare.starting,
+                  failing: liveShare.failing,
+                  viewerUrl: liveShare.viewerUrl,
+                  onStart: liveShare.start,
+                  onStop: liveShare.stop,
+                }
+              : null
+          }
+          save={{
+            available: autosave.available,
+            status: autosave.status,
+            meetingId: autosave.meetingId,
+            canArchive: !!autosave.recordingsMode,
+            archiveOn,
+            onArchiveChange: setArchiveOn,
+          }}
+          settings={{
+            sttProvider,
+            onSttProviderChange: handleSttProviderChange,
+            r2t2Enabled,
+            translationEngine,
+            onTranslationEngineChange: handleTranslationEngineChange,
+            t3poEnabled,
+            audioProcessing,
+            onAudioProcessingChange: handleAudioProcessingChange,
+            autoStop,
+            onAutoStopChange: handleAutoStopChange,
+            ...(canCaptureSystem ? { captureSource, onCaptureSourceChange: setCaptureSource } : {}),
+          }}
+        >
+          {translationMode === "presentation" ? (
+            <PresentationPanel
+              entries={entries}
+              currentInterim={currentInterim}
+              speakers={speakers}
+              isRecording={recordingState === "recording"}
+              isConnecting={recordingState === "connecting"}
+              languageA={languageA}
+              targetLangs={targetLangs}
+              onStart={handleStart}
+            />
+          ) : (
+            <TranscriptPanel
+              entries={entries}
+              currentInterim={currentInterim}
+              speakers={speakers}
+              isRecording={recordingState === "recording"}
+              isConnecting={recordingState === "connecting"}
+              translationMode={translationMode}
+              onStart={handleStart}
+              languageA={languageA}
+              languageB={languageB}
+              onRenameSpeaker={handleRenameSpeaker}
+              // One sentence to another speaker; their other sentences stay
+              onReassignSpeaker={reassignSpeaker}
+            />
+          )}
+        </PhoneChrome>
       </main>
 
       {/* Desktop floating bar (only in floating layout) */}
-      {desktopLayout === "floating" && (
+      {(desktopLayout === "floating" || (desktopLayout === "sidebar" && sidebarCollapsed)) && (
         <div className="hidden lg:block">
           <DesktopFloatingBar {...sharedProps} />
         </div>
       )}
+
+      <AutoStopNotice
+        state={autoStopper.state}
+        listening={canPause}
+        onContinue={() => {
+          autoStopper.dismiss();
+          handleStart();
+        }}
+        onDismiss={autoStopper.dismiss}
+      />
 
       {presentation.open && (
         <PresentationMode
@@ -520,6 +698,7 @@ export default function Home() {
           targetLangs={targetLangs}
           recordingState={recordingState}
           elapsedSeconds={elapsedSeconds}
+          {...pauseProps}
           onStart={handleStart}
           onStop={handleStop}
           onExit={presentation.exit}

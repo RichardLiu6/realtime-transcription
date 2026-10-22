@@ -2,13 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import { guardMeeting, serverError } from "@/lib/meetings/guard";
 import { recordingFile } from "@/lib/meetings/repo";
-import { audioMode, localPath, signedPlaybackUrl } from "@/lib/meetings/audio";
+import { ConversionLimitError, audioMode, ensureAacCopy, localPath, signedPlaybackUrl } from "@/lib/meetings/audio";
+import { withinDailyLimit } from "@/lib/rateLimit";
 
 type Params = { params: Promise<{ id: string; idx: string }> };
+
+// Making an AAC copy of a long WebM recording takes a while
+export const maxDuration = 300;
+// Conversions one person can start per day (a meeting has a few recordings)
+const AAC_DAILY_LIMIT = 30;
 
 // Owner or shared with: play a recording. From Blob: a redirect to a
 // short-lived signed URL (the player fetches and seeks straight from
 // storage); local files are served here, with Range support for seeking.
+// `?url=1` answers with that URL as JSON instead: the page asks for it
+// (with its login cookie) and gives the player a URL that needs none — in
+// the iOS app the player's own requests carry no cookies.
+// `&format=aac`: a WebM recording's AAC copy (made on first request),
+// for iPhones and Safari, which fail on Chrome's WebM.
 export async function GET(req: NextRequest, { params }: Params) {
   const { id, idx } = await params;
   const g = await guardMeeting(req, id);
@@ -17,15 +28,37 @@ export async function GET(req: NextRequest, { params }: Params) {
     const file = await recordingFile(g.id, Number(idx));
     if (!file) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const mode = audioMode();
+    const asJson = req.nextUrl.searchParams.get("url") === "1";
+    const wantAac = asJson && req.nextUrl.searchParams.get("format") === "aac" && file.contentType === "audio/webm";
+    if (wantAac) {
+      // Each copy is made once; a person can start only so many a day
+      let copy: string;
+      try {
+        copy = await ensureAacCopy(file.pathname, () =>
+          withinDailyLimit("aac", g.user.email.toLowerCase(), AAC_DAILY_LIMIT)
+        );
+      } catch (error) {
+        if (error instanceof ConversionLimitError) {
+          return NextResponse.json({ error: "Daily limit reached", code: "limit" }, { status: 429 });
+        }
+        throw error;
+      }
+      const url = audioMode() === "blob" ? await signedPlaybackUrl(copy) : `/api/meetings/${g.id}/recordings/${idx}?file=aac`;
+      return NextResponse.json({ url }, { headers: { "Cache-Control": "private, no-store" } });
+    }
     if (mode === "blob") {
       const url = await signedPlaybackUrl(file.pathname);
+      if (asJson) return NextResponse.json({ url }, { headers: { "Cache-Control": "private, no-store" } });
       return NextResponse.redirect(url, { status: 302, headers: { "Cache-Control": "private, no-store" } });
     }
     if (mode !== "local") return NextResponse.json({ error: "Not configured" }, { status: 503 });
+    // Local files (dev): the player loads this route itself
+    if (asJson) return NextResponse.json({ url: `/api/meetings/${g.id}/recordings/${idx}` });
 
-    const data = await fs.readFile(localPath(file.pathname));
+    const localAac = req.nextUrl.searchParams.get("file") === "aac" && file.contentType === "audio/webm";
+    const data = await fs.readFile(localPath(localAac ? file.pathname.replace(/\.webm$/, ".aac.m4a") : file.pathname));
     const headers: Record<string, string> = {
-      "Content-Type": file.contentType,
+      "Content-Type": localAac ? "audio/mp4" : file.contentType,
       "Accept-Ranges": "bytes",
       "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",
