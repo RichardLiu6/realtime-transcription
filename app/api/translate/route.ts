@@ -30,8 +30,11 @@ function isHyMT(model: string): boolean {
 // ("together", "deepseek", …), with no fallback to others, for this request
 const pinnedProvider = new AsyncLocalStorage<string>();
 
+// Models whose reasoning can't be turned off: think as little as possible
+const MANDATORY_REASONING = new Set(["z-ai/glm-5.3-flash", "openai/gpt-5-nano"]);
+
 function applyProviderParams(params: Record<string, unknown>) {
-  params.reasoning = { enabled: false };
+  params.reasoning = MANDATORY_REASONING.has(String(params.model)) ? { effort: "minimal" } : { enabled: false };
   const pinned = pinnedProvider.getStore();
   params.provider = pinned ? { order: [pinned], allow_fallbacks: false } : { sort: "latency" };
 }
