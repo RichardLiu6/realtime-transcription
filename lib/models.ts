@@ -19,7 +19,10 @@ export const MODEL_POOL = [
   // Reasoning model; runs with reasoning off (effort "none") like the others
   { id: "openai/gpt-6-luna", label: "GPT-6 Luna", price: "0.10 / 0.50" },
   { id: "openai/gpt-4.1-nano", label: "GPT-4.1 Nano", price: "0.10 / 0.40" },
-  { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash", price: "0.049 / 0.098" },
+  { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash", price: "0.091 / 0.182" },
+  // Routed only to hosts at or under Seed 2.0 Mini's price (MAX_PRICE);
+  // reasoning can't be turned off, runs at effort "minimal"
+  { id: "z-ai/glm-5.3-flash", label: "GLM-5.3 Flash（智谱）", price: "≤ 0.10 / ≤ 0.40" },
   { id: "qwen/qwen3.7-flash", label: "Qwen3.7 Flash", price: "0.03 / 0.13" },
   { id: "bytedance-seed/seed-2.0-mini", label: "Seed 2.0 Mini（字节）", price: "0.10 / 0.40" },
   { id: "xiaomi/mimo-v2.6-flash", label: "MiMo V2.6 Flash（小米）", price: "0.14 / 0.28" },
@@ -53,7 +56,6 @@ export const TRIAL_MODELS: readonly string[] = [
   "deepseek/deepseek-v4.1-flash-1017",
   "deepseek/deepseek-v4.1-flash",
   // Cheaper per call than Seed 2.0 Mini (Oct 2026 comparison)
-  "z-ai/glm-5.3-flash",
   "inclusionai/ling-3.0-flash",
   "inception/mercury-2.5",
   "deepseek/deepseek-v4-flash-0731",
