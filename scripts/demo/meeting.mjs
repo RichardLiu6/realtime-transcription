@@ -5,8 +5,8 @@
 
 export const SPEAKERS = { li: "1", sarah: "2", carlos: "3" };
 
-// [speaker, language, { zh, en, es }] — the spoken language's own text is
-// the original
+// [speaker, language, { zh, en, es }, options?] — the spoken language's own
+// text is the original; noPause: the next line follows without an endpoint
 export const LINES = [
   ["li", "zh", { zh: "大家好，我们开始吧，今天主要看一下鱼油软胶囊的生产计划。", en: "Hi everyone, let's start. Today we'll mainly look at the fish oil softgel production plan.", es: "Hola a todos, empecemos. Hoy vamos a revisar sobre todo el plan de producción de las cápsulas blandas de aceite de pescado." }],
   ["sarah", "en", { zh: "好的。上个月亚马逊的销量增长了大约百分之三十。", en: "Sure. Amazon sales grew about thirty percent last month.", es: "Claro. Las ventas en Amazon crecieron cerca de un treinta por ciento el mes pasado." }],
@@ -30,6 +30,13 @@ export const LINES = [
   ["sarah", "en", { zh: "我会把会议纪要发到群里。", en: "I'll send the meeting notes to the group.", es: "Enviaré el acta de la reunión al grupo." }],
   ["carlos", "es", { zh: "供应商那边我明天再确认一次交货时间。", en: "I'll confirm the delivery date with the supplier again tomorrow.", es: "Mañana vuelvo a confirmar la fecha de entrega con el proveedor." }],
   ["li", "zh", { zh: "辛苦了，有问题随时在群里说。", en: "Thanks for the work, raise anything in the group anytime.", es: "Gracias por el trabajo, cualquier cosa la comentáis en el grupo." }],
+  // One person talking on without a pause (no endpoint between sentences):
+  // a long passage must still be translated as it goes
+  ["li", "zh", { zh: "最后我再总结一下这个季度的重点，第一是保证鱼油软胶囊按时交货。", en: "Finally, let me sum up this quarter's priorities: first, make sure the fish oil softgels are delivered on time.", es: "Para terminar, resumo las prioridades del trimestre: primero, asegurar que las cápsulas blandas de aceite de pescado se entreguen a tiempo." }, { noPause: true }],
+  ["li", "zh", { zh: "第二是亚马逊的库存至少要多备两周，避免促销期间断货。", en: "Second, keep at least two extra weeks of Amazon inventory so we don't run out during the promotion.", es: "Segundo, tener al menos dos semanas más de inventario en Amazon para no quedarnos sin existencias durante la promoción." }, { noPause: true }],
+  ["li", "zh", { zh: "第三是质检和批记录要提前准备，不要等到最后一天。", en: "Third, prepare QC and the batch records early, don't wait until the last day.", es: "Tercero, preparar con antelación el control de calidad y los registros de lote, sin esperar al último día." }, { noPause: true }],
+  ["li", "zh", { zh: "第四是标签文件今天下午一定要发给销售团队。", en: "Fourth, the label files must go to the sales team this afternoon.", es: "Cuarto, los archivos de etiquetas tienen que llegar al equipo de ventas esta tarde." }, { noPause: true }],
+  ["li", "zh", { zh: "最后价格先不动，等促销结束看完数据我们再开会讨论。", en: "Lastly, the price stays for now; once the promotion ends and we've seen the data, we'll meet again.", es: "Por último, el precio no se toca por ahora; cuando termine la promoción y veamos los datos, nos reunimos otra vez." }],
 ];
 
 // Speech units revealed per step: two Chinese characters or one word

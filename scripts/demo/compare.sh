@@ -15,7 +15,9 @@ BASE=${2:-origin/main}
 # Next to the repo (same filesystem, so node_modules can be hard-linked —
 # Turbopack refuses a node_modules symlink pointing outside the project)
 WORK=$(mktemp -d "$(dirname "$ROOT")/.demo-XXXX")
-FFMPEG=${FFMPEG:-$(command -v ffmpeg || python3 -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())")}
+# A Python with Pillow (and imageio-ffmpeg when there is no ffmpeg)
+PYTHON=${PYTHON:-python3}
+FFMPEG=${FFMPEG:-$(command -v ffmpeg || "$PYTHON" -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())")}
 FONT=${FONT:-$(fc-match -f '%{file}' 'WenQuanYi Zen Hei:lang=zh' 2>/dev/null || true)}
 export JWT_SECRET=demo-secret
 PIDS=()
@@ -48,7 +50,7 @@ node "$ROOT/scripts/demo/record.mjs" http://localhost:3100 "$WORK/after.webm"
 BASE_LABEL="线上版本 $(git -C "$ROOT" rev-parse --short "$BASE")"
 HEAD_LABEL="本次更新 $(git -C "$ROOT" rev-parse --short HEAD)$(git -C "$ROOT" diff --quiet HEAD || echo '+')"
 # A title bar over each half (an image: this ffmpeg may lack drawtext)
-python3 - "$FONT" "$WORK" "$BASE_LABEL" "$HEAD_LABEL" <<'PY'
+"$PYTHON" - "$FONT" "$WORK" "$BASE_LABEL" "$HEAD_LABEL" <<'PY'
 import sys
 from PIL import Image, ImageDraw, ImageFont
 font_path, work, *labels = sys.argv[1:]

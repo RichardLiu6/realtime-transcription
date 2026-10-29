@@ -31,7 +31,7 @@ const R2T2_MAX_SEGMENT_CHARS = 120;
 // one ever-growing entry made every (provisional) translation slower and
 // longer until it no longer fit the answer. Past this many units (CJK
 // characters / words) the entry ends at the next sentence end.
-const SONIOX_MAX_SEGMENT_UNITS = 60;
+const SONIOX_MAX_SEGMENT_UNITS = 40;
 // Provisional (still-being-spoken) translation: at most one request per
 // segment per interval, once the text has at least this many characters
 const PROVISIONAL_INTERVAL_MS = 1000;

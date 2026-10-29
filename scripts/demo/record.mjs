@@ -28,7 +28,10 @@ if (!base || !out) {
 const SIZE = { width: 1440, height: 900 };
 const STEP_MS = 280; // one speech unit (two characters / one word)
 const PAUSE_MS = 250; // between sentences
-const TRANSLATE_MS = 700; // mock model latency
+// Mock model latency: a base plus time per character and language (a real
+// 1000-token passage took 4–5 s)
+const TRANSLATE_MS = 700;
+const TRANSLATE_MS_PER_CHAR = 3;
 
 const token = await new SignJWT({ email: "demo@example.com", name: "Demo" })
   .setProtectedHeader({ alg: "HS256" })
@@ -36,18 +39,29 @@ const token = await new SignJWT({ email: "demo@example.com", name: "Demo" })
   .setExpirationTime("1h")
   .sign(new TextEncoder().encode(process.env.JWT_SECRET || "testsecret"));
 
-// Translation of a sentence, or of its beginning (provisional calls):
-// the same share of each target's text
+// Translation of one or several consecutive lines (a passage without a
+// pause), the last possibly only begun (provisional calls: the same share of
+// its translation)
 function translate(text, lang) {
-  const clean = text.trim();
-  for (const [, source, tr] of LINES) {
-    const original = tr[source];
-    if (!original.startsWith(clean)) continue;
-    if (lang === source) return clean;
-    const share = clean.length / original.length;
-    return share >= 1 ? tr[lang] : tr[lang].slice(0, Math.max(1, Math.round(tr[lang].length * share))) + "…";
+  let rest = text.trim();
+  const out = [];
+  while (rest) {
+    const whole = LINES.find(([, source, tr]) => rest.startsWith(tr[source]));
+    if (whole) {
+      const [, source, tr] = whole;
+      out.push(lang === source ? tr[source] : tr[lang]);
+      rest = rest.slice(tr[source].length).trimStart();
+      continue;
+    }
+    const begun = LINES.find(([, source, tr]) => tr[source].startsWith(rest));
+    if (begun) {
+      const [, source, tr] = begun;
+      const share = rest.length / tr[source].length;
+      out.push(lang === source ? rest : tr[lang].slice(0, Math.max(1, Math.round(tr[lang].length * share))) + "…");
+    } else out.push(rest);
+    break;
   }
-  return clean;
+  return out.join(lang === "zh" ? "" : " ");
 }
 
 const videoDir = mkdtempSync(join(tmpdir(), "demo-video-"));
@@ -75,8 +89,8 @@ await page.route("**/api/usage", (r) => r.fulfill({ json: { ok: true } }));
 await page.route("**/api/meetings**", (r) => r.fulfill({ status: 503, json: { error: "demo" } }));
 await page.route("**/api/translate", async (r) => {
   const b = r.request().postDataJSON();
-  await new Promise((res) => setTimeout(res, TRANSLATE_MS));
   const targets = b.targetLangs ?? [b.targetLang];
+  await new Promise((res) => setTimeout(res, TRANSLATE_MS + TRANSLATE_MS_PER_CHAR * b.text.length * targets.length));
   const translations = Object.fromEntries(targets.map((l) => [l, translate(b.text, l)]));
   await r.fulfill({ json: b.targetLangs ? { translations } : { translatedText: translations[b.targetLang] } });
 });
@@ -91,7 +105,7 @@ await page.routeWebSocket(/soniox\.com/, (ws) => {
     if (typeof m === "string" || started) return;
     started = true;
     let t = 0;
-    for (const [who, lang, tr] of LINES) {
+    for (const [index, [who, lang, tr, options]] of LINES.entries()) {
       const parts = units(tr[lang], lang);
       const tokens = parts.map((text) => {
         t += STEP_MS;
@@ -101,7 +115,15 @@ await page.routeWebSocket(/soniox\.com/, (ws) => {
         ws.send(JSON.stringify({ tokens: tokens.slice(0, i).map((x) => ({ ...x, is_final: false })) }));
         await new Promise((res) => setTimeout(res, STEP_MS));
       }
-      ws.send(JSON.stringify({ tokens: tokens.map((x) => ({ ...x, is_final: true })) }));
+      const final = tokens.map((x) => ({ ...x, is_final: true }));
+      if (options?.noPause) {
+        // Final, but the next words already come in: no endpoint
+        const [nextWho, nextLang, nextTr] = LINES[index + 1];
+        const next = { text: units(nextTr[nextLang], nextLang)[0], speaker: SPEAKERS[nextWho], language: nextLang, start_ms: t, end_ms: t + STEP_MS, translation_status: "none", is_final: false };
+        ws.send(JSON.stringify({ tokens: [...final, next] }));
+        continue;
+      }
+      ws.send(JSON.stringify({ tokens: final }));
       t += PAUSE_MS;
       await new Promise((res) => setTimeout(res, PAUSE_MS));
     }
@@ -122,7 +144,7 @@ await page.waitForTimeout(7000);
 await page.getByRole("button", { name: /滚动到最新/ }).first().click().catch(() => {});
 
 await done;
-await page.waitForTimeout(3000);
+await page.waitForTimeout(6000);
 const video = page.video();
 await context.close();
 await browser.close();
