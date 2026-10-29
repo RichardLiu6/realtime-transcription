@@ -61,14 +61,32 @@ function logTiming(
   );
 }
 
-// Models may wrap JSON in a ```json fence despite response_format
+// Room for the answer: a translation rarely needs more than ~2 tokens per
+// source character (Chinese → Spanish is the long direction). A flat 200
+// per language cut long passages off mid-JSON, and nothing showed at all.
+function outputBudget(text: string, languages: number): number {
+  return Math.min(Math.max(300, Math.ceil(text.length * 2) + 100) * languages, 8000);
+}
+
+// Models may wrap JSON in a ```json fence despite response_format. An answer
+// cut off at the token limit still yields the languages it got to (the
+// last one as far as it went) instead of nothing.
 function parseJsonObject(raw: string): Record<string, string> {
   const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   try {
     const parsed = JSON.parse(cleaned);
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
-    return {};
+    const out: Record<string, string> = {};
+    for (const m of cleaned.matchAll(/"([A-Za-z-]{2,10})"\s*:\s*"((?:[^"\\]|\\.)*)("?)/g)) {
+      try {
+        const value = JSON.parse(`"${m[2].replace(/\\$/, "")}"`) as string;
+        if (value.trim()) out[m[1]] = m[3] ? value : `${value}…`;
+      } catch {
+        // an escape cut in half: skip this language
+      }
+    }
+    return out;
   }
 }
 
@@ -247,13 +265,16 @@ ${SPEECH_INPUT_RULES}`;
       json_schema: { name: "multi_translation", schema, strict: true },
     },
     temperature: 0.3,
-    max_tokens: Math.min(200 * targetLangs.length, 4000),
+    max_tokens: outputBudget(text, targetLangs.length),
   };
   applyProviderParams(params);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const r = await getOpenRouter().chat.completions.create(params as any);
   const translations = parseJsonObject(r.choices[0]?.message?.content?.trim() || "{}");
+  if (r.choices[0]?.finish_reason === "length") {
+    console.warn(`[translate] cut off at max_tokens model=${model} chars=${text.length} got=${Object.keys(translations).join(",")}`);
+  }
 
   const latencyMs = Date.now() - start;
   logTiming(model, latencyMs, r.usage, provisional);
@@ -303,7 +324,7 @@ ${SPEECH_INPUT_RULES}`;
   ];
 
   const start = Date.now();
-  const params: Record<string, unknown> = { model, messages, temperature: 0.3, max_tokens: 1000 };
+  const params: Record<string, unknown> = { model, messages, temperature: 0.3, max_tokens: Math.max(1000, outputBudget(text, 1)) };
   applyProviderParams(params);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -1,5 +1,7 @@
 # DONE
 
+## [2026-10-29] 大段连续讲话翻译不显示：多语言每种语言只给 200 token 被截断（线上日志 out=400/600）→ 按原文长度给额度、截断也显示已翻部分；Soniox 长段在 60 字/词后的句末自动分句
+
 ## [2026-10-07] iOS TestFlight 上架（内部测试）
 - App Store Connect「ABL Translate」(app id 6820208548)，内部组 ABL Internal；上传脚本 mobile/scripts/ios-testflight.sh
 
