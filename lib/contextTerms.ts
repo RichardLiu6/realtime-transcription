@@ -24,6 +24,23 @@ export function combineTerms(
   return [...new Set([...presetTerms, ...customTerms])];
 }
 
+// Names of the selected packs (industry packs by their label, own and
+// official packs by name), in the same order: the meeting's subject
+export function selectedPackNames(
+  presetKeys: Iterable<string>,
+  userPacks: { id: string; name: string }[] = [],
+  officialPacks: { id: string; name: string }[] = []
+): string[] {
+  const names = Array.from(presetKeys).map((key) =>
+    key.startsWith("u:")
+      ? userPacks.find((p) => `u:${p.id}` === key)?.name
+      : key.startsWith("o:")
+        ? officialPacks.find((p) => `o:${p.id}` === key)?.name
+        : INDUSTRY_PRESETS[key]?.label
+  );
+  return [...new Set(names.filter((n): n is string => !!n))];
+}
+
 // Company and brand names, in every supplement preset
 const COMPANY = ["ABL", "eguoo", "DOCKPER"];
 

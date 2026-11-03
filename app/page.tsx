@@ -11,7 +11,7 @@ import { useMeetingAutosave } from "@/hooks/useMeetingAutosave";
 import { useMeetingRecorder } from "@/hooks/useMeetingRecorder";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
 import { useStoredState } from "@/lib/useStoredState";
-import { combineTerms, INDUSTRY_PRESETS } from "@/lib/contextTerms";
+import { combineTerms, INDUSTRY_PRESETS, selectedPackNames } from "@/lib/contextTerms";
 import { useTermPacks } from "@/lib/useTermPacks";
 import type { CaptureSource, SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
 import { broadcastAvailable } from "@/lib/native/stt";
@@ -280,6 +280,7 @@ export default function Home() {
       languageA,
       languageB,
       contextTerms: terms,
+      contextTopics: selectedPackNames(selectedPresets, termPacks.packs, officialPacks),
       translationMode,
       ...(translationMode === "presentation" ? { targetLangs } : {}),
     });

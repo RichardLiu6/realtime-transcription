@@ -111,5 +111,8 @@ export interface SonioxConfig {
   languageB: string; // e.g. "en"
   targetLangs?: string[]; // Presentation mode: ["en", "ja", "fr"]
   contextTerms: string[];
+  // Names of the term packs picked for the meeting: its subject, for the
+  // speech engine (Soniox context.general)
+  contextTopics?: string[];
   translationMode: TranslationMode;
 }

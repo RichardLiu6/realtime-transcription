@@ -8,6 +8,7 @@ import { ClauseEngine } from "@/lib/clause/engine";
 import { getLocale, t } from "@/lib/i18n";
 import { singleTargetLanguage } from "@/lib/meetingLanguages";
 import { NativeSocket, nativeStt, type SocketLike } from "@/lib/native/stt";
+import { sonioxContext } from "@/lib/sonioxContext";
 import { getPipPrefs, setPipSupported } from "@/lib/native/pip";
 
 const TARGET_SAMPLE_RATE = 16000;
@@ -1231,6 +1232,11 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
             languageHints = [langA, config.languageB];
           }
 
+          // The meeting's subject and its terms, cut to Soniox's context limit
+          const soniox = sonioxContext(flattenTerms(config.contextTerms), config.contextTopics ?? []);
+          if (soniox.dropped > 0) {
+            console.warn(`[soniox] context limit: ${soniox.dropped} of the selected terms not sent`);
+          }
           wsUrl = "wss://stt-rt.soniox.com/transcribe-websocket";
           openMessage = JSON.stringify({
             api_key: token,
@@ -1243,9 +1249,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
             max_endpoint_delay_ms: 3000,
             enable_speaker_diarization: true,
             enable_language_identification: true,
-            ...(config.contextTerms.length > 0
-              ? { context: { terms: flattenTerms(config.contextTerms) } }
-              : {}),
+            ...(soniox.context ? { context: soniox.context } : {}),
           });
         }
 
