@@ -9,6 +9,7 @@ import type { NextRequest } from "next/server";
 import { verifyToken } from "@/lib/auth";
 import { query, transaction, RETENTION_DAYS } from "@/lib/meetings/db";
 import { deleteRecordingFiles } from "@/lib/meetings/audio";
+import { cleanTopic } from "@/lib/termPackTypes";
 import type {
   MeetingDetail,
   MeetingRecording,
@@ -308,7 +309,7 @@ export async function titleMaterial(
   );
   return {
     title: meeting.title,
-    topic: typeof meeting.settings?.topic === "string" ? meeting.settings.topic : "",
+    topic: cleanTopic(meeting.settings?.topic),
     lines: rows.map((r) => r.data.originalText).filter(Boolean),
   };
 }
@@ -317,4 +318,16 @@ export async function titleMaterial(
 export async function setTitleIfEmpty(id: string, title: string): Promise<boolean> {
   const rows = await query(`UPDATE meetings SET title = $2 WHERE id = $1 AND title = '' RETURNING id`, [id, title]);
   return rows.length > 0;
+}
+
+// The topics of the user's latest meetings (distinct, newest first): the
+// "recent" picks, the same on every device
+export async function recentTopics(email: string, limit = 5): Promise<string[]> {
+  const rows = await query<{ topic: string }>(
+    `SELECT settings->>'topic' AS topic FROM meetings
+      WHERE owner_email = $1 AND expires_at > now() AND coalesce(settings->>'topic', '') <> ''
+      GROUP BY 1 ORDER BY max(created_at) DESC LIMIT $2`,
+    [email, limit]
+  );
+  return rows.map((r) => cleanTopic(r.topic)).filter(Boolean);
 }

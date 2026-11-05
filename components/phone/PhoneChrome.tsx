@@ -34,6 +34,7 @@ import { LOCALES, setLocale, useLocale, useT, type Locale, type TranslationKey }
 import type { BilingualEntry, CaptureSource, SpeakerInfo, SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
 import { meetingLanguagesOf, type MeetingSettingsSetters } from "@/lib/phoneModes";
 import { pipInApp, usePip } from "@/lib/native/pip";
+import { useMeetingTopic } from "@/lib/useMeetingTopic";
 import PipSettings from "./PipSettings";
 import type { SaveStatus } from "@/hooks/useMeetingAutosave";
 import MeetingSettings, { useMeetingSummary } from "./MeetingSettings";
@@ -160,6 +161,9 @@ export default function PhoneChrome(props: PhoneChromeProps) {
     if (props.customTerms.length > 0) names.push(`+${props.customTerms.length}`);
     return names.length ? names.join(" · ") : t("ph_terms_none");
   }, [props.selectedPresets, props.customTerms, ownPacks, officialPacks, t]);
+  // The topic leads; the terms are its details
+  const { topic } = useMeetingTopic();
+  const topicLabel = topic.trim() || (props.selectedPresets.size + props.customTerms.length > 0 ? termsLabel : t("topic_none"));
 
   return (
     <>
@@ -213,8 +217,10 @@ export default function PhoneChrome(props: PhoneChromeProps) {
             {isConnecting ? t("connecting") : t("ph_tap_start")}
           </p>
           <div className="flex flex-wrap justify-center gap-2">
-            <Chip onClick={open("terms")} active={props.selectedPresets.size + props.customTerms.length > 0}>
-              {t("terms")} · {termsLabel}
+            <Chip onClick={open("terms")} active={!!topic.trim() || props.selectedPresets.size + props.customTerms.length > 0}>
+              <span className="block max-w-[16rem] truncate">
+                {t("meeting_topic")} · {topicLabel}
+              </span>
             </Chip>
             {props.settings.captureSource && (
               <Chip onClick={open("prefs")} active={props.settings.captureSource === "system"}>
@@ -352,7 +358,7 @@ export default function PhoneChrome(props: PhoneChromeProps) {
             props.onPresent();
           }}
         />
-        <Row label={t("terms")} value={termsLabel} onClick={open("terms")} />
+        <Row label={t("meeting_topic")} value={topicLabel} onClick={open("terms")} />
         {showPipSettings && <Row label={t("ph_pip_settings")} onClick={open("pip")} />}
         <Row label={t("speakers")} value={t("ph_people", { n: props.speakers.size })} onClick={open("speakers")} disabled={props.speakers.size === 0} />
         {props.save.available && props.save.meetingId && (
@@ -379,7 +385,7 @@ export default function PhoneChrome(props: PhoneChromeProps) {
         )}
       </BottomSheet>
 
-      <BottomSheet open={sheet === "terms"} onOpenChange={(o) => setSheet(o ? "terms" : null)} title={t("terms")} tall>
+      <BottomSheet open={sheet === "terms"} onOpenChange={(o) => setSheet(o ? "terms" : null)} title={t("meeting_topic")} tall>
         <PhoneTerms
           onTermsTextChange={props.onTermsTextChange}
           selectedPresets={props.selectedPresets}

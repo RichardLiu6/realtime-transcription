@@ -102,6 +102,8 @@ export default function Home() {
   const termPacks = useTermPacks();
   const officialPacks = useOfficialPacks();
   const meetingTopic = useMeetingTopic();
+  // The topic the current recording runs under (shown over the transcript)
+  const [activeTopic, setActiveTopic] = useState("");
   const selectedPresets = useMemo(
     // Industry packs, the user's own packs ("u:<id>") and official ones
     // ("o:<id>"); a deleted or disabled pack is skipped by combineTerms
@@ -273,6 +275,7 @@ export default function Home() {
     // panel being mounted
     const terms = combineTerms(selectedPresets, customTerms, termPacks.packs, officialPacks);
     meetingTopic.remember(meetingTopic.topic);
+    setActiveTopic(meetingTopic.topic.trim());
     // Stopping and starting again continues the same transcript; only
     // 新会议 (handleNewMeeting) clears it
     start({
@@ -647,6 +650,13 @@ export default function Home() {
             ...(canCaptureSystem ? { captureSource, onCaptureSourceChange: setCaptureSource } : {}),
           }}
         >
+          {activeTopic && entries.length > 0 && (
+            <p data-active-topic className="shrink-0 truncate border-b border-border px-4 py-1.5 text-xs text-gray-700" title={activeTopic}>
+              <span className="font-medium text-foreground">{t("topic_used")}</span>
+              <span aria-hidden> · </span>
+              {activeTopic}
+            </p>
+          )}
           {translationMode === "presentation" ? (
             <PresentationPanel
               entries={entries}

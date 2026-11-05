@@ -50,6 +50,7 @@ export default function PhoneTerms({
   const officialPacks = useOfficialPacks();
   const [ownDetails, setOwnDetails] = useState<string | null>(null);
   const packMeta = usePackMeta();
+  const meetingTopic = useMeetingTopic().topic;
 
   // Keep the combined list in the page state, as the desktop panel does
   useEffect(() => {
@@ -87,9 +88,12 @@ export default function PhoneTerms({
     <div className="pb-2">
       <MeetingTopic
         phone
+        label={false}
         packTopics={selectedPackTopics(selectedPresets, termPacks.packs, officialPacks)}
         meetingLanguages={meetingLanguages}
       />
+      {/* The topic's details */}
+      <h3 className="mb-1 mt-5 text-base font-semibold text-foreground">{t("terms_details")}</h3>
       {termPacks.available && termPacks.packs.length > 0 && (
         <>
           <SectionTitle>
@@ -175,6 +179,7 @@ export default function PhoneTerms({
       {aiAllowed && (
         <AiTerms
           meetingLanguages={meetingLanguages}
+          initialDescription={meetingTopic}
           onAdd={addTerms}
           onSaved={(pack) => {
             const next = new Set(selectedPresets);
@@ -376,8 +381,11 @@ export function AiTerms({
   meetingLanguages,
   onAdd,
   onSaved,
+  initialDescription = "",
 }: {
   meetingLanguages: string[];
+  // Prefilled description: the meeting topic
+  initialDescription?: string;
   onAdd: (terms: string[]) => void;
   // A pack was saved (selected by the caller)
   onSaved?: (pack: TermPack) => void;
@@ -393,6 +401,8 @@ export function AiTerms({
   const { native } = useLangNames();
   const [languages, setLanguages] = useState<string[]>(meetingLanguages.slice(0, MAX_LANGUAGES));
   const [description, setDescription] = useState("");
+  // Left empty: the meeting topic describes the meeting
+  const describedAs = (description.trim() || initialDescription.trim()).slice(0, MAX_DESCRIPTION);
   const [state, setState] = useState<"idle" | "loading" | "limit" | "failed" | "empty">("idle");
   const [results, setResults] = useState<string[] | null>(null);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
@@ -408,7 +418,7 @@ export function AiTerms({
       const res = await fetch("/api/terms/suggest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: description.trim(), languages }),
+        body: JSON.stringify({ description: describedAs, languages }),
       });
       if (res.status === 429) return setState("limit");
       if (!res.ok) return setState("failed");
@@ -474,7 +484,7 @@ export function AiTerms({
       <textarea
         value={description}
         onChange={(e) => setDescription(e.target.value.slice(0, MAX_DESCRIPTION))}
-        placeholder={t("ph_ai_placeholder")}
+        placeholder={initialDescription.trim() || t("ph_ai_placeholder")}
         rows={3}
         className="mt-3 w-full resize-none rounded-xl border border-input bg-background px-3 py-2 text-base outline-none focus:border-ring"
       />
@@ -488,7 +498,7 @@ export function AiTerms({
       <button
         type="button"
         onClick={generate}
-        disabled={!description.trim() || state === "loading"}
+        disabled={!describedAs || state === "loading"}
         className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-foreground text-[15px] font-semibold text-background disabled:opacity-40"
       >
         {state === "loading" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}

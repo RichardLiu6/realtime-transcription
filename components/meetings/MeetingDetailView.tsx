@@ -367,6 +367,15 @@ export default function MeetingDetailView({ id, inApp = false, onBack, onDeleted
     );
   };
 
+  // The topic it was recorded under (meeting settings)
+  const topicLine = meeting?.settings.topic ? (
+    <p data-meeting-topic className="mt-1 text-xs leading-snug text-gray-700">
+      <span className="font-medium text-foreground">{t("topic_used")}</span>
+      <span aria-hidden> · </span>
+      {meeting.settings.topic}
+    </p>
+  ) : null;
+
   const displayTitle = meeting
     ? meeting.title || `${t("meetings_untitled")} · ${formatDateTime(meeting.createdAt, locale)}`
     : t("my_meetings");
@@ -640,6 +649,7 @@ export default function MeetingDetailView({ id, inApp = false, onBack, onDeleted
               .filter(Boolean)
               .join(" · ")}
           </p>
+          {topicLine}
 
           {tab === "transcript" ? (
             <div className="mt-3">
@@ -775,6 +785,7 @@ export default function MeetingDetailView({ id, inApp = false, onBack, onDeleted
           {!meeting.isOwner && <span>{t("meeting_owner", { email: meeting.ownerEmail })}</span>}
           <span>{t("meeting_expires", { date: formatDate(meeting.expiresAt, locale) })}</span>
         </div>
+        <div className="px-1">{topicLine}</div>
         {!meeting.isOwner && (
           <p className="mt-2 inline-block rounded-full bg-muted px-2.5 py-0.5 text-xs text-gray-700">{t("meeting_read_only")}</p>
         )}
