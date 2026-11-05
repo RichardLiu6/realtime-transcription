@@ -5,6 +5,7 @@ import type { BilingualEntry, SpeakerInfo } from "@/types/bilingual";
 import { toSavedEntry, type MeetingSettings } from "@/lib/meetings/types";
 import type { RecordingsMode } from "@/hooks/useMeetingRecorder";
 import { isNativeApp } from "@/lib/native/stt";
+import { getLocale } from "@/lib/i18n";
 
 // Saved meetings, text part: a meeting is created when a recording starts
 // (the recorder needs its id) and every 3 s the finalized sentences that
@@ -14,6 +15,11 @@ import { isNativeApp } from "@/lib/native/stt";
 
 const SAVE_INTERVAL_MS = 3000;
 const MAX_ENTRIES_PER_SAVE = 200;
+// An untitled meeting gets a title written from its opening, once: after
+// this much of it, or when the recording stops with a few sentences saved
+// (the server never replaces a title the owner gave)
+const TITLE_AFTER_MS = 3 * 60_000;
+const TITLE_MIN_SENTENCES = 3;
 
 export type SaveStatus = "off" | "saving" | "saved" | "error";
 
@@ -43,8 +49,9 @@ export function useMeetingAutosave({ entries, speakers, settings, recording }: O
       .catch(() => {});
   }, []);
 
-  const latest = useRef({ entries, speakers, settings });
-  latest.current = { entries, speakers, settings };
+  const latest = useRef({ entries, speakers, settings, recording });
+  latest.current = { entries, speakers, settings, recording };
+  const titleAsked = useRef(new Set<string>());
   const creating = useRef(false);
 
   // A recording starts: open a meeting unless this transcript has one
@@ -86,6 +93,18 @@ export function useMeetingAutosave({ entries, speakers, settings, recording }: O
   const sentMeta = useRef("");
   const busy = useRef(false);
 
+  // Ask for the automatic title once the opening is saved
+  const maybeTitle = useCallback((id: string, durationMs: number) => {
+    const opening = durationMs >= TITLE_AFTER_MS || !latest.current.recording;
+    if (!opening || sent.current.size < TITLE_MIN_SENTENCES || titleAsked.current.has(id)) return;
+    titleAsked.current.add(id);
+    void fetch(`/api/meetings/${id}/title`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uiLocale: getLocale() }),
+    }).catch(() => titleAsked.current.delete(id));
+  }, []);
+
   const save = useCallback(
     async (id: string, keepalive = false) => {
       if (busy.current) return;
@@ -115,6 +134,7 @@ export function useMeetingAutosave({ entries, speakers, settings, recording }: O
         for (const e of batch) sent.current.set(e.id, e);
         sentMeta.current = metaJson;
         setStatus(changed.length > batch.length ? "saving" : "saved");
+        maybeTitle(id, meta.durationMs);
       } catch {
         // Not marked as sent: retried on the next tick
         setStatus("error");
@@ -122,7 +142,7 @@ export function useMeetingAutosave({ entries, speakers, settings, recording }: O
         busy.current = false;
       }
     },
-    []
+    [maybeTitle]
   );
 
   useEffect(() => {
@@ -146,10 +166,12 @@ export function useMeetingAutosave({ entries, speakers, settings, recording }: O
   // Recording stopped: save the last sentences now rather than in 3 s
   useEffect(() => {
     if (!recording && meetingId) {
-      const t = setTimeout(() => save(meetingId), 800);
+      const t = setTimeout(() => {
+        void save(meetingId).then(() => maybeTitle(meetingId, 0));
+      }, 800);
       return () => clearTimeout(t);
     }
-  }, [recording, meetingId, save]);
+  }, [recording, meetingId, save, maybeTitle]);
 
   return { available, recordingsMode, meetingId, status };
 }

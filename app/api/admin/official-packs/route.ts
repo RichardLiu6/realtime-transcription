@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { meetingsAvailable } from "@/lib/meetings/db";
 import { cleanLanguages, cleanName } from "@/lib/termPacks";
 import { createOfficialPack, listOfficialPacks, termsFrom } from "@/lib/officialTerms";
+import { cleanTopic } from "@/lib/termPackTypes";
 
 // Admin (admin_token, checked by middleware): every official pack / a new one
 export async function GET() {
@@ -21,7 +22,9 @@ export async function POST(req: NextRequest) {
   const terms = termsFrom(body.terms);
   if (!name || !terms) return NextResponse.json({ error: "需要名称和至少一个术语" }, { status: 400 });
   try {
-    return NextResponse.json({ pack: await createOfficialPack({ name, languages: cleanLanguages(body.languages), terms }) });
+    return NextResponse.json({
+      pack: await createOfficialPack({ name, languages: cleanLanguages(body.languages), terms, topic: cleanTopic(body.topic) }),
+    });
   } catch (error) {
     console.error("[official-packs] create failed:", error);
     return NextResponse.json({ error: "创建失败" }, { status: 500 });

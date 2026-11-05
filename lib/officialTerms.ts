@@ -21,6 +21,7 @@ export interface TermSuggestion {
   id: string;
   createdAt: string;
   title: string;
+  topic: string;
   description: string;
   languages: string[];
   terms: string[];
@@ -34,12 +35,18 @@ export interface OfficialPack extends TermPack {
 const newId = () => randomBytes(9).toString("base64url");
 
 // Best effort: a failed write never fails the suggestion itself
-export async function recordSuggestion(s: { title: string; description: string; languages: string[]; terms: string[] }) {
+export async function recordSuggestion(s: {
+  title: string;
+  topic: string;
+  description: string;
+  languages: string[];
+  terms: string[];
+}) {
   if (!meetingsAvailable() || s.terms.length === 0) return;
   try {
     await query(
-      `INSERT INTO term_suggestions (id, title, description, languages, terms) VALUES ($1, $2, $3, $4, $5)`,
-      [newId(), s.title, s.description, JSON.stringify(s.languages), JSON.stringify(s.terms)]
+      `INSERT INTO term_suggestions (id, title, topic, description, languages, terms) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [newId(), s.title, s.topic, s.description, JSON.stringify(s.languages), JSON.stringify(s.terms)]
     );
   } catch (error) {
     console.error("[terms] recording the suggestion failed:", error);
@@ -50,6 +57,7 @@ interface SuggestionRow {
   id: string;
   created_at: Date;
   title: string;
+  topic: string;
   description: string;
   languages: string[];
   terms: string[];
@@ -58,7 +66,7 @@ interface SuggestionRow {
 // Newest first; `q` matches the title, the description or any term
 export async function listSuggestions(q: string, limit: number): Promise<TermSuggestion[]> {
   const rows = await query<SuggestionRow>(
-    `SELECT id, created_at, title, description, languages, terms FROM term_suggestions
+    `SELECT id, created_at, title, topic, description, languages, terms FROM term_suggestions
       WHERE $1 = '' OR title ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%' OR terms::text ILIKE '%' || $1 || '%'
       ORDER BY created_at DESC LIMIT $2`,
     [q, limit]
@@ -67,6 +75,7 @@ export async function listSuggestions(q: string, limit: number): Promise<TermSug
     id: r.id,
     createdAt: new Date(r.created_at).toISOString(),
     title: r.title,
+    topic: r.topic,
     description: r.description,
     languages: r.languages,
     terms: r.terms,
@@ -78,6 +87,7 @@ interface PackRow {
   name: string;
   languages: string[];
   terms: string[];
+  topic: string;
   enabled: boolean;
   created_at: Date;
   updated_at: Date;
@@ -88,6 +98,7 @@ const toPack = (r: PackRow): OfficialPack => ({
   name: r.name,
   languages: r.languages,
   terms: r.terms,
+  topic: r.topic,
   enabled: r.enabled,
   createdAt: new Date(r.created_at).toISOString(),
   updatedAt: new Date(r.updated_at).toISOString(),
@@ -100,10 +111,15 @@ export async function listOfficialPacks(onlyEnabled: boolean): Promise<OfficialP
   return rows.map(toPack);
 }
 
-export async function createOfficialPack(p: { name: string; languages: string[]; terms: string[] }): Promise<OfficialPack> {
+export async function createOfficialPack(p: {
+  name: string;
+  languages: string[];
+  terms: string[];
+  topic: string;
+}): Promise<OfficialPack> {
   const rows = await query<PackRow>(
-    `INSERT INTO official_term_packs (id, name, languages, terms) VALUES ($1, $2, $3, $4) RETURNING *`,
-    [newId(), p.name, JSON.stringify(p.languages), JSON.stringify(p.terms.slice(0, MAX_OFFICIAL_TERMS))]
+    `INSERT INTO official_term_packs (id, name, languages, terms, topic) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [newId(), p.name, JSON.stringify(p.languages), JSON.stringify(p.terms.slice(0, MAX_OFFICIAL_TERMS)), p.topic]
   );
   return toPack(rows[0]);
 }
@@ -112,7 +128,14 @@ export async function createOfficialPack(p: { name: string; languages: string[];
 // case-insensitive) and languages
 export async function updateOfficialPack(
   id: string,
-  change: { name?: string; enabled?: boolean; terms?: string[]; addTerms?: string[]; addLanguages?: string[] }
+  change: {
+    name?: string;
+    topic?: string;
+    enabled?: boolean;
+    terms?: string[];
+    addTerms?: string[];
+    addLanguages?: string[];
+  }
 ): Promise<OfficialPack | null> {
   const current = (await query<PackRow>(`SELECT * FROM official_term_packs WHERE id = $1`, [id]))[0];
   if (!current) return null;
@@ -123,7 +146,7 @@ export async function updateOfficialPack(
   }
   const languages = Array.from(new Set([...current.languages, ...(change.addLanguages ?? [])]));
   const rows = await query<PackRow>(
-    `UPDATE official_term_packs SET name = $2, enabled = $3, terms = $4, languages = $5, updated_at = now()
+    `UPDATE official_term_packs SET name = $2, enabled = $3, terms = $4, languages = $5, topic = $6, updated_at = now()
       WHERE id = $1 RETURNING *`,
     [
       id,
@@ -131,6 +154,7 @@ export async function updateOfficialPack(
       change.enabled ?? current.enabled,
       JSON.stringify(terms.slice(0, MAX_OFFICIAL_TERMS)),
       JSON.stringify(languages),
+      change.topic ?? current.topic,
     ]
   );
   return rows[0] ? toPack(rows[0]) : null;

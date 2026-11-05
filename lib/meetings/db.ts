@@ -134,6 +134,10 @@ CREATE TABLE IF NOT EXISTS official_term_packs (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+-- What each pack is for (added 2026-11)
+ALTER TABLE user_term_packs ADD COLUMN IF NOT EXISTS topic text NOT NULL DEFAULT '';
+ALTER TABLE official_term_packs ADD COLUMN IF NOT EXISTS topic text NOT NULL DEFAULT '';
+ALTER TABLE term_suggestions ADD COLUMN IF NOT EXISTS topic text NOT NULL DEFAULT '';
 CREATE TABLE IF NOT EXISTS sync_state (
   key text PRIMARY KEY,
   synced_to timestamptz NOT NULL

@@ -25,6 +25,7 @@ interface Suggestion {
   id: string;
   createdAt: string;
   title: string;
+  topic?: string;
   description: string;
   languages: string[];
   terms: string[];
@@ -92,7 +93,12 @@ export default function OfficialTermsAdmin({ onMessage }: { onMessage: (text: st
     if (to === NEW) {
       const name = window.prompt("官方术语包名称", s.title || "新术语包")?.trim();
       if (name) {
-        const { ok, data } = await call("/api/admin/official-packs", "POST", { name, terms, languages: s.languages });
+        const { ok, data } = await call("/api/admin/official-packs", "POST", {
+          name,
+          terms,
+          languages: s.languages,
+          topic: s.topic || s.description,
+        });
         onMessage(ok ? `已发布官方术语包「${name}」` : String(data.error ?? "创建失败"), !ok);
         if (ok) await loadPacks();
       }

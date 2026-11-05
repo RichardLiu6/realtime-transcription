@@ -11,7 +11,8 @@ import { useMeetingAutosave } from "@/hooks/useMeetingAutosave";
 import { useMeetingRecorder } from "@/hooks/useMeetingRecorder";
 import { triggerBilingualDownload } from "@/lib/exportBilingual";
 import { useStoredState } from "@/lib/useStoredState";
-import { combineTerms, INDUSTRY_PRESETS, selectedPackNames } from "@/lib/contextTerms";
+import { combineTerms, INDUSTRY_PRESETS, selectedPackTopics } from "@/lib/contextTerms";
+import { useMeetingTopic } from "@/lib/useMeetingTopic";
 import { useTermPacks } from "@/lib/useTermPacks";
 import type { CaptureSource, SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
 import { broadcastAvailable } from "@/lib/native/stt";
@@ -100,6 +101,7 @@ export default function Home() {
   // The user's own term packs (saved AI suggestions)
   const termPacks = useTermPacks();
   const officialPacks = useOfficialPacks();
+  const meetingTopic = useMeetingTopic();
   const selectedPresets = useMemo(
     // Industry packs, the user's own packs ("u:<id>") and official ones
     // ("o:<id>"); a deleted or disabled pack is skipped by combineTerms
@@ -270,6 +272,7 @@ export default function Home() {
     // From the stored selection itself, so it doesn't depend on the terms
     // panel being mounted
     const terms = combineTerms(selectedPresets, customTerms, termPacks.packs, officialPacks);
+    meetingTopic.remember(meetingTopic.topic);
     // Stopping and starting again continues the same transcript; only
     // 新会议 (handleNewMeeting) clears it
     start({
@@ -280,7 +283,8 @@ export default function Home() {
       languageA,
       languageB,
       contextTerms: terms,
-      contextTopics: selectedPackNames(selectedPresets, termPacks.packs, officialPacks),
+      meetingTopic: meetingTopic.topic.trim() || undefined,
+      contextTopics: selectedPackTopics(selectedPresets, termPacks.packs, officialPacks),
       translationMode,
       ...(translationMode === "presentation" ? { targetLangs } : {}),
     });
@@ -291,6 +295,7 @@ export default function Home() {
     customTerms,
     termPacks.packs,
     officialPacks,
+    meetingTopic,
     translationMode,
     targetLangs,
     sttProvider,
@@ -339,8 +344,8 @@ export default function Home() {
   // starts; the audio only when switched on for this meeting (off by
   // default, and off again for the next meeting)
   const meetingSettings = useMemo(
-    () => ({ translationMode, languageA, languageB, targetLangs }),
-    [translationMode, languageA, languageB, targetLangs]
+    () => ({ translationMode, languageA, languageB, targetLangs, topic: meetingTopic.topic.trim() || undefined }),
+    [translationMode, languageA, languageB, targetLangs, meetingTopic.topic]
   );
   const autosave = useMeetingAutosave({
     entries,

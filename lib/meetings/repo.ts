@@ -290,3 +290,31 @@ export async function adminListMeetings(): Promise<
     sharedWith: Number(r.shared_with),
   }));
 }
+
+// The automatic title: the meeting's opening (sentences in its first
+// `withinMs`) and the topic it was recorded under, while it has no title
+export async function titleMaterial(
+  id: string,
+  withinMs: number
+): Promise<{ title: string; topic: string; lines: string[] } | null> {
+  const meeting = (await query<{ title: string; settings: Partial<MeetingSettings> }>(
+    `SELECT title, settings FROM meetings WHERE id = $1`,
+    [id]
+  ))[0];
+  if (!meeting) return null;
+  const rows = await query<{ data: SavedEntry }>(
+    `SELECT data FROM meeting_entries WHERE meeting_id = $1 AND start_ms <= $2 ORDER BY start_ms, id LIMIT 80`,
+    [id, withinMs]
+  );
+  return {
+    title: meeting.title,
+    topic: typeof meeting.settings?.topic === "string" ? meeting.settings.topic : "",
+    lines: rows.map((r) => r.data.originalText).filter(Boolean),
+  };
+}
+
+// Only while still untitled: a rename by the owner meanwhile wins
+export async function setTitleIfEmpty(id: string, title: string): Promise<boolean> {
+  const rows = await query(`UPDATE meetings SET title = $2 WHERE id = $1 AND title = '' RETURNING id`, [id, title]);
+  return rows.length > 0;
+}

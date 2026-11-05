@@ -1,5 +1,6 @@
-// Soniox `context` for a recording: the meeting's subject (the term packs
-// picked for it, as `general`) and the terms, within Soniox's limit.
+// Soniox `context` for a recording: the meeting's topic (`general`), the
+// selected packs' topics as background (`text`) and the terms, within
+// Soniox's limit.
 //
 // Soniox takes at most 8,000 tokens of context (~10,000 characters) and
 // rejects a longer one ("Context is too long"), so the recording would not
@@ -24,18 +25,28 @@ export function estimateTokens(text: string): number {
 
 export interface SonioxContext {
   general?: { key: string; value: string }[];
+  text?: string;
   terms?: string[];
+}
+
+// The topic the meeting runs under: the one set for it, else its packs'
+export function meetingSubject(topic: string | undefined, packTopics: string[]): string {
+  return (topic?.trim() || packTopics.join("; ")).slice(0, 300);
 }
 
 // `terms` are speech-engine words (pairs already split), in priority order:
 // what doesn't fit at the end is left out
 export function sonioxContext(
   terms: string[],
-  topics: string[]
+  topic: string | undefined,
+  packTopics: string[]
 ): { context: SonioxContext | null; dropped: number } {
-  const general = topics.length > 0 ? [{ key: "topic", value: topics.join("; ").slice(0, 300) }] : [];
-  let used = general.reduce((n, g) => n + estimateTokens(g.key) + estimateTokens(g.value), 0);
-  let chars = JSON.stringify({ general }).length + 12;
+  const subject = meetingSubject(topic, packTopics);
+  const general = subject ? [{ key: "topic", value: subject }] : [];
+  // With a topic of its own, the packs' topics still describe the field
+  const text = topic?.trim() && packTopics.length > 0 ? packTopics.join("\n").slice(0, 1000) : "";
+  let used = general.reduce((n, g) => n + estimateTokens(g.key) + estimateTokens(g.value), 0) + estimateTokens(text);
+  let chars = JSON.stringify({ general, text }).length + 12;
   const kept: string[] = [];
   for (const term of terms) {
     const cost = estimateTokens(term);
@@ -47,6 +58,7 @@ export function sonioxContext(
   }
   const context: SonioxContext = {
     ...(general.length > 0 ? { general } : {}),
+    ...(text ? { text } : {}),
     ...(kept.length > 0 ? { terms: kept } : {}),
   };
   return { context: Object.keys(context).length > 0 ? context : null, dropped: terms.length - kept.length };

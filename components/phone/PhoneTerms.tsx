@@ -9,9 +9,11 @@ import { useEffect, useState } from "react";
 import { AddLanguageButton } from "@/components/LanguageSelect";
 import { useAiTermsAllowed } from "@/lib/useAiTerms";
 import { Check, Loader2, Plus, Sparkles, Trash2, X } from "lucide-react";
-import { INDUSTRY_PRESETS, combineTerms, presetLabel } from "@/lib/contextTerms";
+import { INDUSTRY_PRESETS, combineTerms, presetLabel, selectedPackTopics } from "@/lib/contextTerms";
 import { useLocale, useT } from "@/lib/i18n";
-import { createTermPack, deleteTermPack, renameTermPack, useTermPacks } from "@/lib/useTermPacks";
+import { createTermPack, deleteTermPack, renameTermPack, setTermPackTopic, useTermPacks } from "@/lib/useTermPacks";
+import MeetingTopic from "@/components/MeetingTopic";
+import { useMeetingTopic } from "@/lib/useMeetingTopic";
 import { OFFICIAL_PACK_PREFIX, USER_PACK_PREFIX, type TermPack } from "@/lib/termPackTypes";
 import { useOfficialPacks } from "@/lib/useOfficialPacks";
 import { BottomSheet, SectionTitle, useLangNames } from "./parts";
@@ -76,13 +78,18 @@ export default function PhoneTerms({
     : undefined;
   const detailPreset = details
     ? officialDetail
-      ? { label: officialDetail.name, terms: officialDetail.terms }
+      ? { label: officialDetail.name, terms: officialDetail.terms, topic: officialDetail.topic }
       : (INDUSTRY_PRESETS[details] ?? null)
     : null;
   const ownPack = termPacks.packs.find((p) => p.id === ownDetails) ?? null;
 
   return (
     <div className="pb-2">
+      <MeetingTopic
+        phone
+        packTopics={selectedPackTopics(selectedPresets, termPacks.packs, officialPacks)}
+        meetingLanguages={meetingLanguages}
+      />
       {termPacks.available && termPacks.packs.length > 0 && (
         <>
           <SectionTitle>
@@ -211,6 +218,12 @@ export default function PhoneTerms({
             ? officialDetail.languages.length > 0 && ` · ${officialDetail.languages.map((l) => l.toUpperCase()).join("/")}`
             : ` · ${t("ph_pack_zh_en")}`}
         </p>
+        {detailPreset?.topic && (
+          <p className="mb-2 text-sm leading-snug text-gray-700">
+            <span className="font-medium">{t("pack_topic")}：</span>
+            {detailPreset.topic}
+          </p>
+        )}
         <ul>
           {detailPreset?.terms.map((term) => {
             const [a, ...rest] = term.split("=");
@@ -302,6 +315,7 @@ function PackCard({
 function OwnPackDetails({ pack, meta, onDeleted }: { pack: TermPack; meta: string; onDeleted: () => void }) {
   const t = useT();
   const [name, setName] = useState(pack.name);
+  const [topic, setTopic] = useState(pack.topic ?? "");
   return (
     <>
       <label className="block text-xs font-medium text-gray-600" htmlFor={`pack-name-${pack.id}`}>
@@ -318,6 +332,20 @@ function OwnPackDetails({ pack, meta, onDeleted }: { pack: TermPack; meta: strin
           else setName(pack.name);
         }}
         className="mt-1 h-11 w-full rounded-xl border border-input bg-background px-3 text-base outline-none focus:border-ring"
+      />
+      <label className="mt-3 block text-xs font-medium text-gray-600" htmlFor={`pack-topic-${pack.id}`}>
+        {t("pack_topic")}
+      </label>
+      <textarea
+        id={`pack-topic-${pack.id}`}
+        value={topic}
+        rows={2}
+        maxLength={300}
+        onChange={(e) => setTopic(e.target.value.replace(/\n/g, " "))}
+        onBlur={() => {
+          if (topic.trim() !== (pack.topic ?? "")) void setTermPackTopic(pack.id, topic.trim());
+        }}
+        className="mt-1 w-full resize-none rounded-xl border border-input bg-background px-3 py-2 text-[15px] leading-snug outline-none focus:border-ring"
       />
       <p className="mb-2 mt-3 text-xs text-gray-600">{meta}</p>
       <ul>
@@ -368,6 +396,10 @@ export function AiTerms({
   const [state, setState] = useState<"idle" | "loading" | "limit" | "failed" | "empty">("idle");
   const [results, setResults] = useState<string[] | null>(null);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
+  // The topic the AI wrote with the terms: saved with the pack, and the
+  // meeting's topic when none is set yet
+  const [suggestedTopic, setSuggestedTopic] = useState("");
+  const meetingTopic = useMeetingTopic();
 
   const generate = async () => {
     setState("loading");
@@ -380,9 +412,11 @@ export function AiTerms({
       });
       if (res.status === 429) return setState("limit");
       if (!res.ok) return setState("failed");
-      const { terms, title } = (await res.json()) as { terms: string[]; title?: string };
+      const { terms, title, topic } = (await res.json()) as { terms: string[]; title?: string; topic?: string };
       if (!terms?.length) return setState("empty");
       setResults(terms);
+      setSuggestedTopic(topic ?? "");
+      if (topic && !meetingTopic.topic.trim()) meetingTopic.setTopic(topic);
       // The AI's topic name, else the date
       setPackName(title || new Date().toLocaleDateString(locale, { month: "short", day: "numeric" }));
       setReplaceId(null);
@@ -538,7 +572,8 @@ export function AiTerms({
                     packName.trim(),
                     languages,
                     results.filter((x) => chosen.has(x)),
-                    full ? (replaceId ?? undefined) : undefined
+                    full ? (replaceId ?? undefined) : undefined,
+                    suggestedTopic || description.trim()
                   );
                   setSaving(false);
                   if ("pack" in r) {

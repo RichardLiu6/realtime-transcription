@@ -3,6 +3,7 @@ import { verifyToken } from "@/lib/auth";
 import { canUseAiTerms } from "@/lib/edge-config";
 import { currentUser } from "@/lib/meetings/repo";
 import { meetingsAvailable } from "@/lib/meetings/db";
+import { cleanTopic } from "@/lib/termPackTypes";
 import { MAX_PACKS, PackLimitError, cleanLanguages, cleanName, cleanTerms, createPack, listPacks } from "@/lib/termPacks";
 
 // The user's own term packs (AI-suggested terms saved under a name). Guests
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
   if (!payload || !(await canUseAiTerms(payload))) {
     return NextResponse.json({ error: "Not enabled for this account", code: "forbidden" }, { status: 403 });
   }
-  let body: { name?: unknown; languages?: unknown; terms?: unknown; replaceId?: unknown };
+  let body: { name?: unknown; languages?: unknown; terms?: unknown; replaceId?: unknown; topic?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -40,7 +41,11 @@ export async function POST(req: NextRequest) {
   if (!name || !terms) return NextResponse.json({ error: "Invalid request", code: "invalid" }, { status: 400 });
   const replaceId = typeof body.replaceId === "string" ? body.replaceId : undefined;
   try {
-    const pack = await createPack(user.email, { name, languages: cleanLanguages(body.languages), terms }, replaceId);
+    const pack = await createPack(
+      user.email,
+      { name, languages: cleanLanguages(body.languages), terms, topic: cleanTopic(body.topic) },
+      replaceId
+    );
     return NextResponse.json({ pack });
   } catch (error) {
     if (error instanceof PackLimitError) {

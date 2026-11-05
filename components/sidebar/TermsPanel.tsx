@@ -3,7 +3,8 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { useAiTermsAllowed } from "@/lib/useAiTerms";
 import { X, Info, Sparkles, Trash2 } from "lucide-react";
-import { INDUSTRY_PRESETS, combineTerms, presetLabel, splitTermInput } from "@/lib/contextTerms";
+import { INDUSTRY_PRESETS, combineTerms, presetLabel, selectedPackTopics, splitTermInput } from "@/lib/contextTerms";
+import MeetingTopic from "@/components/MeetingTopic";
 import { useLocale, useT } from "@/lib/i18n";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { AiTerms } from "@/components/phone/PhoneTerms";
@@ -70,10 +71,12 @@ function PresetChip({
   isSelected,
   onToggle,
   meta,
+  topic,
   onDelete,
 }: {
   presetKey: string;
   label: string;
+  topic?: string;
   terms: string[];
   isSelected: boolean;
   onToggle: () => void;
@@ -134,6 +137,12 @@ function PresetChip({
       >
         <p className="text-xs font-medium">{label}</p>
         {meta && <p className="text-[10px] text-muted-foreground">{meta}</p>}
+        {topic && (
+          <p className="mt-1 text-[11px] leading-snug text-gray-700">
+            <span className="font-medium">{t("pack_topic")}：</span>
+            {topic}
+          </p>
+        )}
         <div className="mb-1.5" />
         <div className="flex flex-wrap gap-1">
           {terms.map((term) => (
@@ -233,6 +242,7 @@ export default function TermsPanel({
 
   const content = (
     <>
+      <MeetingTopic packTopics={selectedPackTopics(selectedPresets, packs, officialPacks)} meetingLanguages={meetingLanguages} />
       {/* Chip grid */}
       <div className="flex flex-wrap gap-1.5 mb-3">
         {Object.entries(INDUSTRY_PRESETS).map(([key, preset]) => (
@@ -240,6 +250,7 @@ export default function TermsPanel({
             key={key}
             presetKey={key}
             label={presetLabel(key, preset.label, t)}
+            topic={preset.topic}
             terms={preset.terms}
             isSelected={selectedPresets.has(key)}
             onToggle={() => togglePreset(key)}
@@ -253,6 +264,7 @@ export default function TermsPanel({
               key={key}
               presetKey={key}
               label={pack.name}
+              topic={pack.topic}
               terms={pack.terms}
               meta={t("ph_n_terms", { n: pack.terms.length })}
               isSelected={selectedPresets.has(key)}
@@ -268,6 +280,7 @@ export default function TermsPanel({
               key={key}
               presetKey={key}
               label={pack.name}
+              topic={pack.topic}
               terms={pack.terms}
               meta={t("ph_pack_meta", {
                 n: pack.terms.length,

@@ -8,7 +8,7 @@ import { ClauseEngine } from "@/lib/clause/engine";
 import { getLocale, t } from "@/lib/i18n";
 import { singleTargetLanguage } from "@/lib/meetingLanguages";
 import { NativeSocket, nativeStt, type SocketLike } from "@/lib/native/stt";
-import { sonioxContext } from "@/lib/sonioxContext";
+import { meetingSubject, sonioxContext } from "@/lib/sonioxContext";
 import { getPipPrefs, setPipSupported } from "@/lib/native/pip";
 
 const TARGET_SAMPLE_RATE = 16000;
@@ -435,6 +435,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         context: context.length > 0 ? context : undefined,
         memory: memory.length > 0 ? memory : undefined,
         terms: config.contextTerms.length > 0 ? config.contextTerms : undefined,
+        topic: meetingSubject(config.meetingTopic, config.contextTopics ?? []) || undefined,
         ...(provisional ? { provisional: true } : {}),
         ...target,
       }),
@@ -675,6 +676,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
                     }))
                   : undefined,
                 terms: config && config.contextTerms.length > 0 ? config.contextTerms : undefined,
+                topic: config ? meetingSubject(config.meetingTopic, config.contextTopics ?? []) || undefined : undefined,
                 ...(continuation ? { continuation: { sourceSoFar, translationsSoFar } } : {}),
               }),
             });
@@ -1233,7 +1235,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
           }
 
           // The meeting's subject and its terms, cut to Soniox's context limit
-          const soniox = sonioxContext(flattenTerms(config.contextTerms), config.contextTopics ?? []);
+          const soniox = sonioxContext(flattenTerms(config.contextTerms), config.meetingTopic, config.contextTopics ?? []);
           if (soniox.dropped > 0) {
             console.warn(`[soniox] context limit: ${soniox.dropped} of the selected terms not sent`);
           }
