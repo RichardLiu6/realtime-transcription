@@ -31,6 +31,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/v1/") ||
     // The CLI itself (public/abl.mjs, no secrets), fetched with curl
     pathname === "/abl.mjs" ||
+    // How AI agents use that API (lib/agentGuide.ts), no token in it
+    pathname === "/llms.txt" ||
     pathname === "/favicon.ico" ||
     // Installable app: the browser fetches these without cookies
     pathname === "/manifest.webmanifest" ||

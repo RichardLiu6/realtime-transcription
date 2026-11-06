@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, Copy, KeyRound, Trash2 } from "lucide-react";
+import { ArrowLeft, Bot, Check, Copy, KeyRound, Trash2 } from "lucide-react";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
 import { useLocale, useT } from "@/lib/i18n";
 import type { ApiTokenInfo } from "@/lib/apiTokens";
+import { agentGuide } from "@/lib/agentGuide";
 
 // Personal API tokens: create (the value is shown once), list, revoke, and
 // how to read meetings with one (curl / the CLI, public/abl.mjs served at /abl.mjs). Opened from the
@@ -17,6 +18,7 @@ export default function ApiTokensPage() {
   const [name, setName] = useState("");
   const [created, setCreated] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [guideCopied, setGuideCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -45,6 +47,7 @@ export default function ApiTokensPage() {
     const d = (await r.json()) as { token: string };
     setCreated(d.token);
     setCopied(false);
+    setGuideCopied(false);
     setName("");
     load();
   };
@@ -59,6 +62,7 @@ export default function ApiTokensPage() {
   const date = (iso: string) => new Date(iso).toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" });
   const origin = typeof window === "undefined" ? "" : window.location.origin;
   const example = created ?? "abl_…";
+  const guide = agentGuide(origin, created);
 
   return (
     <div className="min-h-dvh bg-background">
@@ -169,6 +173,37 @@ export default function ApiTokensPage() {
                 ))}
               </ul>
             )}
+
+            <section className="mt-8 rounded-md border border-border p-4" data-agent-guide>
+              <h2 className="flex items-center gap-2 text-base font-semibold">
+                <Bot className="size-4" aria-hidden />
+                {t("api_agent")}
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-gray-700">{t("api_agent_intro")}</p>
+              <button
+                type="button"
+                data-agent-copy
+                onClick={() => {
+                  void navigator.clipboard?.writeText(guide).then(() => setGuideCopied(true));
+                }}
+                className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-md bg-foreground px-3 text-sm font-medium text-background hover:bg-foreground/90"
+              >
+                {guideCopied ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}
+                {guideCopied ? t("api_copied") : t("api_agent_copy")}
+              </button>
+              <p className={`mt-2 text-xs leading-snug ${created ? "text-amber-800" : "text-gray-600"}`}>
+                {t(created ? "api_agent_with_token" : "api_agent_no_token")}
+              </p>
+              <details className="mt-3">
+                <summary className="cursor-pointer text-sm text-gray-700 hover:text-foreground">{t("api_agent_preview")}</summary>
+                <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 font-mono text-xs leading-relaxed text-foreground">
+                  {guide}
+                </pre>
+              </details>
+              <p className="mt-3 text-xs text-gray-600">
+                {t("api_agent_url")} <code className="break-all font-mono">{origin}/llms.txt</code>
+              </p>
+            </section>
 
             <h2 className="mt-8 text-base font-semibold">{t("api_usage")}</h2>
             <p className="mt-2 text-sm text-gray-700">{t("api_usage_curl")}</p>

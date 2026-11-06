@@ -1,6 +1,6 @@
 # DONE
 
-## [2026-11-06] 个人 API 令牌 + CLI：/settings/api 生成/吊销令牌（只读、存哈希、1 年过期、每人 10 个）；/api/v1/meetings 列表和单个会议（JSON / Markdown / 文本）；命令行 /abl.mjs（list / get / export）
+## [2026-11-06] 个人 API 令牌 + CLI：/settings/api 生成/吊销令牌（只读、存哈希、1 年过期、每人 10 个）；/api/v1/meetings 列表和单个会议（JSON / Markdown / 文本）；命令行 /abl.mjs（list / get / export）；「复制给 AI 的说明」按钮 + 公开 /llms.txt，让 Claude Code / Codex 等 agent 直接读会议记录
 
 ## [2026-11-06] AI 生成限次数不限存储：术语每天 10 次（原 20），自己的术语包最多 50 个（原 3 个）；主题生成每天 40 次，最近主题 8 个
 

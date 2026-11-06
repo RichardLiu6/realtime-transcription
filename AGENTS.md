@@ -100,7 +100,7 @@ Audio goes directly from browser to the STT engine — the server never touches 
 - Admin gets both tokens: access to main app + admin panel
 - Main page displays "admin" as username
 
-**Middleware** (`middleware.ts`): All routes require `auth_token` except `/login`, `/admin/login`, `/api/auth/*`, `/api/admin/auth`, `/api/eval` (404 outside preview deployments), shared captions (`/live/*` and `GET /api/live/*`), `/api/cron/*` (checks `CRON_SECRET` itself), `/api/v1/*` (personal API token, checked by the routes) and `/abl.mjs` (the CLI). Admin routes require `admin_token`.
+**Middleware** (`middleware.ts`): All routes require `auth_token` except `/login`, `/admin/login`, `/api/auth/*`, `/api/admin/auth`, `/api/eval` (404 outside preview deployments), shared captions (`/live/*` and `GET /api/live/*`), `/api/cron/*` (checks `CRON_SECRET` itself), `/api/v1/*` (personal API token, checked by the routes), `/abl.mjs` (the CLI) and `/llms.txt` (the agent guide). Admin routes require `admin_token`.
 
 ### Core Hook: useSonioxTranscription.ts
 
@@ -166,6 +166,7 @@ Central logic for the entire app:
 
 - Read-only access to one's own and shared meetings from scripts. Page `/settings/api` (user menu → API 令牌, phone settings → account; not for guests): create a named token (`abl_` + 32 random bytes; shown once, only its SHA-256 is stored in Postgres `api_tokens`), list (created / expires / last used), revoke. ≤ 10 per user, expire after a year, 2000 requests per token per day (`lib/rateLimit.ts`); `last_used_at` written at most once a minute. A token stops working when its owner leaves the Edge Config user list (403; the admin, `admin`, is exempt; Edge Config unreadable → 503).
 - `/api/v1/*` takes only `Authorization: Bearer abl_…` (the login cookie does not open it; public in middleware, the routes check the token): `GET /api/v1/meetings` (`?q=`, same list as `/meetings`), `GET /api/v1/meetings/<id>` (JSON; `?format=md|txt` via `lib/meetings/exportMeeting.ts`, server-side, translations labelled with their language). Access is the same as the pages (owner / shared, else 404).
+- **For AI agents** (`lib/agentGuide.ts`): one English guide (auth, endpoints, response shapes, examples, how to work: list → read `format=md` once, quote with times, ASR may mishear, answer in the user's language). `/settings/api` has a 复制给 AI 的说明 button (includes the token just created, else `$ABL_TOKEN`; warns that it does) and a preview; the same guide without a token is public at `/llms.txt` (base URL from the request's Host). Checked by giving only the copied text to a fresh agent: it found the meeting and answered price / quantity / date with speakers and times in 3 requests.
 - CLI `public/abl.mjs` (no dependencies, Node 18+; served at `/abl.mjs`, public): `ABL_TOKEN`, `ABL_URL` (default the production domain); `meetings list [--q] [--json]`, `meetings get <id> [--format md|txt|json] [--out]`, `meetings export [--q] [--format] [--dir]`.
 
 ### Feedback (`lib/feedback.ts`)
@@ -236,6 +237,7 @@ Central logic for the entire app:
 | `/api/tokens/[id]` | DELETE | Revoke a token |
 | `/api/v1/meetings` | GET | Token auth: my + shared meetings (`?q=`) |
 | `/api/v1/meetings/[id]` | GET | Token auth: one meeting, JSON or `?format=md|txt` |
+| `/llms.txt` | GET | Public: how AI agents use `/api/v1` (`lib/agentGuide.ts`) |
 | `/api/admin/feedback` | GET | Admin: latest 200 feedback rows |
 | `/api/cron/cleanup-meetings` | GET | Daily cleanup (CRON_SECRET) |
 | `/api/cron/sync-soniox-usage` | GET | Daily copy of Soniox usage logs (CRON_SECRET) |
