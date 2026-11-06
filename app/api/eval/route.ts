@@ -3,7 +3,13 @@
 // GET /api/eval[?models=a,b][&rounds=2][&cases=a,b] runs a fixed set of meeting
 // sentences (zh / en / es, code-switching, unfinished speech, terms,
 // multilingual columns) through each model via the real /api/translate
-// handler, and returns every translation with its latency.
+// handler, and returns every translation with its latency, plus a latency
+// summary per model. "model@provider" pins one OpenRouter provider
+// (e.g. deepseek/deepseek-v4.1-flash@together), no fallback to others.
+//
+// GET /api/eval?providers=<model id> lists the OpenRouter providers serving
+// a model (price, context, recent latency / throughput, uptime);
+// ?providers=search:<text> lists the model ids containing <text>.
 //
 // Access: 404 outside VERCEL_ENV=preview. Preview URLs sit behind Vercel
 // Authentication (team members only), so the app login is skipped here;
@@ -12,7 +18,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { POST as translate } from "@/app/api/translate/route";
 import { signToken } from "@/lib/auth";
-import { isSupportedModel } from "@/lib/models";
+import { isSupportedModel, TRIAL_MODELS } from "@/lib/models";
 
 export const maxDuration = 300;
 
@@ -72,7 +78,14 @@ export async function GET(req: NextRequest) {
   }
 
   const params = req.nextUrl.searchParams;
-  const models = (params.get("models")?.split(",") ?? DEFAULT_MODELS).filter(isSupportedModel);
+  const lookup = params.get("providers");
+  if (lookup) return NextResponse.json(await openRouterProviders(lookup));
+
+  // "model" or "model@provider"
+  const models = (params.get("models")?.split(",") ?? DEFAULT_MODELS).filter((entry) => {
+    const id = entry.split("@")[0];
+    return isSupportedModel(id) || TRIAL_MODELS.includes(id);
+  });
   const rounds = Math.min(Math.max(Number(params.get("rounds")) || 1, 1), 3);
   const only = params.get("cases")?.split(",");
   const cases = only ? CASES.filter((c) => only.includes(c.id)) : CASES;
@@ -81,12 +94,13 @@ export async function GET(req: NextRequest) {
   // nothing is written to usage tracking
   const adminToken = await signToken({ isAdmin: true }, "10m");
 
-  const call = async (model: string, c: Case) => {
+  const call = async (entry: string, c: Case) => {
+    const [model, provider] = entry.split("@");
     const start = Date.now();
     const request = new NextRequest(new URL("/api/translate", req.url), {
       method: "POST",
       headers: { "content-type": "application/json", cookie: `admin_token=${adminToken}` },
-      body: JSON.stringify({ ...c.body, model }),
+      body: JSON.stringify({ ...c.body, model, ...(provider ? { provider } : {}) }),
     });
     const res = await translate(request);
     const json = await res.json();
@@ -99,7 +113,7 @@ export async function GET(req: NextRequest) {
     };
   };
 
-  const results = [];
+  const results: { id: string; note: string; source: unknown; byModel: Record<string, unknown[]> }[] = [];
   for (const c of cases) {
     const byModel: Record<string, unknown[]> = {};
     for (let r = 0; r < rounds; r++) {
@@ -114,5 +128,33 @@ export async function GET(req: NextRequest) {
       console.log(`[eval] case=${c.id} model=${m} ${JSON.stringify(outs)}`);
     }
   }
-  return NextResponse.json({ models, rounds, results });
+  // Latency per model over every case and round (successful calls)
+  const summary = Object.fromEntries(
+    models.map((m) => {
+      const outs = results.flatMap((r) => (r.byModel[m] ?? []) as { ms?: number; status?: number; error?: string }[]);
+      const ok = outs.filter((o) => o.status === 200 && typeof o.ms === "number").map((o) => o.ms as number).sort((a, b) => a - b);
+      const pct = (p: number) => (ok.length ? ok[Math.min(ok.length - 1, Math.floor(p * ok.length))] : null);
+      return [m, { calls: outs.length, failed: outs.length - ok.length, medianMs: pct(0.5), p90Ms: pct(0.9), maxMs: ok.at(-1) ?? null }];
+    })
+  );
+  return NextResponse.json({ models, rounds, summary, results });
+}
+
+// OpenRouter's public model data (with this deployment's key)
+async function openRouterProviders(query: string) {
+  const base = process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
+  const headers = { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}` };
+  if (query.startsWith("search:")) {
+    const text = query.slice(7).toLowerCase();
+    const r = await fetch(`${base}/models`, { headers });
+    const data = (await r.json()) as { data?: { id: string; name: string; created: number; pricing: Record<string, string> }[] };
+    return {
+      models: (data.data ?? [])
+        .filter((m) => m.id.toLowerCase().includes(text))
+        .sort((a, b) => b.created - a.created)
+        .map((m) => ({ id: m.id, name: m.name, created: new Date(m.created * 1000).toISOString().slice(0, 10), pricing: m.pricing })),
+    };
+  }
+  const r = await fetch(`${base}/models/${query}/endpoints`, { headers });
+  return { status: r.status, ...(await r.json().catch(() => ({}))) };
 }

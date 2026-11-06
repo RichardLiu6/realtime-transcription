@@ -24,7 +24,8 @@ export default function TranslationModeToggle({
         {t("translation_mode")}
       </p>
       {/* Icon above the label: longer labels (Español, Tiếng Việt) wrap
-          instead of overflowing */}
+          instead of overflowing; one long word (Multilingual) hyphenates
+          rather than running into the next button */}
       <ToggleGroup
         type="single"
         value={mode}
@@ -35,19 +36,19 @@ export default function TranslationModeToggle({
         variant="outline"
         className="w-full items-stretch"
       >
-        <ToggleGroupItem value="two_way" className="h-auto min-w-0 flex-1 flex-col gap-0.5 whitespace-normal px-1 py-1.5 text-center text-xs leading-tight">
+        <ToggleGroupItem value="two_way" className="h-auto min-w-0 flex-1 flex-col gap-0.5 whitespace-normal hyphens-auto px-0.5 py-1.5 text-center text-xs leading-tight">
           <ArrowLeftRight className="size-3.5" />
           {t("mode_between")}
         </ToggleGroupItem>
-        <ToggleGroupItem value="one_way" className="h-auto min-w-0 flex-1 flex-col gap-0.5 whitespace-normal px-1 py-1.5 text-center text-xs leading-tight">
+        <ToggleGroupItem value="one_way" className="h-auto min-w-0 flex-1 flex-col gap-0.5 whitespace-normal hyphens-auto px-0.5 py-1.5 text-center text-xs leading-tight">
           <ArrowRight className="size-3.5" />
           {t("mode_from_to")}
         </ToggleGroupItem>
-        <ToggleGroupItem value="presentation" className="h-auto min-w-0 flex-1 flex-col gap-0.5 whitespace-normal px-1 py-1.5 text-center text-xs leading-tight">
+        <ToggleGroupItem value="presentation" className="h-auto min-w-0 flex-1 flex-col gap-0.5 whitespace-normal hyphens-auto px-0.5 py-1.5 text-center text-xs leading-tight">
           <Monitor className="size-3.5" />
           {t("mode_presentation")}
         </ToggleGroupItem>
-        <ToggleGroupItem value="transcribe" className="h-auto min-w-0 flex-1 flex-col gap-0.5 whitespace-normal px-1 py-1.5 text-center text-xs leading-tight">
+        <ToggleGroupItem value="transcribe" className="h-auto min-w-0 flex-1 flex-col gap-0.5 whitespace-normal hyphens-auto px-0.5 py-1.5 text-center text-xs leading-tight">
           <Captions className="size-3.5" />
           {t("mode_transcribe")}
         </ToggleGroupItem>

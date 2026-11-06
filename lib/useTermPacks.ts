@@ -14,7 +14,7 @@ interface State {
   packs: TermPack[];
 }
 
-const EMPTY: State = { loaded: false, available: false, max: 3, packs: [] };
+const EMPTY: State = { loaded: false, available: false, max: 50, packs: [] };
 let state: State = EMPTY;
 let loading: Promise<void> | null = null;
 const listeners = new Set<() => void>();
@@ -33,7 +33,7 @@ export function refreshTermPacks(): Promise<void> {
   loading ??= fetch("/api/term-packs", { cache: "no-store" })
     .then((r) => (r.ok ? r.json() : null))
     .then((d) => {
-      if (d) set({ loaded: true, available: !!d.available, max: d.max ?? 3, packs: d.packs ?? [] });
+      if (d) set({ loaded: true, available: !!d.available, max: d.max ?? 50, packs: d.packs ?? [] });
       else set({ ...state, loaded: true });
     })
     .catch(() => set({ ...state, loaded: true }))
@@ -49,12 +49,13 @@ export async function createTermPack(
   name: string,
   languages: string[],
   terms: string[],
-  replaceId?: string
+  replaceId?: string,
+  topic?: string
 ): Promise<CreateResult> {
   const r = await fetch("/api/term-packs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, languages, terms, replaceId }),
+    body: JSON.stringify({ name, languages, terms, replaceId, topic }),
   }).catch(() => null);
   if (r?.status === 409) {
     // Full (packs saved on another device): reload so the replace choice shows them
@@ -65,6 +66,17 @@ export async function createTermPack(
   const { pack } = (await r.json()) as { pack: TermPack };
   set({ ...state, packs: [...state.packs.filter((p) => p.id !== replaceId), pack] });
   return { pack };
+}
+
+export async function setTermPackTopic(id: string, topic: string): Promise<boolean> {
+  const r = await fetch(`/api/term-packs/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ topic }),
+  }).catch(() => null);
+  if (!r?.ok) return false;
+  set({ ...state, packs: state.packs.map((p) => (p.id === id ? { ...p, topic } : p)) });
+  return true;
 }
 
 export async function renameTermPack(id: string, name: string): Promise<boolean> {

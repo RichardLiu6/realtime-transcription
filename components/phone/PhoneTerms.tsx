@@ -9,9 +9,11 @@ import { useEffect, useState } from "react";
 import { AddLanguageButton } from "@/components/LanguageSelect";
 import { useAiTermsAllowed } from "@/lib/useAiTerms";
 import { Check, Loader2, Plus, Sparkles, Trash2, X } from "lucide-react";
-import { INDUSTRY_PRESETS, combineTerms, presetLabel } from "@/lib/contextTerms";
+import { INDUSTRY_PRESETS, combineTerms, presetLabel, selectedPackTopics } from "@/lib/contextTerms";
 import { useLocale, useT } from "@/lib/i18n";
-import { createTermPack, deleteTermPack, renameTermPack, useTermPacks } from "@/lib/useTermPacks";
+import { createTermPack, deleteTermPack, renameTermPack, setTermPackTopic, useTermPacks } from "@/lib/useTermPacks";
+import MeetingTopic from "@/components/MeetingTopic";
+import { useMeetingTopic } from "@/lib/useMeetingTopic";
 import { OFFICIAL_PACK_PREFIX, USER_PACK_PREFIX, type TermPack } from "@/lib/termPackTypes";
 import { useOfficialPacks } from "@/lib/useOfficialPacks";
 import { BottomSheet, SectionTitle, useLangNames } from "./parts";
@@ -48,6 +50,7 @@ export default function PhoneTerms({
   const officialPacks = useOfficialPacks();
   const [ownDetails, setOwnDetails] = useState<string | null>(null);
   const packMeta = usePackMeta();
+  const meetingTopic = useMeetingTopic().topic;
 
   // Keep the combined list in the page state, as the desktop panel does
   useEffect(() => {
@@ -76,17 +79,25 @@ export default function PhoneTerms({
     : undefined;
   const detailPreset = details
     ? officialDetail
-      ? { label: officialDetail.name, terms: officialDetail.terms }
+      ? { label: officialDetail.name, terms: officialDetail.terms, topic: officialDetail.topic }
       : (INDUSTRY_PRESETS[details] ?? null)
     : null;
   const ownPack = termPacks.packs.find((p) => p.id === ownDetails) ?? null;
 
   return (
     <div className="pb-2">
+      <MeetingTopic
+        phone
+        label={false}
+        packTopics={selectedPackTopics(selectedPresets, termPacks.packs, officialPacks)}
+        meetingLanguages={meetingLanguages}
+      />
+      {/* The topic's details */}
+      <h3 className="mb-1 mt-5 text-base font-semibold text-foreground">{t("terms_details")}</h3>
       {termPacks.available && termPacks.packs.length > 0 && (
         <>
           <SectionTitle>
-            {t("ph_my_packs")} · {termPacks.packs.length}/{termPacks.max}
+            {t("ph_my_packs")} · {termPacks.packs.length}
           </SectionTitle>
           <ul className="space-y-2" data-own-packs>
             {termPacks.packs.map((pack) => (
@@ -168,6 +179,7 @@ export default function PhoneTerms({
       {aiAllowed && (
         <AiTerms
           meetingLanguages={meetingLanguages}
+          initialDescription={meetingTopic}
           onAdd={addTerms}
           onSaved={(pack) => {
             const next = new Set(selectedPresets);
@@ -211,6 +223,12 @@ export default function PhoneTerms({
             ? officialDetail.languages.length > 0 && ` · ${officialDetail.languages.map((l) => l.toUpperCase()).join("/")}`
             : ` · ${t("ph_pack_zh_en")}`}
         </p>
+        {detailPreset?.topic && (
+          <p className="mb-2 text-sm leading-snug text-gray-700">
+            <span className="font-medium">{t("pack_topic")}：</span>
+            {detailPreset.topic}
+          </p>
+        )}
         <ul>
           {detailPreset?.terms.map((term) => {
             const [a, ...rest] = term.split("=");
@@ -302,6 +320,7 @@ function PackCard({
 function OwnPackDetails({ pack, meta, onDeleted }: { pack: TermPack; meta: string; onDeleted: () => void }) {
   const t = useT();
   const [name, setName] = useState(pack.name);
+  const [topic, setTopic] = useState(pack.topic ?? "");
   return (
     <>
       <label className="block text-xs font-medium text-gray-600" htmlFor={`pack-name-${pack.id}`}>
@@ -318,6 +337,20 @@ function OwnPackDetails({ pack, meta, onDeleted }: { pack: TermPack; meta: strin
           else setName(pack.name);
         }}
         className="mt-1 h-11 w-full rounded-xl border border-input bg-background px-3 text-base outline-none focus:border-ring"
+      />
+      <label className="mt-3 block text-xs font-medium text-gray-600" htmlFor={`pack-topic-${pack.id}`}>
+        {t("pack_topic")}
+      </label>
+      <textarea
+        id={`pack-topic-${pack.id}`}
+        value={topic}
+        rows={2}
+        maxLength={300}
+        onChange={(e) => setTopic(e.target.value.replace(/\n/g, " "))}
+        onBlur={() => {
+          if (topic.trim() !== (pack.topic ?? "")) void setTermPackTopic(pack.id, topic.trim());
+        }}
+        className="mt-1 w-full resize-none rounded-xl border border-input bg-background px-3 py-2 text-[15px] leading-snug outline-none focus:border-ring"
       />
       <p className="mb-2 mt-3 text-xs text-gray-600">{meta}</p>
       <ul>
@@ -348,8 +381,11 @@ export function AiTerms({
   meetingLanguages,
   onAdd,
   onSaved,
+  initialDescription = "",
 }: {
   meetingLanguages: string[];
+  // Prefilled description: the meeting topic
+  initialDescription?: string;
   onAdd: (terms: string[]) => void;
   // A pack was saved (selected by the caller)
   onSaved?: (pack: TermPack) => void;
@@ -365,9 +401,15 @@ export function AiTerms({
   const { native } = useLangNames();
   const [languages, setLanguages] = useState<string[]>(meetingLanguages.slice(0, MAX_LANGUAGES));
   const [description, setDescription] = useState("");
+  // Left empty: the meeting topic describes the meeting
+  const describedAs = (description.trim() || initialDescription.trim()).slice(0, MAX_DESCRIPTION);
   const [state, setState] = useState<"idle" | "loading" | "limit" | "failed" | "empty">("idle");
   const [results, setResults] = useState<string[] | null>(null);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
+  // The topic the AI wrote with the terms: saved with the pack, and the
+  // meeting's topic when none is set yet
+  const [suggestedTopic, setSuggestedTopic] = useState("");
+  const meetingTopic = useMeetingTopic();
 
   const generate = async () => {
     setState("loading");
@@ -376,13 +418,15 @@ export function AiTerms({
       const res = await fetch("/api/terms/suggest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: description.trim(), languages }),
+        body: JSON.stringify({ description: describedAs, languages }),
       });
       if (res.status === 429) return setState("limit");
       if (!res.ok) return setState("failed");
-      const { terms, title } = (await res.json()) as { terms: string[]; title?: string };
+      const { terms, title, topic } = (await res.json()) as { terms: string[]; title?: string; topic?: string };
       if (!terms?.length) return setState("empty");
       setResults(terms);
+      setSuggestedTopic(topic ?? "");
+      if (topic && !meetingTopic.topic.trim()) meetingTopic.setTopic(topic);
       // The AI's topic name, else the date
       setPackName(title || new Date().toLocaleDateString(locale, { month: "short", day: "numeric" }));
       setReplaceId(null);
@@ -440,7 +484,7 @@ export function AiTerms({
       <textarea
         value={description}
         onChange={(e) => setDescription(e.target.value.slice(0, MAX_DESCRIPTION))}
-        placeholder={t("ph_ai_placeholder")}
+        placeholder={initialDescription.trim() || t("ph_ai_placeholder")}
         rows={3}
         className="mt-3 w-full resize-none rounded-xl border border-input bg-background px-3 py-2 text-base outline-none focus:border-ring"
       />
@@ -454,7 +498,7 @@ export function AiTerms({
       <button
         type="button"
         onClick={generate}
-        disabled={!description.trim() || state === "loading"}
+        disabled={!describedAs || state === "loading"}
         className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-foreground text-[15px] font-semibold text-background disabled:opacity-40"
       >
         {state === "loading" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
@@ -538,7 +582,8 @@ export function AiTerms({
                     packName.trim(),
                     languages,
                     results.filter((x) => chosen.has(x)),
-                    full ? (replaceId ?? undefined) : undefined
+                    full ? (replaceId ?? undefined) : undefined,
+                    suggestedTopic || description.trim()
                   );
                   setSaving(false);
                   if ("pack" in r) {

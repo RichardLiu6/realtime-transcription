@@ -24,6 +24,26 @@ export function combineTerms(
   return [...new Set([...presetTerms, ...customTerms])];
 }
 
+// Topics of the selected packs (a pack without one: its name), in the same
+// order: what the meeting is about when no meeting topic is set
+export function selectedPackTopics(
+  presetKeys: Iterable<string>,
+  userPacks: { id: string; name: string; topic?: string }[] = [],
+  officialPacks: { id: string; name: string; topic?: string }[] = []
+): string[] {
+  const topics = Array.from(presetKeys).map((key) => {
+    const pack = key.startsWith("u:")
+      ? userPacks.find((p) => `u:${p.id}` === key)
+      : key.startsWith("o:")
+        ? officialPacks.find((p) => `o:${p.id}` === key)
+        : undefined;
+    if (pack) return pack.topic || pack.name;
+    const preset = INDUSTRY_PRESETS[key];
+    return preset ? preset.topic || preset.label : undefined;
+  });
+  return [...new Set(topics.filter((n): n is string => !!n))];
+}
+
 // Company and brand names, in every supplement preset
 const COMPANY = ["ABL", "eguoo", "DOCKPER"];
 
@@ -37,6 +57,8 @@ export function presetLabel(key: string, label: string, translate: (key: never) 
 
 export interface IndustryPreset {
   label: string;
+  // What meetings the pack is for (the speech engine and translation get it)
+  topic?: string;
   terms: string[];
 }
 
@@ -46,6 +68,7 @@ export const INDUSTRY_PRESETS: Record<string, IndustryPreset> = {
   // entries are names / acronyms used as-is.
   supplements: {
     label: "保健品生产 Supplement Manufacturing",
+    topic: "保健品（膳食补充剂）工厂生产：配方与原料、软胶囊/硬胶囊/片剂工艺、GMP、质检与批记录 · Dietary supplement manufacturing",
     terms: [
       ...COMPANY,
       // 产品 / 配方
@@ -103,6 +126,7 @@ export const INDUSTRY_PRESETS: Record<string, IndustryPreset> = {
   },
   supplement_sales: {
     label: "保健品销售 Supplement Sales",
+    topic: "保健品销售与市场：渠道、价格与促销、客户、合规宣传 · Supplement sales and marketing",
     terms: [
       ...COMPANY,
       "保健品=Dietary Supplement", "营养成分表=Supplement Facts",
@@ -121,6 +145,7 @@ export const INDUSTRY_PRESETS: Record<string, IndustryPreset> = {
   },
   ecommerce: {
     label: "跨境电商 E-commerce",
+    topic: "跨境电商运营：亚马逊店铺、listing、广告、库存与物流、平台规则 · Cross-border e-commerce operations",
     terms: [
       ...COMPANY,
       "TK=TikTok", "TikTok Shop", "亚马逊=Amazon", "独立站=DTC Website", "Shopify",
@@ -144,6 +169,7 @@ export const INDUSTRY_PRESETS: Record<string, IndustryPreset> = {
   // Hy-MT applies pairs literally.
   accounting: {
     label: "财务 Finance & Accounting",
+    topic: "财务会计：美国 GAAP 报表、应收应付与现金、生产成本与库存、月结预算审计、美国税务、中国增值税与出口退税 · Finance and accounting",
     terms: [
       ...COMPANY,
       // 报表 / 科目

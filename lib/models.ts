@@ -19,7 +19,10 @@ export const MODEL_POOL = [
   // Reasoning model; runs with reasoning off (effort "none") like the others
   { id: "openai/gpt-6-luna", label: "GPT-6 Luna", price: "0.10 / 0.50" },
   { id: "openai/gpt-4.1-nano", label: "GPT-4.1 Nano", price: "0.10 / 0.40" },
-  { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash", price: "0.049 / 0.098" },
+  { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash", price: "0.091 / 0.182" },
+  // Routed only to hosts at or under Seed 2.0 Mini's price (MAX_PRICE);
+  // reasoning can't be turned off, runs at effort "minimal"
+  { id: "z-ai/glm-5.3-flash", label: "GLM-5.3 Flash（智谱）", price: "≤ 0.10 / ≤ 0.40" },
   { id: "qwen/qwen3.7-flash", label: "Qwen3.7 Flash", price: "0.03 / 0.13" },
   { id: "bytedance-seed/seed-2.0-mini", label: "Seed 2.0 Mini（字节）", price: "0.10 / 0.40" },
   { id: "xiaomi/mimo-v2.6-flash", label: "MiMo V2.6 Flash（小米）", price: "0.14 / 0.28" },
@@ -46,6 +49,26 @@ export const FALLBACK_CHAIN: readonly TranslationModel[] = [
   "openai/gpt-6-luna",
   "openai/gpt-4.1-nano",
 ];
+
+// Models an admin may request explicitly (the compare page, /api/eval) to
+// try them out, though they're not in the pool (e.g. above the price cap)
+export const TRIAL_MODELS: readonly string[] = [
+  "deepseek/deepseek-v4.1-flash-1017",
+  "deepseek/deepseek-v4.1-flash",
+  // Cheaper per call than Seed 2.0 Mini (Oct 2026 comparison)
+  "inclusionai/ling-3.0-flash",
+  "inception/mercury-2.5",
+  "deepseek/deepseek-v4-flash-0731",
+  "openai/gpt-5-nano",
+];
+
+// Models whose OpenRouter providers differ widely in price (the same model
+// costs 0.005–0.225 in / 0.13–2 out across hosts): route only to providers
+// at or under Seed 2.0 Mini's price, USD per million tokens
+export const MAX_PRICE: Record<string, { prompt: number; completion: number }> = {
+  "z-ai/glm-5.3-flash": { prompt: 0.1, completion: 0.4 },
+  "deepseek/deepseek-v4-flash-0731": { prompt: 0.1, completion: 0.4 },
+};
 
 export function modelLabel(id: string): string {
   return MODEL_POOL.find((m) => m.id === id)?.label ?? id;

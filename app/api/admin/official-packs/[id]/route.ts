@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { meetingsAvailable } from "@/lib/meetings/db";
 import { cleanLanguages, cleanName } from "@/lib/termPacks";
 import { deleteOfficialPack, termsFrom, updateOfficialPack } from "@/lib/officialTerms";
+import { cleanTopic } from "@/lib/termPackTypes";
 
 // Admin (admin_token, checked by middleware): rename, switch on/off, replace
 // the terms, or add terms (e.g. from a suggestion) to an official pack
@@ -15,6 +16,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!name) return NextResponse.json({ error: "名称不能为空" }, { status: 400 });
     change.name = name;
   }
+  if ("topic" in body) change.topic = cleanTopic(body.topic);
   if (typeof body.enabled === "boolean") change.enabled = body.enabled;
   if ("terms" in body) {
     const terms = termsFrom(body.terms);

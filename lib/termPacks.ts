@@ -7,7 +7,9 @@ import { query, transaction } from "@/lib/meetings/db";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import type { TermPack } from "@/lib/termPackTypes";
 
-export const MAX_PACKS = 3;
+// Not a quota (generating terms is limited per day instead): only keeps
+// the list usable
+export const MAX_PACKS = 50;
 export const MAX_PACK_TERMS = 40;
 const MAX_NAME = 40;
 const MAX_ENTRY = 400;
@@ -51,6 +53,7 @@ interface Row {
   name: string;
   languages: string[];
   terms: string[];
+  topic: string;
   created_at: Date;
 }
 
@@ -59,12 +62,13 @@ const toPack = (r: Row): TermPack => ({
   name: r.name,
   languages: r.languages,
   terms: r.terms,
+  topic: r.topic,
   createdAt: new Date(r.created_at).toISOString(),
 });
 
 export async function listPacks(email: string): Promise<TermPack[]> {
   const rows = await query<Row>(
-    `SELECT id, name, languages, terms, created_at FROM user_term_packs WHERE email = $1 ORDER BY created_at`,
+    `SELECT id, name, languages, terms, topic, created_at FROM user_term_packs WHERE email = $1 ORDER BY created_at`,
     [email]
   );
   return rows.map(toPack);
@@ -74,7 +78,7 @@ export async function listPacks(email: string): Promise<TermPack[]> {
 // same transaction. Full without one: PackLimitError
 export async function createPack(
   email: string,
-  pack: { name: string; languages: string[]; terms: string[] },
+  pack: { name: string; languages: string[]; terms: string[]; topic: string },
   replaceId?: string
 ): Promise<TermPack> {
   return transaction(async (client) => {
@@ -88,16 +92,21 @@ export async function createPack(
     if (Number(count[0].n) >= MAX_PACKS) throw new PackLimitError("Term pack limit reached");
     const id = randomBytes(9).toString("base64url");
     const { rows } = await client.query<Row>(
-      `INSERT INTO user_term_packs (id, email, name, languages, terms) VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, name, languages, terms, created_at`,
-      [id, email, pack.name, JSON.stringify(pack.languages), JSON.stringify(pack.terms)]
+      `INSERT INTO user_term_packs (id, email, name, languages, terms, topic) VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, name, languages, terms, topic, created_at`,
+      [id, email, pack.name, JSON.stringify(pack.languages), JSON.stringify(pack.terms), pack.topic]
     );
     return toPack(rows[0]);
   });
 }
 
-export async function renamePack(email: string, id: string, name: string): Promise<boolean> {
-  const rows = await query(`UPDATE user_term_packs SET name = $3 WHERE id = $1 AND email = $2 RETURNING id`, [id, email, name]);
+// Rename and / or change the topic (only what is given)
+export async function updatePack(email: string, id: string, change: { name?: string; topic?: string }): Promise<boolean> {
+  const rows = await query(
+    `UPDATE user_term_packs SET name = COALESCE($3, name), topic = COALESCE($4, topic)
+      WHERE id = $1 AND email = $2 RETURNING id`,
+    [id, email, change.name ?? null, change.topic ?? null]
+  );
   return rows.length > 0;
 }
 

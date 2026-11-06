@@ -8,6 +8,7 @@ import { ClauseEngine } from "@/lib/clause/engine";
 import { getLocale, t } from "@/lib/i18n";
 import { singleTargetLanguage } from "@/lib/meetingLanguages";
 import { NativeSocket, nativeStt, type SocketLike } from "@/lib/native/stt";
+import { meetingSubject, sonioxContext } from "@/lib/sonioxContext";
 import { getPipPrefs, setPipSupported } from "@/lib/native/pip";
 
 const TARGET_SAMPLE_RATE = 16000;
@@ -27,6 +28,11 @@ const R2T2_EOS = "YOUDAO_ONETIME_ASR_STREAM_EOS";
 const R2T2_SILENCE_FINALIZE_MS = 2500;
 // Finalize long R2T2 segments at sentence boundaries so translation keeps up
 const R2T2_MAX_SEGMENT_CHARS = 120;
+// Soniox: someone talking on without a pause never reaches an endpoint, and
+// one ever-growing entry made every (provisional) translation slower and
+// longer until it no longer fit the answer. Past this many units (CJK
+// characters / words) the entry ends at the next sentence end.
+const SONIOX_MAX_SEGMENT_UNITS = 40;
 // Provisional (still-being-spoken) translation: at most one request per
 // segment per interval, once the text has at least this many characters
 const PROVISIONAL_INTERVAL_MS = 1000;
@@ -177,6 +183,22 @@ function textUnits(text: string): number {
   const cjk = (text.match(CJK_CHAR) ?? []).length;
   const words = text.replace(CJK_CHAR, " ").split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
   return cjk + words;
+}
+// How many of the new final tokens still belong to the segment: up to the
+// first sentence end once the segment has SONIOX_MAX_SEGMENT_UNITS; 0 = no
+// cut. A "." counts only before a space or the end of the batch, so 3.5
+// isn't split.
+const CJK_START = /^[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/;
+function sentenceCut(segment: SonioxToken[], fresh: SonioxToken[]): number {
+  let text = segment.map((t) => t.text).join("");
+  for (let i = 0; i < fresh.length; i++) {
+    text += fresh[i].text;
+    if (!/[。！？!?.]$/.test(fresh[i].text.trimEnd())) continue;
+    const next = fresh[i + 1]?.text;
+    if (next !== undefined && !/^\s/.test(next) && !CJK_START.test(next)) continue;
+    if (textUnits(text) >= SONIOX_MAX_SEGMENT_UNITS) return i + 1;
+  }
+  return 0;
 }
 function majorityLanguage(tokens: SonioxToken[]): string {
   // Soniox tokens are word pieces: join per language before counting words
@@ -413,6 +435,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         context: context.length > 0 ? context : undefined,
         memory: memory.length > 0 ? memory : undefined,
         terms: config.contextTerms.length > 0 ? config.contextTerms : undefined,
+        topic: meetingSubject(config.meetingTopic, config.contextTopics ?? []) || undefined,
         ...(provisional ? { provisional: true } : {}),
         ...target,
       }),
@@ -653,6 +676,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
                     }))
                   : undefined,
                 terms: config && config.contextTerms.length > 0 ? config.contextTerms : undefined,
+                topic: config ? meetingSubject(config.meetingTopic, config.contextTopics ?? []) || undefined : undefined,
                 ...(continuation ? { continuation: { sourceSoFar, translationsSoFar } } : {}),
               }),
             });
@@ -907,7 +931,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       );
       if (tokens.length === 0) return;
 
-      const finalTokens = tokens.filter((t) => t.is_final);
+      let finalTokens = tokens.filter((t) => t.is_final);
       const interimTokens = tokens.filter((t) => !t.is_final);
 
       const sonioxSpeaker = tokens.find((t) => t.speaker)?.speaker;
@@ -940,7 +964,30 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         };
       }
 
-      const seg = currentSegmentRef.current;
+      let seg = currentSegmentRef.current;
+
+      // A long stretch without a pause: end the entry at a sentence end and
+      // go on with the rest in a new one (same speaker)
+      const cut = sentenceCut(seg.tokens, finalTokens);
+      if (cut > 0 && (cut < finalTokens.length || interimTokens.length > 0)) {
+        const head = finalTokens.slice(0, cut);
+        seg.tokens.push(...head);
+        seg.endMs = (head[head.length - 1].end_ms ?? 0) + timeOffsetMsRef.current;
+        simulFeed(seg.entryId, seg.language, head.map((t) => t.text).join(""));
+        seg.interimTokens = [];
+        finalizeSegment();
+        finalTokens = finalTokens.slice(cut);
+        seg = {
+          speaker: batchSpeaker,
+          tokens: [],
+          interimTokens: [],
+          language: batchLanguage,
+          entryId: `entry-${entryCounterRef.current++}`,
+          startMs: ((finalTokens[0] ?? interimTokens[0])?.start_ms ?? 0) + timeOffsetMsRef.current,
+          endMs: 0,
+        };
+        currentSegmentRef.current = seg;
+      }
 
       // Update language if detected from Soniox or via CJK fallback
       if (batchLanguage && !seg.language) {
@@ -1187,6 +1234,11 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
             languageHints = [langA, config.languageB];
           }
 
+          // The meeting's subject and its terms, cut to Soniox's context limit
+          const soniox = sonioxContext(flattenTerms(config.contextTerms), config.meetingTopic, config.contextTopics ?? []);
+          if (soniox.dropped > 0) {
+            console.warn(`[soniox] context limit: ${soniox.dropped} of the selected terms not sent`);
+          }
           wsUrl = "wss://stt-rt.soniox.com/transcribe-websocket";
           openMessage = JSON.stringify({
             api_key: token,
@@ -1199,9 +1251,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
             max_endpoint_delay_ms: 3000,
             enable_speaker_diarization: true,
             enable_language_identification: true,
-            ...(config.contextTerms.length > 0
-              ? { context: { terms: flattenTerms(config.contextTerms) } }
-              : {}),
+            ...(soniox.context ? { context: soniox.context } : {}),
           });
         }
 

@@ -3,7 +3,9 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { useAiTermsAllowed } from "@/lib/useAiTerms";
 import { X, Info, Sparkles, Trash2 } from "lucide-react";
-import { INDUSTRY_PRESETS, combineTerms, presetLabel, splitTermInput } from "@/lib/contextTerms";
+import { INDUSTRY_PRESETS, combineTerms, presetLabel, selectedPackTopics, splitTermInput } from "@/lib/contextTerms";
+import MeetingTopic from "@/components/MeetingTopic";
+import { useMeetingTopic } from "@/lib/useMeetingTopic";
 import { useLocale, useT } from "@/lib/i18n";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { AiTerms } from "@/components/phone/PhoneTerms";
@@ -70,10 +72,12 @@ function PresetChip({
   isSelected,
   onToggle,
   meta,
+  topic,
   onDelete,
 }: {
   presetKey: string;
   label: string;
+  topic?: string;
   terms: string[];
   isSelected: boolean;
   onToggle: () => void;
@@ -134,6 +138,12 @@ function PresetChip({
       >
         <p className="text-xs font-medium">{label}</p>
         {meta && <p className="text-[10px] text-muted-foreground">{meta}</p>}
+        {topic && (
+          <p className="mt-1 text-[11px] leading-snug text-gray-700">
+            <span className="font-medium">{t("pack_topic")}：</span>
+            {topic}
+          </p>
+        )}
         <div className="mb-1.5" />
         <div className="flex flex-wrap gap-1">
           {terms.map((term) => (
@@ -231,6 +241,15 @@ export default function TermsPanel({
     [customTerms, onCustomTermsChange]
   );
 
+  const { topic } = useMeetingTopic();
+  // The topic first; the terms are its details
+  const topicField = (
+    <MeetingTopic
+      label={inline}
+      packTopics={selectedPackTopics(selectedPresets, packs, officialPacks)}
+      meetingLanguages={meetingLanguages}
+    />
+  );
   const content = (
     <>
       {/* Chip grid */}
@@ -240,6 +259,7 @@ export default function TermsPanel({
             key={key}
             presetKey={key}
             label={presetLabel(key, preset.label, t)}
+            topic={preset.topic}
             terms={preset.terms}
             isSelected={selectedPresets.has(key)}
             onToggle={() => togglePreset(key)}
@@ -253,6 +273,7 @@ export default function TermsPanel({
               key={key}
               presetKey={key}
               label={pack.name}
+              topic={pack.topic}
               terms={pack.terms}
               meta={t("ph_n_terms", { n: pack.terms.length })}
               isSelected={selectedPresets.has(key)}
@@ -268,6 +289,7 @@ export default function TermsPanel({
               key={key}
               presetKey={key}
               label={pack.name}
+              topic={pack.topic}
               terms={pack.terms}
               meta={t("ph_pack_meta", {
                 n: pack.terms.length,
@@ -318,7 +340,7 @@ export default function TermsPanel({
           className="mt-2 inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-foreground hover:bg-muted"
         >
           <Sparkles className="size-3.5" aria-hidden />
-          {t("ph_ai_title")}
+          {t("terms_ai_from_topic")}
         </button>
       )}
 
@@ -338,6 +360,7 @@ export default function TermsPanel({
               <AiTerms
                 key={meetingLanguages.join(",")}
                 meetingLanguages={meetingLanguages}
+                initialDescription={topic}
                 onAdd={(terms) => {
                   addCustomTag(terms.join("\n"));
                   setAiOpen(false);
@@ -355,18 +378,26 @@ export default function TermsPanel({
   );
 
   if (inline) {
-    return <div className="px-3 py-2">{content}</div>;
+    return (
+      <div className="px-3 py-2">
+        <div className="mb-3">{topicField}</div>
+        <p className="mb-1.5 text-xs font-semibold text-foreground">{t("terms_details")}</p>
+        {content}
+      </div>
+    );
   }
 
   return (
-    <div className="px-4 border-b border-border">
-      <Accordion type="single" collapsible defaultValue="terms">
+    <div className="px-4 py-3 border-b border-border">
+      <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">{t("meeting_topic")}</p>
+      {topicField}
+      <Accordion type="single" collapsible defaultValue={totalCount > 0 ? "terms" : undefined} className="mt-2">
         <AccordionItem value="terms" className="border-b-0">
-          <AccordionTrigger className="py-3 hover:no-underline">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              {t("context_terms")}
+          <AccordionTrigger className="py-2 hover:no-underline">
+            <span className="text-xs font-medium text-foreground">
+              {t("terms_details")}
               {totalCount > 0 && (
-                <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary normal-case">
+                <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
                   {totalCount}
                 </span>
               )}

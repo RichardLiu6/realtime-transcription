@@ -31,6 +31,8 @@ export interface MeetingSettings {
   languageA: string[];
   languageB: string;
   targetLangs: string[];
+  // The meeting topic set when recording (helps the automatic title)
+  topic?: string;
 }
 
 export interface MeetingRecording {

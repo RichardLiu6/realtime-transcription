@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { meetingsAvailable } from "@/lib/meetings/db";
-import { createMeeting, currentUser, listMeetings } from "@/lib/meetings/repo";
+import { createMeeting, currentUser, listMeetings, recentTopics } from "@/lib/meetings/repo";
 import { serverError } from "@/lib/meetings/guard";
 import type { MeetingSettings } from "@/lib/meetings/types";
 
-// The user's meetings and those shared with them (?q= searches title and text)
+// The user's meetings and those shared with them (?q= searches title and
+// text); ?topics=1: just the topics of their latest meetings
 export async function GET(req: NextRequest) {
   if (!meetingsAvailable()) return NextResponse.json({ error: "Not configured" }, { status: 503 });
   const user = await currentUser(req);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
+    if (req.nextUrl.searchParams.get("topics")) {
+      return NextResponse.json({ topics: await recentTopics(user.email) });
+    }
     const meetings = await listMeetings(user.email, (req.nextUrl.searchParams.get("q") ?? "").slice(0, 100));
     return NextResponse.json({ meetings });
   } catch (error) {

@@ -5,6 +5,7 @@ import type { TranslationMode } from "@/types/bilingual";
 import { Button } from "@/components/ui/button";
 import { useLanguageName, useT } from "@/lib/i18n";
 import { primaryLanguageA } from "@/lib/meetingLanguages";
+import { useMeetingTopic } from "@/lib/useMeetingTopic";
 
 interface ReadyCardProps {
   translationMode: TranslationMode;
@@ -28,6 +29,7 @@ export default function ReadyCard({
 }: ReadyCardProps) {
   const t = useT();
   const langName = useLanguageName();
+  const { topic } = useMeetingTopic();
   const sources = languageA.includes("*")
     ? t("ready_any")
     : languageA.map(langName).join(", ");
@@ -55,6 +57,12 @@ export default function ReadyCard({
         <span className="font-medium text-foreground">{modeName}</span>
         <span aria-hidden> · </span>
         {languages}
+      </p>
+      {/* What the recording will be about (terms panel → 会议主题) */}
+      <p data-ready-topic className="mt-1 text-sm leading-relaxed text-gray-700">
+        <span className="font-medium text-foreground">{t("topic_used")}</span>
+        <span aria-hidden> · </span>
+        {topic.trim() || <span className="text-gray-600">{t("topic_none")}</span>}
       </p>
       <Button
         onClick={onStart}
