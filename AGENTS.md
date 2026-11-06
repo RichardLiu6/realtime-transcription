@@ -100,7 +100,7 @@ Audio goes directly from browser to the STT engine — the server never touches 
 - Admin gets both tokens: access to main app + admin panel
 - Main page displays "admin" as username
 
-**Middleware** (`middleware.ts`): All routes require `auth_token` except `/login`, `/admin/login`, `/api/auth/*`, `/api/admin/auth`, `/api/eval` (404 outside preview deployments), shared captions (`/live/*` and `GET /api/live/*`) and `/api/cron/*` (checks `CRON_SECRET` itself). Admin routes require `admin_token`.
+**Middleware** (`middleware.ts`): All routes require `auth_token` except `/login`, `/admin/login`, `/api/auth/*`, `/api/admin/auth`, `/api/eval` (404 outside preview deployments), shared captions (`/live/*` and `GET /api/live/*`), `/api/cron/*` (checks `CRON_SECRET` itself), `/api/v1/*` (personal API token, checked by the routes) and `/abl.mjs` (the CLI). Admin routes require `admin_token`.
 
 ### Core Hook: useSonioxTranscription.ts
 
@@ -161,6 +161,12 @@ Central logic for the entire app:
 - **补翻译** (`components/meetings/BackfillTranslation.tsx`, owner only, multilingual and 仅转录 meetings): pick languages (preselected: the ones already there, else the interface language), and only sentences missing them are translated — never into a sentence's own language (that column shows the original). The browser calls `/api/translate` per sentence (4 at a time; missing languages only; previous 3 sentences as context; the terms selected on the recording page in this browser), so model, fallback and usage work as live; results go through `PUT …/entries` every 10 sentences. Progress, stop, and a count of what's left (a second run finishes it; an account failure 401/402 stops at once). A transcribe meeting with translations shows the language columns. `saveEntries` merges stored `translations` under incoming ones, so the recording page re-saving a sentence (rename, speaker change) never drops them.
 - **Automatic title**: an untitled meeting gets one written from its opening (sentences in the first 5 min, plus its topic) by `POST /api/meetings/<id>/title` (Seed 2.0 Mini → Gemini, in the interface language, ≤ 16 Chinese characters / 8 words; counted as 纪要 usage). `useMeetingAutosave` asks once per meeting, after 3 min or when the recording stops with ≥ 3 sentences saved; the server writes it only while the title is still empty, so the owner's rename (meeting page) always wins.
 - Cleanup: Vercel Cron (`vercel.json`, daily) → `/api/cron/cleanup-meetings` (needs `CRON_SECRET`; public in middleware) deletes expired meetings and day-old empty ones with their audio.
+
+### Personal API tokens and the CLI (`lib/apiTokens.ts`, `lib/apiAuth.ts`)
+
+- Read-only access to one's own and shared meetings from scripts. Page `/settings/api` (user menu → API 令牌, phone settings → account; not for guests): create a named token (`abl_` + 32 random bytes; shown once, only its SHA-256 is stored in Postgres `api_tokens`), list (created / expires / last used), revoke. ≤ 10 per user, expire after a year, 2000 requests per token per day (`lib/rateLimit.ts`); `last_used_at` written at most once a minute. A token stops working when its owner leaves the Edge Config user list (403; the admin, `admin`, is exempt; Edge Config unreadable → 503).
+- `/api/v1/*` takes only `Authorization: Bearer abl_…` (the login cookie does not open it; public in middleware, the routes check the token): `GET /api/v1/meetings` (`?q=`, same list as `/meetings`), `GET /api/v1/meetings/<id>` (JSON; `?format=md|txt` via `lib/meetings/exportMeeting.ts`, server-side, translations labelled with their language). Access is the same as the pages (owner / shared, else 404).
+- CLI `public/abl.mjs` (no dependencies, Node 18+; served at `/abl.mjs`, public): `ABL_TOKEN`, `ABL_URL` (default the production domain); `meetings list [--q] [--json]`, `meetings get <id> [--format md|txt|json] [--out]`, `meetings export [--q] [--format] [--dir]`.
 
 ### Feedback (`lib/feedback.ts`)
 
@@ -226,6 +232,10 @@ Central logic for the entire app:
 | `/api/admin/saved-meetings` | GET | Admin: content-free list of meetings |
 | `/api/admin/usage` | GET | Admin: usage and cost per user (`?month=YYYY-MM`) |
 | `/api/feedback` | POST | User feedback (logged-in users, 20/day) |
+| `/api/tokens` | GET/POST | My API tokens / create one (value returned once; 409 at 10) |
+| `/api/tokens/[id]` | DELETE | Revoke a token |
+| `/api/v1/meetings` | GET | Token auth: my + shared meetings (`?q=`) |
+| `/api/v1/meetings/[id]` | GET | Token auth: one meeting, JSON or `?format=md|txt` |
 | `/api/admin/feedback` | GET | Admin: latest 200 feedback rows |
 | `/api/cron/cleanup-meetings` | GET | Daily cleanup (CRON_SECRET) |
 | `/api/cron/sync-soniox-usage` | GET | Daily copy of Soniox usage logs (CRON_SECRET) |

@@ -17,6 +17,7 @@ import {
   ChevronDown,
   MonitorPlay,
   FolderClock,
+  KeyRound,
   MessageSquare,
 } from "lucide-react";
 import {
@@ -500,6 +501,19 @@ export default function StatusBar({
                       >
                         <FolderClock className="size-3.5" aria-hidden />
                         {t("my_meetings")}
+                      </a>
+                    )}
+                    {meetingsLink && (
+                      // Personal API tokens: read meetings from scripts / the CLI
+                      <a
+                        href="/settings/api"
+                        target="_blank"
+                        rel="noopener"
+                        data-api-tokens-link
+                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                      >
+                        <KeyRound className="size-3.5" aria-hidden />
+                        {t("api_tokens")}
                       </a>
                     )}
                     {!isGuest && (
