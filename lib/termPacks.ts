@@ -7,7 +7,9 @@ import { query, transaction } from "@/lib/meetings/db";
 import { SONIOX_LANGUAGES } from "@/types/bilingual";
 import type { TermPack } from "@/lib/termPackTypes";
 
-export const MAX_PACKS = 3;
+// Not a quota (generating terms is limited per day instead): only keeps
+// the list usable
+export const MAX_PACKS = 50;
 export const MAX_PACK_TERMS = 40;
 const MAX_NAME = 40;
 const MAX_ENTRY = 400;

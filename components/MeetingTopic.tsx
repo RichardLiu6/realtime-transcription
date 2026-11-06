@@ -49,7 +49,7 @@ export default function MeetingTopic({
     return () => observer.disconnect();
   }, []);
 
-  const picks = Array.from(new Set([...packTopics, ...recent])).filter((x) => x && x !== topic.trim()).slice(0, 6);
+  const picks = Array.from(new Set([...packTopics, ...recent])).filter((x) => x && x !== topic.trim()).slice(0, 8);
   const fromPacks = new Set(packTopics);
 
   const write = async () => {

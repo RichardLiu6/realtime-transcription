@@ -14,7 +14,7 @@ interface State {
   packs: TermPack[];
 }
 
-const EMPTY: State = { loaded: false, available: false, max: 3, packs: [] };
+const EMPTY: State = { loaded: false, available: false, max: 50, packs: [] };
 let state: State = EMPTY;
 let loading: Promise<void> | null = null;
 const listeners = new Set<() => void>();
@@ -33,7 +33,7 @@ export function refreshTermPacks(): Promise<void> {
   loading ??= fetch("/api/term-packs", { cache: "no-store" })
     .then((r) => (r.ok ? r.json() : null))
     .then((d) => {
-      if (d) set({ loaded: true, available: !!d.available, max: d.max ?? 3, packs: d.packs ?? [] });
+      if (d) set({ loaded: true, available: !!d.available, max: d.max ?? 50, packs: d.packs ?? [] });
       else set({ ...state, loaded: true });
     })
     .catch(() => set({ ...state, loaded: true }))

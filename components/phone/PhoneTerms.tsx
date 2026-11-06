@@ -97,7 +97,7 @@ export default function PhoneTerms({
       {termPacks.available && termPacks.packs.length > 0 && (
         <>
           <SectionTitle>
-            {t("ph_my_packs")} · {termPacks.packs.length}/{termPacks.max}
+            {t("ph_my_packs")} · {termPacks.packs.length}
           </SectionTitle>
           <ul className="space-y-2" data-own-packs>
             {termPacks.packs.map((pack) => (

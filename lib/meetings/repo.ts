@@ -322,7 +322,7 @@ export async function setTitleIfEmpty(id: string, title: string): Promise<boolea
 
 // The topics of the user's latest meetings (distinct, newest first): the
 // "recent" picks, the same on every device
-export async function recentTopics(email: string, limit = 5): Promise<string[]> {
+export async function recentTopics(email: string, limit = 8): Promise<string[]> {
   const rows = await query<{ topic: string }>(
     `SELECT settings->>'topic' AS topic FROM meetings
       WHERE owner_email = $1 AND expires_at > now() AND coalesce(settings->>'topic', '') <> ''

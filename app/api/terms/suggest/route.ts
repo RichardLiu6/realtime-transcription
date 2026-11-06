@@ -20,7 +20,10 @@ const MAX_DESCRIPTION = 500;
 const MAX_LANGUAGES = 5;
 const MAX_TERMS = 30;
 const MAX_TERM_LENGTH = 60;
-const DAILY_LIMIT = 20;
+// Each call is cheap (≈ $0.0005 for terms, ≈ $0.0001 for a topic on Seed
+// 2.0 Mini); the limits are against misuse. Terms are the bigger answer:
+// fewer of them, saved packs aren't limited instead (owner's call)
+const DAILY_LIMIT = 10;
 const TOPIC_DAILY_LIMIT = 40;
 const MAX_TOPIC_CHARS = 120;
 

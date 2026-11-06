@@ -7,7 +7,7 @@ import { cleanTopic } from "@/lib/termPackTypes";
 // The meeting's topic (per device, like the term selection) and the recent
 // ones to pick again: this device's last few, then the topics of the
 // account's latest saved meetings (the same on every device)
-const MAX_RECENT = 5;
+const MAX_RECENT = 8;
 const isString = (v: unknown): v is string => typeof v === "string";
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every(isString);
 const NONE: string[] = [];
