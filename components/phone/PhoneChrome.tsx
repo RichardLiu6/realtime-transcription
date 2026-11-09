@@ -636,6 +636,7 @@ function Preferences({
 
           <SectionTitle>{t("ph_section_account")}</SectionTitle>
           {user && <Row label={user.name} description={user.email.toLowerCase() !== user.name.toLowerCase() ? user.email : undefined} />}
+          {user && user.role !== "guest" && <Row label={t("api_tokens")} onClick={() => router.push("/settings/api")} />}
           {isAdmin && <Row label={t("admin_panel")} onClick={() => router.push("/admin")} />}
           <Row label={t("logout")} danger chevron={false} onClick={logout} />
         </div>

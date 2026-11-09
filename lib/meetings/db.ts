@@ -138,6 +138,17 @@ CREATE TABLE IF NOT EXISTS official_term_packs (
 ALTER TABLE user_term_packs ADD COLUMN IF NOT EXISTS topic text NOT NULL DEFAULT '';
 ALTER TABLE official_term_packs ADD COLUMN IF NOT EXISTS topic text NOT NULL DEFAULT '';
 ALTER TABLE term_suggestions ADD COLUMN IF NOT EXISTS topic text NOT NULL DEFAULT '';
+-- Personal API tokens (read-only access to one's meetings): only a hash
+CREATE TABLE IF NOT EXISTS api_tokens (
+  id text PRIMARY KEY,
+  email text NOT NULL,
+  name text NOT NULL,
+  token_hash text NOT NULL UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  last_used_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS api_tokens_email ON api_tokens (email, created_at);
 CREATE TABLE IF NOT EXISTS sync_state (
   key text PRIMARY KEY,
   synced_to timestamptz NOT NULL

@@ -26,6 +26,13 @@ export async function middleware(request: NextRequest) {
     (pathname.startsWith("/api/live/") && request.method === "GET") ||
     // Vercel Cron: the route checks CRON_SECRET itself
     pathname.startsWith("/api/cron/") ||
+    // API for scripts / the CLI: a personal token (Authorization: Bearer
+    // abl_…), checked by the routes themselves (lib/apiAuth.ts)
+    pathname.startsWith("/api/v1/") ||
+    // The CLI itself (public/abl.mjs, no secrets), fetched with curl
+    pathname === "/abl.mjs" ||
+    // How AI agents use that API (lib/agentGuide.ts), no token in it
+    pathname === "/llms.txt" ||
     pathname === "/favicon.ico" ||
     // Installable app: the browser fetches these without cookies
     pathname === "/manifest.webmanifest" ||
