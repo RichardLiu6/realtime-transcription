@@ -31,6 +31,7 @@ import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
 import { LiveSharePanel } from "@/components/LiveShareButton";
 import { INDUSTRY_PRESETS, presetLabel } from "@/lib/contextTerms";
 import { LOCALES, setLocale, useLocale, useT, type Locale, type TranslationKey } from "@/lib/i18n";
+import { CAPTURE_DESC, CAPTURE_LABEL } from "@/lib/captureSource";
 import type { BilingualEntry, CaptureSource, SpeakerInfo, SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
 import { meetingLanguagesOf, type MeetingSettingsSetters } from "@/lib/phoneModes";
 import { pipInApp, usePip } from "@/lib/native/pip";
@@ -109,7 +110,8 @@ export interface PhoneChromeProps {
     onAudioProcessingChange: (on: boolean) => void;
     autoStop: boolean;
     onAutoStopChange: (on: boolean) => void;
-    captureSource?: CaptureSource; // iOS app only
+    captureSource?: CaptureSource; // iOS app, desktop browsers
+    captureOptions?: CaptureSource[];
     onCaptureSourceChange?: (s: CaptureSource) => void;
   };
 }
@@ -223,8 +225,8 @@ export default function PhoneChrome(props: PhoneChromeProps) {
               </span>
             </Chip>
             {props.settings.captureSource && (
-              <Chip onClick={open("prefs")} active={props.settings.captureSource === "system"}>
-                {t("capture_source")} · {t(props.settings.captureSource === "system" ? "capture_system" : "capture_mic")}
+              <Chip onClick={open("prefs")} active={props.settings.captureSource !== "mic"}>
+                {t("capture_source")} · {t(CAPTURE_LABEL[props.settings.captureSource])}
               </Chip>
             )}
           </div>
@@ -581,12 +583,9 @@ function Preferences({
           {settings.captureSource && settings.onCaptureSourceChange && (
             <Choice
               label={t("capture_source")}
-              description={t(settings.captureSource === "mic" ? "capture_mic_desc" : "capture_system_desc")}
+              description={t(CAPTURE_DESC[settings.captureSource])}
               value={settings.captureSource}
-              options={[
-                { value: "mic", label: t("capture_mic") },
-                { value: "system", label: t("capture_system") },
-              ]}
+              options={(settings.captureOptions ?? ["mic", "system"]).map((value) => ({ value, label: t(CAPTURE_LABEL[value]) }))}
               disabled={locked}
               onChange={settings.onCaptureSourceChange}
             />

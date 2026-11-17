@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { useLanguageName, useT } from "@/lib/i18n";
 import { primaryLanguageA } from "@/lib/meetingLanguages";
 import { useMeetingTopic } from "@/lib/useMeetingTopic";
+import { useCaptureSource } from "@/lib/useCaptureSource";
+import { CAPTURE_LABEL } from "@/lib/captureSource";
 
 interface ReadyCardProps {
   translationMode: TranslationMode;
@@ -30,6 +32,7 @@ export default function ReadyCard({
   const t = useT();
   const langName = useLanguageName();
   const { topic } = useMeetingTopic();
+  const capture = useCaptureSource();
   const sources = languageA.includes("*")
     ? t("ready_any")
     : languageA.map(langName).join(", ");
@@ -64,6 +67,36 @@ export default function ReadyCard({
         <span aria-hidden> · </span>
         {topic.trim() || <span className="text-gray-600">{t("topic_none")}</span>}
       </p>
+      {/* 收音来源 where there is a choice: an online meeting in another tab
+          is easy to miss in the advanced settings */}
+      {capture.options && (
+        <div data-ready-capture className="mt-3">
+          <div className="flex flex-wrap items-center gap-1.5 text-sm text-gray-700" role="radiogroup" aria-label={t("capture_source")}>
+            <span className="font-medium text-foreground">{t("capture_source")}</span>
+            {capture.options.map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={capture.source === value}
+                disabled={connecting}
+                data-capture-option={value}
+                onClick={() => capture.setSource(value)}
+                className={`rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors disabled:opacity-60 ${
+                  capture.source === value
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border text-gray-700 hover:bg-muted"
+                }`}
+              >
+                {t(CAPTURE_LABEL[value])}
+              </button>
+            ))}
+          </div>
+          {capture.source === "tab" && (
+            <p className="mt-1.5 text-xs leading-snug text-gray-700">{t("ready_capture_tab_hint")}</p>
+          )}
+        </div>
+      )}
       <Button
         onClick={onStart}
         disabled={connecting}

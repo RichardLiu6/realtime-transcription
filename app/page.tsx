@@ -14,8 +14,8 @@ import { useStoredState } from "@/lib/useStoredState";
 import { combineTerms, INDUSTRY_PRESETS, selectedPackTopics } from "@/lib/contextTerms";
 import { useMeetingTopic } from "@/lib/useMeetingTopic";
 import { useTermPacks } from "@/lib/useTermPacks";
-import type { CaptureSource, SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
-import { broadcastAvailable } from "@/lib/native/stt";
+import type { SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
+import { useCaptureSource } from "@/lib/useCaptureSource";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { t } from "@/lib/i18n";
 import Sidebar, { isSidebarShortcut } from "@/components/Sidebar";
@@ -71,8 +71,6 @@ function subscribeAutoStop(onChange: () => void) {
   };
 }
 
-const noSubscribe = () => () => {};
-const isCaptureSource = (v: unknown): v is CaptureSource => v === "mic" || v === "system";
 
 // Meeting settings, remembered across reloads (useStoredState)
 const DEFAULT_LANGUAGE_A = ["*"];
@@ -135,9 +133,9 @@ export default function Home() {
 
   const autoStop = useSyncExternalStore(subscribeAutoStop, readAutoStop, () => true);
 
-  // iOS app: transcribe what the phone plays (Zoom, WeChat…) + the mic
-  const canCaptureSystem = useSyncExternalStore(noSubscribe, broadcastAvailable, () => false);
-  const [captureSource, setCaptureSource] = useStoredState<CaptureSource>("captureSource", "mic", isCaptureSource);
+  // 收音来源: iOS app — what the phone plays (Zoom, WeChat…) + the mic;
+  // desktop browsers — an online meeting in another tab (Google Meet…) + the mic
+  const { options: captureOptions, source: captureSource, setSource: setCaptureSource } = useCaptureSource();
 
   // Sidebar layout: the sidebar can be collapsed (the floating toolbar then
   // keeps record / export / terms at hand); remembered per browser
@@ -281,7 +279,7 @@ export default function Home() {
     start({
       provider: sttProvider === "r2t2" && r2t2Enabled ? "r2t2" : "soniox",
       audioProcessing,
-      captureSource: canCaptureSystem ? captureSource : "mic",
+      captureSource,
       translationEngine: translationEngine === "t3po" && !t3poEnabled ? "llm" : translationEngine,
       languageA,
       languageB,
@@ -304,7 +302,6 @@ export default function Home() {
     sttProvider,
     r2t2Enabled,
     audioProcessing,
-    canCaptureSystem,
     captureSource,
     translationEngine,
     t3poEnabled,
@@ -545,7 +542,7 @@ export default function Home() {
           onAudioProcessingChange={handleAudioProcessingChange}
           autoStop={autoStop}
           onAutoStopChange={handleAutoStopChange}
-          {...(canCaptureSystem ? { captureSource, onCaptureSourceChange: setCaptureSource } : {})}
+          {...(captureOptions ? { captureSource, captureOptions, onCaptureSourceChange: setCaptureSource } : {})}
           translationEngine={translationEngine}
           onTranslationEngineChange={handleTranslationEngineChange}
           t3poEnabled={t3poEnabled}
@@ -647,7 +644,7 @@ export default function Home() {
             onAudioProcessingChange: handleAudioProcessingChange,
             autoStop,
             onAutoStopChange: handleAutoStopChange,
-            ...(canCaptureSystem ? { captureSource, onCaptureSourceChange: setCaptureSource } : {}),
+            ...(captureOptions ? { captureSource, captureOptions, onCaptureSourceChange: setCaptureSource } : {}),
           }}
         >
           {activeTopic && entries.length > 0 && (
