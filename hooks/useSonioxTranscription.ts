@@ -10,6 +10,7 @@ import { singleTargetLanguage } from "@/lib/meetingLanguages";
 import { NativeSocket, nativeStt, type SocketLike } from "@/lib/native/stt";
 import { meetingSubject, sonioxContext } from "@/lib/sonioxContext";
 import { getPipPrefs, setPipSupported } from "@/lib/native/pip";
+import { captureMeetingAudio } from "@/lib/tabAudio";
 
 const TARGET_SAMPLE_RATE = 16000;
 
@@ -271,6 +272,8 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
   const wsRef = useRef<SocketLike | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  // The meeting tab's sound (captureSource "tab"), mixed with the mic
+  const displayStreamRef = useRef<MediaStream | null>(null);
   // The live microphone stream while recording (for the meeting recorder)
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
@@ -1151,6 +1154,8 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     audioContextRef.current = null;
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
     mediaStreamRef.current = null;
+    displayStreamRef.current?.getTracks().forEach((t) => t.stop());
+    displayStreamRef.current = null;
     setMediaStream(null);
   }, []);
 
@@ -1193,6 +1198,17 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       resetSimul();
 
       try {
+        // 0. The meeting tab's sound: the share picker must open right after
+        // the click, before any request
+        if (config.captureSource === "tab" && !nativeStt()) {
+          const display = await captureMeetingAudio();
+          displayStreamRef.current = display;
+          display.getAudioTracks()[0].addEventListener("ended", () => {
+            // "Stop sharing" in the browser: the mic goes on alone
+            if (sessionRef.current === session && displayStreamRef.current === display) setError(t("err_tab_audio_ended"));
+          });
+        }
+
         // 1. Credentials
         let wsUrl: string;
         let openMessage: string;
@@ -1433,6 +1449,18 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         setAudioAnalyser(analyser);
 
         source.connect(analyser);
+        // Meeting tab + mic: both feed the engine (summed), and the meeting
+        // audio archive records the mix
+        let recorded: MediaStream = stream;
+        const display = displayStreamRef.current;
+        if (display) {
+          const tabSource = audioContext.createMediaStreamSource(display);
+          tabSource.connect(analyser);
+          const mix = audioContext.createMediaStreamDestination();
+          source.connect(mix);
+          tabSource.connect(mix);
+          recorded = mix.stream;
+        }
         analyser.connect(workletNode);
         workletNode.connect(audioContext.destination);
 
@@ -1443,7 +1471,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
           setElapsedSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
         }, 1000);
 
-        setMediaStream(stream);
+        setMediaStream(recorded);
         setRecordingState("recording");
       } catch (err) {
         console.error(`[${provider}] Failed to start:`, err);
@@ -1619,6 +1647,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       workletNodeRef.current?.disconnect();
       audioContextRef.current?.close().catch(() => {});
       mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      displayStreamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
 

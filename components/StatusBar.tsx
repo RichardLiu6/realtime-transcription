@@ -36,6 +36,7 @@ import { sidebarShortcutLabel } from "@/components/Sidebar";
 import FeedbackForm from "@/components/FeedbackForm";
 import type { DesktopLayout } from "@/app/page";
 import type { CaptureSource, SttProvider, TranslationEngine } from "@/types/bilingual";
+import { CAPTURE_DESC, CAPTURE_LABEL } from "@/lib/captureSource";
 
 interface StatusBarProps {
   // Sidebar layout with the sidebar collapsed: the button that opens it
@@ -57,6 +58,7 @@ interface StatusBarProps {
   onAutoStopChange?: (on: boolean) => void;
   // iOS app only: microphone, or other apps' audio + mic (ReplayKit)
   captureSource?: CaptureSource;
+  captureOptions?: CaptureSource[];
   onCaptureSourceChange?: (source: CaptureSource) => void;
   translationEngine?: TranslationEngine;
   onTranslationEngineChange?: (engine: TranslationEngine) => void;
@@ -166,6 +168,7 @@ export default function StatusBar({
   autoStop,
   onAutoStopChange,
   captureSource,
+  captureOptions = ["mic", "system"],
   onCaptureSourceChange,
   translationEngine,
   onTranslationEngineChange,
@@ -371,10 +374,10 @@ export default function StatusBar({
                 {captureSource && onCaptureSourceChange && (
                   <Section title={t("capture_source")}>
                     <RadioRow label={t("capture_source")}>
-                      {(["mic", "system"] as const).map((value) => (
+                      {captureOptions.map((value) => (
                         <Option
                           key={value}
-                          label={t(value === "mic" ? "capture_mic" : "capture_system")}
+                          label={t(CAPTURE_LABEL[value])}
                           checked={captureSource === value}
                           disabled={locked}
                           onSelect={() => onCaptureSourceChange(value)}
@@ -382,7 +385,7 @@ export default function StatusBar({
                       ))}
                     </RadioRow>
                     <p className="text-xs leading-snug text-muted-foreground">
-                      {t(captureSource === "mic" ? "capture_mic_desc" : "capture_system_desc")}
+                      {t(CAPTURE_DESC[captureSource])}
                     </p>
                   </Section>
                 )}

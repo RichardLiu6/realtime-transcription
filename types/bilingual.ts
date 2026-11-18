@@ -100,11 +100,13 @@ export type TranslationEngine = "llm" | "clause" | "t3po";
 
 // Where the iPhone app takes audio from: the microphone, or (ReplayKit
 // broadcast) what the phone plays — Zoom, WeChat… — plus the microphone
-export type CaptureSource = "mic" | "system";
+// "system": the iOS app (phone audio + mic); "tab": a desktop browser (a
+// meeting tab's or the computer's sound via the share picker + mic)
+export type CaptureSource = "mic" | "system" | "tab";
 
 export interface SonioxConfig {
   provider?: SttProvider; // default "soniox"
-  captureSource?: CaptureSource; // default "mic"; "system" only in the iOS app
+  captureSource?: CaptureSource; // default "mic"; "system" only in the iOS app, "tab" only in desktop browsers
   audioProcessing?: boolean; // browser noise suppression / echo cancellation / auto gain (on unless switched off)
   translationEngine?: TranslationEngine; // default "llm"
   languageA: string[]; // e.g. ["*"] or ["zh", "en"]
