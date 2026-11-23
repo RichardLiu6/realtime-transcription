@@ -189,6 +189,28 @@ function textUnits(text: string): number {
 // first sentence end once the segment has SONIOX_MAX_SEGMENT_UNITS; 0 = no
 // cut. A "." counts only before a space or the end of the batch, so 3.5
 // isn't split.
+// A Soniox message's tokens as runs of one speaker each, in order. Final
+// tokens split at every speaker change; the interim tail (always after the
+// finals, and still able to change speaker) stays whole — with the last final
+// run when it starts with that speaker, else as a run of its own.
+function speakerRuns(tokens: SonioxToken[]): SonioxToken[][] {
+  const runs: SonioxToken[][] = [];
+  let last: string | undefined;
+  for (const token of tokens.filter((t) => t.is_final)) {
+    const speaker = token.speaker || last;
+    if (runs.length === 0 || speaker !== last) runs.push([]);
+    runs[runs.length - 1].push(token);
+    last = speaker;
+  }
+  const interim = tokens.filter((t) => !t.is_final);
+  if (interim.length > 0) {
+    const speaker = interim.find((t) => t.speaker)?.speaker || last;
+    if (runs.length > 0 && speaker === last) runs[runs.length - 1].push(...interim);
+    else runs.push(interim);
+  }
+  return runs;
+}
+
 const CJK_START = /^[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/;
 function sentenceCut(segment: SonioxToken[], fresh: SonioxToken[]): number {
   let text = segment.map((t) => t.text).join("");
@@ -863,19 +885,10 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       );
     }
 
-    // Auto-merge: if this is a short segment close to the previous one
-    // with a different speaker but same language, adopt the previous speaker
-    let effectiveSpeaker = seg.speaker;
-    const prev = lastFinalizedDataRef.current;
-    if (prev) {
-      const gap = seg.startMs - prev.endMs;
-      const isShort = originalText.length < 15;
-      const sameLang = seg.language === prev.language;
-      const diffSpeaker = seg.speaker !== prev.speaker;
-      if (gap < 2000 && isShort && sameLang && diffSpeaker) {
-        effectiveSpeaker = prev.speaker;
-      }
-    }
+    // The speaker is Soniox's. (A short reply right after someone else used
+    // to be given to the previous speaker — "好的" / "Yes" from another
+    // person merged into the wrong one; removed 2026-11-23.)
+    const effectiveSpeaker = seg.speaker;
 
     const entry: BilingualEntry = {
       id: seg.entryId,
@@ -909,31 +922,10 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
     setCurrentInterim("");
   }, [upsertEntry, requestFinalTranslation, simulFinalize]);
 
-  // Handle Soniox WebSocket messages
-  const handleSonioxMessage = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (data: any) => {
-      if (data.error_code || data.error_message) {
-        setError(data.error_message || `Error code: ${data.error_code}`);
-        return;
-      }
-
-      if (data.finished) {
-        finalizeSegment();
-        return;
-      }
-
-      if (!data.tokens || !Array.isArray(data.tokens)) return;
-
-      // Filter out control tokens and any translation tokens (not used with GPT translation)
-      const tokens: SonioxToken[] = data.tokens.filter(
-        (t: SonioxToken) =>
-          t.text &&
-          !isControlToken(t.text) &&
-          (t.translation_status || "none") !== "translation"
-      );
-      if (tokens.length === 0) return;
-
+  // One speaker's tokens from a Soniox message (see speakerRuns): finals
+  // append to the current segment, the interim tail replaces its live part
+  const handleTokens = useCallback(
+    (tokens: SonioxToken[]) => {
       let finalTokens = tokens.filter((t) => t.is_final);
       const interimTokens = tokens.filter((t) => !t.is_final);
 
@@ -1058,6 +1050,39 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       }
     },
     [finalizeSegment, upsertEntry, maybeTranslateProvisional, simulFeed, speakerIdFor]
+  );
+
+  // Handle Soniox WebSocket messages
+  const handleSonioxMessage = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (data: any) => {
+      if (data.error_code || data.error_message) {
+        setError(data.error_message || `Error code: ${data.error_code}`);
+        return;
+      }
+
+      if (data.finished) {
+        finalizeSegment();
+        return;
+      }
+
+      if (!data.tokens || !Array.isArray(data.tokens)) return;
+
+      // Filter out control tokens and any translation tokens (not used with GPT translation)
+      const tokens: SonioxToken[] = data.tokens.filter(
+        (t: SonioxToken) =>
+          t.text &&
+          !isControlToken(t.text) &&
+          (t.translation_status || "none") !== "translation"
+      );
+      if (tokens.length === 0) return;
+
+      // One message can hold the end of one speaker and the start of the
+      // next: each speaker's run on its own, so the entry ends where Soniox
+      // put the speaker change, not at the message boundary
+      for (const run of speakerRuns(tokens)) handleTokens(run);
+    },
+    [finalizeSegment, handleTokens]
   );
 
   // Handle R2T2 WebSocket messages.
@@ -1584,11 +1609,6 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
   // (merged-away ids are no longer offered).
   const reassignSpeaker = useCallback(
     (entryId: string, newSpeaker: string) => {
-      // The next short segment may adopt the previous sentence's speaker
-      // (auto-merge): follow the correction
-      if (lastFinalizedDataRef.current?.entryId === entryId) {
-        lastFinalizedDataRef.current.speaker = newSpeaker;
-      }
       setEntries((prev) => {
         const existing = prev.get(entryId);
         if (!existing || existing.speaker === newSpeaker) return prev;
