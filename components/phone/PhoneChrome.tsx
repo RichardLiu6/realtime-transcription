@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
 import { LiveSharePanel } from "@/components/LiveShareButton";
+import { TermFixPanel, type TermFixProps } from "@/components/TermFix";
 import { INDUSTRY_PRESETS, presetLabel } from "@/lib/contextTerms";
 import { LOCALES, setLocale, useLocale, useT, type Locale, type TranslationKey } from "@/lib/i18n";
 import { CAPTURE_DESC, CAPTURE_LABEL } from "@/lib/captureSource";
@@ -81,6 +82,7 @@ export interface PhoneChromeProps {
   onNewMeeting: () => void;
   onPresent: () => void;
   // Live caption sharing (group meetings and transcribe only)
+  termFix?: TermFixProps;
   share: {
     sharing: boolean;
     starting: boolean;
@@ -118,7 +120,7 @@ export interface PhoneChromeProps {
 
 const noSubscribe = () => () => {};
 
-type Sheet = null | "settings" | "more" | "terms" | "speakers" | "drawer" | "prefs" | "pip";
+type Sheet = null | "settings" | "more" | "terms" | "speakers" | "drawer" | "prefs" | "pip" | "termfix";
 
 export default function PhoneChrome(props: PhoneChromeProps) {
   const t = useT();
@@ -361,6 +363,7 @@ export default function PhoneChrome(props: PhoneChromeProps) {
           }}
         />
         <Row label={t("meeting_topic")} value={topicLabel} onClick={open("terms")} />
+        {props.termFix && <Row label={t("fix_button")} onClick={open("termfix")} />}
         {showPipSettings && <Row label={t("ph_pip_settings")} onClick={open("pip")} />}
         <Row label={t("speakers")} value={t("ph_people", { n: props.speakers.size })} onClick={open("speakers")} disabled={props.speakers.size === 0} />
         {props.save.available && props.save.meetingId && (
@@ -386,6 +389,14 @@ export default function PhoneChrome(props: PhoneChromeProps) {
           <p className="pb-2 text-sm text-gray-600">{t("ph_share_only")}</p>
         )}
       </BottomSheet>
+
+      {props.termFix && (
+        <BottomSheet open={sheet === "termfix"} onOpenChange={(o) => setSheet(o ? "termfix" : null)} title={t("fix_button")}>
+          <div className="pb-4">
+            <TermFixPanel {...props.termFix} />
+          </div>
+        </BottomSheet>
+      )}
 
       <BottomSheet open={sheet === "terms"} onOpenChange={(o) => setSheet(o ? "terms" : null)} title={t("meeting_topic")} tall>
         <PhoneTerms

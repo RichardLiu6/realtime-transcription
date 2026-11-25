@@ -68,6 +68,8 @@ interface StatusBarProps {
   onPresent?: () => void;
   // Live caption sharing button (multilingual mode only)
   shareButton?: ReactNode;
+  // 现场修正 (components/TermFix.tsx)
+  fixButton?: ReactNode;
   // Saved meetings: save status + audio switch, and the "My meetings" link
   saveControls?: ReactNode;
   meetingsLink?: boolean;
@@ -175,6 +177,7 @@ export default function StatusBar({
   t3poEnabled = false,
   onPresent,
   shareButton,
+  fixButton,
   saveControls,
   meetingsLink = false,
   onExpandSidebar,
@@ -279,6 +282,7 @@ export default function StatusBar({
 
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
           {saveControls}
+          {fixButton}
           {shareButton}
           {onPresent && (
             <Tooltip>
