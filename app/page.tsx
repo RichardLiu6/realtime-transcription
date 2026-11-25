@@ -636,7 +636,10 @@ export default function Home() {
         </div>
 
         {/* Desktop top bar (only in topbar layout) */}
-        {desktopLayout === "topbar" && (
+        {/* Top bar: its own layout, and the collapsed sidebar's stand-in (in
+            the page's flow, so nothing is covered — the floating bar sat
+            over the transcript's bottom right) */}
+        {(desktopLayout === "topbar" || (desktopLayout === "sidebar" && sidebarCollapsed)) && (
           <div className="hidden lg:block">
             <DesktopTopBar {...sharedProps} />
           </div>
@@ -743,7 +746,7 @@ export default function Home() {
       </main>
 
       {/* Desktop floating bar (only in floating layout) */}
-      {(desktopLayout === "floating" || (desktopLayout === "sidebar" && sidebarCollapsed)) && (
+      {desktopLayout === "floating" && (
         <div className="hidden lg:block">
           <DesktopFloatingBar {...sharedProps} />
         </div>
