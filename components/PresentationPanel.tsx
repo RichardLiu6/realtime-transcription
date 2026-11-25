@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ReadyCard from "@/components/ReadyCard";
@@ -9,6 +9,7 @@ import { useLanguageName, useT } from "@/lib/i18n";
 import { useStoredState } from "@/lib/useStoredState";
 import { sameText, sentenceIn } from "@/lib/meetingLanguages";
 import { FALLBACK_SPEAKER_COLOR, speakerDisplayName } from "@/hooks/useSpeakerManager";
+import ReassignSentence, { type SpeakerOption } from "@/components/ReassignSentence";
 
 interface PresentationPanelProps {
   entries: BilingualEntry[];
@@ -23,6 +24,8 @@ interface PresentationPanelProps {
   // original is one of them, and no recording controls or card filter
   showOriginal?: boolean;
   viewer?: boolean;
+  // One sentence to another (or a new) speaker; not for viewers
+  onReassignSpeaker?: (entryId: string, speakerId: string) => void;
 }
 
 // Below this width per column (原文 + one per language, plus the # column)
@@ -127,6 +130,14 @@ interface RowProps {
   // column), so a busy meeting moves less
   speakerChange: boolean;
   finalOnly: boolean;
+  speakerOptions?: SpeakerOption[];
+  onReassign?: (entryId: string, speakerId: string) => void;
+}
+
+// The per-sentence speaker fix, for a finished sentence on the host's page
+function Reassign({ entry, speakerOptions, onReassign }: Pick<RowProps, "entry" | "speakerOptions" | "onReassign">) {
+  if (!entry.isFinal || !onReassign || !speakerOptions) return null;
+  return <ReassignSentence entryId={entry.id} speaker={entry.speaker} speakerOptions={speakerOptions} onReassign={onReassign} />;
 }
 
 // Memoized: while someone is speaking only the live row re-renders
@@ -139,10 +150,12 @@ const Row = memo(function Row({
   speakerColor,
   speakerChange,
   finalOnly,
+  speakerOptions,
+  onReassign,
 }: RowProps) {
   return (
     <tr
-      className={`align-top ${speakerChange ? "border-t border-border" : ""}`}
+      className={`group align-top ${speakerChange ? "border-t border-border" : ""}`}
       data-speaker-change={speakerChange || undefined}
     >
       <td className="px-3 py-2 text-muted-foreground">
@@ -155,6 +168,7 @@ const Row = memo(function Row({
         <div className="flex items-center gap-1.5 text-xs tabular-nums">
           {index + 1}
           <LanguageChip code={entry.language} />
+          <Reassign entry={entry} speakerOptions={speakerOptions} onReassign={onReassign} />
         </div>
       </td>
       {/* The transcript is always shown once, whatever the columns (a
@@ -191,6 +205,8 @@ const Card = memo(function Card({
   speakerChange,
   finalOnly,
   filter,
+  speakerOptions,
+  onReassign,
 }: CardProps) {
   const t = useT();
   const langName = useLanguageName();
@@ -201,7 +217,7 @@ const Card = memo(function Card({
     <article
       data-card
       data-speaker-change={speakerChange || undefined}
-      className={`px-4 ${speakerChange ? "border-t border-border pt-3 pb-1.5" : "pt-1.5 pb-1.5"}`}
+      className={`group px-4 ${speakerChange ? "border-t border-border pt-3 pb-1.5" : "pt-1.5 pb-1.5"}`}
     >
       {/* The speaker once per turn; their next sentences follow under it */}
       {speakerChange && (
@@ -232,12 +248,14 @@ const Card = memo(function Card({
           ) : entry.isFinal ? (
             <span className="text-muted-foreground animate-pulse">{t("translating")}</span>
           ) : null}
+          <Reassign entry={entry} speakerOptions={speakerOptions} onReassign={onReassign} />
         </p>
       ) : (
         <>
           {showOriginal && (
             <p className="rounded bg-blue-50/60 px-2 py-1 leading-relaxed">
               <OriginalText entry={entry} />
+              <Reassign entry={entry} speakerOptions={speakerOptions} onReassign={onReassign} />
             </p>
           )}
           {filter === FILTER_ALL &&
@@ -268,6 +286,7 @@ function PresentationPanel({
   onStart,
   showOriginal = true,
   viewer = false,
+  onReassignSpeaker,
 }: PresentationPanelProps) {
   const t = useT();
   const langName = useLanguageName();
@@ -334,6 +353,14 @@ function PresentationPanel({
   if (!isAtBottom && rowsWhenLeft === null) setRowsWhenLeft(rows.length);
   if (isAtBottom && rowsWhenLeft !== null) setRowsWhenLeft(null);
   const newRows = rowsWhenLeft === null ? 0 : Math.max(0, rows.length - rowsWhenLeft);
+  // Everyone the sentence fix can move a sentence to (stable for the memoized rows)
+  const speakerOptions = useMemo<SpeakerOption[] | undefined>(
+    () =>
+      onReassignSpeaker
+        ? Array.from(speakers.values(), (s) => ({ id: s.id, name: speakerDisplayName(s.id, s.label, t), color: s.color }))
+        : undefined,
+    [speakers, onReassignSpeaker, t]
+  );
   const speakerOf = (e: BilingualEntry) => {
     const info = speakers.get(e.speaker);
     return {
@@ -417,6 +444,8 @@ function PresentationPanel({
                 targetLangs={targetLangs}
                 showOriginal={showOriginal}
                 filter={filter}
+                speakerOptions={speakerOptions}
+                onReassign={onReassignSpeaker}
                 {...speakerOf(entry)}
               />
             ))}
@@ -452,6 +481,8 @@ function PresentationPanel({
                   index={idx}
                   targetLangs={targetLangs}
                   showOriginal={showOriginal}
+                  speakerOptions={speakerOptions}
+                  onReassign={onReassignSpeaker}
                   {...speakerOf(entry)}
                 />
               ))}

@@ -31,8 +31,22 @@ type Translate = (key: TranslationKey, vars?: Record<string, string | number>) =
 export function speakerDisplayName(speakerId: string, label: string | undefined, t: Translate): string {
   if (label && label !== defaultSpeakerLabel(speakerId)) return label;
   const [recording, speaker] = speakerId.includes(":") ? speakerId.split(":") : ["1", speakerId];
-  const base = t("speaker_default", { n: speaker || "1" });
+  const manual = /^new(\d+)$/.exec(speaker ?? "");
+  const base = manual ? t("speaker_new", { n: manual[1] }) : t("speaker_default", { n: speaker || "1" });
   return recording === "1" ? base : `${base} (#${recording})`;
+}
+
+// A speaker id for one sentence moved to "a new speaker" (the engine put two
+// people under one): "<recording>:new<k>", numbered past the ones already
+// there, so it never meets an engine speaker number
+export function newSpeakerId(forSpeaker: string, existing: Iterable<string>): string {
+  const recording = forSpeaker.includes(":") ? forSpeaker.split(":")[0] : "1";
+  let max = 0;
+  for (const id of existing) {
+    const m = /:new(\d+)$/.exec(id);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `${recording}:new${max + 1}`;
 }
 
 export function useSpeakerManager() {

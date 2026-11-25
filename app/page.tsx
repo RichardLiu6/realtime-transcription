@@ -16,6 +16,8 @@ import { useMeetingTopic } from "@/lib/useMeetingTopic";
 import { useTermPacks } from "@/lib/useTermPacks";
 import type { SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
 import { useCaptureSource } from "@/lib/useCaptureSource";
+import { applyFixes, containsTerm, fixTranslations, isTermFixList, MAX_FIXES, type TermFix } from "@/lib/termFixes";
+import TermFixButton, { type TermFixProps } from "@/components/TermFix";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { t } from "@/lib/i18n";
 import Sidebar, { isSidebarShortcut } from "@/components/Sidebar";
@@ -82,6 +84,7 @@ const isStringArray = (v: unknown): v is string[] =>
 const isString = (v: unknown): v is string => typeof v === "string" && v.length > 0;
 // Terms (possibly none): selected preset keys and custom terms
 const NO_TERMS: string[] = [];
+const NO_FIXES: TermFix[] = [];
 // Sharing in transcribe mode: no translated columns
 const NO_LANGS: string[] = [];
 const isTermList = (v: unknown): v is string[] =>
@@ -250,9 +253,55 @@ export default function Home() {
     clearEntries,
     reassignSpeaker,
     mergeSpeaker,
+    setLiveTerms,
+    setTermFixes,
+    reviseEntries,
   } = useSonioxTranscription();
   // Pause / resume (mute yourself) — the same props for every layout
   const pauseProps = canPause ? { paused, onPause: pause, onResume: resume } : {};
+
+  // 现场修正: terms and corrections added during a meeting. Translation uses
+  // them at once (the recording's terms follow the selection); the engine's
+  // context only at the next start. Corrections are remembered per device.
+  const [termFixes, setStoredTermFixes] = useStoredState<TermFix[]>("termFixes", NO_FIXES, isTermFixList);
+  useEffect(() => setTermFixes(termFixes), [termFixes, setTermFixes]);
+  const liveTerms = useMemo(
+    () => combineTerms(selectedPresets, customTerms, termPacks.packs, officialPacks),
+    [selectedPresets, customTerms, termPacks.packs, officialPacks]
+  );
+  useEffect(() => setLiveTerms(liveTerms), [liveTerms, setLiveTerms]);
+  // Adds a term to the device's own terms (and to the recording's at once)
+  const addCustomTerm = useCallback(
+    (term: string) => {
+      if (customTerms.includes(term)) return;
+      const next = [...customTerms, term];
+      setCustomTerms(next);
+      setLiveTerms(combineTerms(selectedPresets, next, termPacks.packs, officialPacks));
+    },
+    [customTerms, setCustomTerms, setLiveTerms, selectedPresets, termPacks.packs, officialPacks]
+  );
+  const termFix: TermFixProps = {
+    fixes: termFixes,
+    recording: recordingState !== "idle",
+    countTerm: (term) => entries.filter((e) => e.isFinal && containsTerm(e.originalText, term)).length,
+    countFix: (fix) =>
+      fix.scope === "translation"
+        ? entries.filter((e) => JSON.stringify(fixTranslations(e, [fix])) !== JSON.stringify(e)).length
+        : entries.filter((e) => e.isFinal && applyFixes(e.originalText, [fix]) !== e.originalText).length,
+    onAddTerm: (term, revise) => {
+      addCustomTerm(term);
+      return revise ? reviseEntries(null, term) : 0;
+    },
+    onAddFix: (fix, revise) => {
+      const next = [...termFixes.filter((f) => f.from !== fix.from || f.scope !== fix.scope), fix].slice(-MAX_FIXES);
+      setStoredTermFixes(next);
+      setTermFixes(next);
+      // A misheard word: the right one also becomes a term (recognition, next start)
+      if (fix.scope !== "translation") addCustomTerm(fix.to);
+      return revise ? reviseEntries(fix, null) : 0;
+    },
+    onRemoveFix: (index) => setStoredTermFixes(termFixes.filter((_, i) => i !== index)),
+  };
 
   const { speakers, registerSpeaker, renameSpeaker, removeSpeaker, clearSpeakers } =
     useSpeakerManager();
@@ -267,6 +316,14 @@ export default function Home() {
     if (!speakerIds) return;
     for (const id of speakerIds.split(",")) registerSpeaker(id, defaultSpeakerLabel(id));
   }, [speakerIds, registerSpeaker]);
+  // A speaker added by hand (one sentence moved to a new speaker) goes away
+  // once none of its sentences is left, e.g. the sentence was moved back
+  useEffect(() => {
+    const present = new Set(speakerIds.split(","));
+    for (const id of speakers.keys()) {
+      if (/:new\d+$/.test(id) && !present.has(id)) removeSpeaker(id);
+    }
+  }, [speakerIds, speakers, removeSpeaker]);
 
   const handleStart = useCallback(() => {
     // From the stored selection itself, so it doesn't depend on the terms
@@ -564,6 +621,7 @@ export default function Home() {
               />
             ) : undefined
           }
+          fixButton={<TermFixButton {...termFix} />}
           shareButton={
             shareable && liveShare.available ? (
               <LiveShareButton
@@ -589,6 +647,7 @@ export default function Home() {
         {/* Phone: top bar, one big button, bottom bar and sheets around the
             transcript; desktop: just the transcript */}
         <PhoneChrome
+          termFix={termFix}
           gesturesDisabled={presentation.open}
           error={error}
           translationMode={translationMode}
@@ -664,6 +723,7 @@ export default function Home() {
               languageA={languageA}
               targetLangs={targetLangs}
               onStart={handleStart}
+              onReassignSpeaker={reassignSpeaker}
             />
           ) : (
             <TranscriptPanel
