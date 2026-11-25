@@ -1,11 +1,11 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { ChevronDown, UserRoundPen } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { BilingualEntry, SpeakerInfo, TranslationMode } from "@/types/bilingual";
 import ReadyCard from "@/components/ReadyCard";
+import ReassignSentence, { type SpeakerOption } from "@/components/ReassignSentence";
 import { useT } from "@/lib/i18n";
 import { FALLBACK_SPEAKER_COLOR, speakerDisplayName } from "@/hooks/useSpeakerManager";
 
@@ -22,12 +22,6 @@ function formatTime(ms: number): string {
 
 // A speaker as the rows show it: the display name (given, or the default in
 // the interface language) and the color from SpeakerInfo
-interface SpeakerOption {
-  id: string;
-  name: string;
-  color: string;
-}
-
 interface TranscriptPanelProps {
   entries: BilingualEntry[];
   currentInterim: string;
@@ -133,55 +127,6 @@ function SpeakerNameEditor({
   );
 }
 
-// Moves just this sentence to another speaker (a diarization slip), unlike
-// renaming, which covers everything that speaker said. Faint until the row
-// is hovered or the button focused; always shown on touch screens.
-function ReassignSentence({
-  entryId,
-  otherSpeakers,
-  onReassign,
-}: {
-  entryId: string;
-  otherSpeakers: SpeakerOption[];
-  onReassign: (entryId: string, speakerId: string) => void;
-}) {
-  const t = useT();
-  const [open, setOpen] = useState(false);
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={t("reassign_sentence")}
-          data-reassign
-          className="ml-1 inline-flex size-6 items-center justify-center rounded align-middle text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100"
-        >
-          <UserRoundPen className="size-3.5" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent side="bottom" align="start" className="w-auto min-w-44 max-w-72 p-1">
-        <p className="px-2 py-1 text-xs text-muted-foreground">{t("reassign_to")}</p>
-        {otherSpeakers.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => {
-              onReassign(entryId, s.id);
-              setOpen(false);
-            }}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
-          >
-            <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: s.color }} />
-            <span className="truncate" style={{ color: s.color }}>
-              {s.name}
-            </span>
-          </button>
-        ))}
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 // Memoized: while recording, only the live (non-final) row and rows whose
 // translation just arrived re-render — not the whole transcript.
 const EntryRow = memo(function EntryRow({
@@ -258,11 +203,13 @@ const EntryRow = memo(function EntryRow({
           </>
         )}
         {/* The live sentence's speaker is still the engine's to decide */}
-        {entry.isFinal && otherSpeakers.length > 0 && (
+        {entry.isFinal && (
           <ReassignSentence
             entryId={entry.id}
-            otherSpeakers={otherSpeakers}
+            speaker={entry.speaker}
+            speakerOptions={speakerOptions}
             onReassign={onReassignSpeaker}
+            className="ml-1"
           />
         )}
       </div>

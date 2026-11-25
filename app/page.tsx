@@ -267,6 +267,14 @@ export default function Home() {
     if (!speakerIds) return;
     for (const id of speakerIds.split(",")) registerSpeaker(id, defaultSpeakerLabel(id));
   }, [speakerIds, registerSpeaker]);
+  // A speaker added by hand (one sentence moved to a new speaker) goes away
+  // once none of its sentences is left, e.g. the sentence was moved back
+  useEffect(() => {
+    const present = new Set(speakerIds.split(","));
+    for (const id of speakers.keys()) {
+      if (/:new\d+$/.test(id) && !present.has(id)) removeSpeaker(id);
+    }
+  }, [speakerIds, speakers, removeSpeaker]);
 
   const handleStart = useCallback(() => {
     // From the stored selection itself, so it doesn't depend on the terms
@@ -664,6 +672,7 @@ export default function Home() {
               languageA={languageA}
               targetLangs={targetLangs}
               onStart={handleStart}
+              onReassignSpeaker={reassignSpeaker}
             />
           ) : (
             <TranscriptPanel

@@ -263,7 +263,10 @@ export function defaultSpeakerLabel(speakerId: string): string {
   const [recording, speaker] = speakerId.includes(":")
     ? speakerId.split(":")
     : ["1", speakerId];
-  const base = `Speaker ${speaker || "1"}`;
+  // "<recording>:new<k>": a speaker added by hand (one sentence moved to a
+  // new speaker), never an engine number
+  const manual = /^new(\d+)$/.exec(speaker ?? "");
+  const base = manual ? `New speaker ${manual[1]}` : `Speaker ${speaker || "1"}`;
   return recording === "1" ? base : `${base} (#${recording})`;
 }
 
