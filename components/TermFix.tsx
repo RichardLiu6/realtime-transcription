@@ -34,12 +34,15 @@ export function TermFixPanel({ fixes, recording, countTerm, countFix, onAddTerm,
   const [revise, setRevise] = useState(true);
   const [done, setDone] = useState<string | null>(null);
   const [invalid, setInvalid] = useState(false);
+  // 纠正错词: in the transcript (misheard) or in the translations (mistranslated)
+  const [scope, setScope] = useState<"original" | "translation">("original");
 
   const first = cleanTermPart(a);
   const second = b.trim() ? cleanTermPart(b) : tab === "term" ? "" : null;
   const valid = !!first && second !== null && !(tab === "asr" && first === second);
   const term = tab === "term" && valid ? (second ? `${first}=${second}` : first!) : null;
-  const fix = tab === "asr" && valid ? { from: first!, to: second! } : null;
+  const fix: TermFix | null =
+    tab === "asr" && valid ? { from: first!, to: second!, ...(scope === "translation" ? { scope } : {}) } : null;
   const affected = term ? countTerm(term) : fix ? countFix(fix) : 0;
 
   const submit = () => {
@@ -49,7 +52,10 @@ export function TermFixPanel({ fixes, recording, countTerm, countFix, onAddTerm,
     }
     const n = term ? onAddTerm(term, revise) : onAddFix(fix!, revise);
     // Recognition takes it from the next start of a recording
-    const base = join(t(tab === "term" ? "fix_done_term" : "fix_done_asr"), recording ? t("fix_next_recording") : "");
+    const translationFix = tab === "asr" && scope === "translation";
+    const base = translationFix
+      ? t("fix_done_translation")
+      : join(t(tab === "term" ? "fix_done_term" : "fix_done_asr"), recording ? t("fix_next_recording") : "");
     setDone(join(base, n > 0 ? t("fix_done_revised", { n }) : ""));
     setA("");
     setB("");
@@ -89,8 +95,31 @@ export function TermFixPanel({ fixes, recording, countTerm, countFix, onAddTerm,
           submit();
         }}
       >
+        {tab === "asr" && (
+          <div className="flex items-center gap-1.5 text-xs" role="radiogroup" aria-label={t("fix_scope")}>
+            <span className="font-medium text-gray-700">{t("fix_scope")}</span>
+            {(["original", "translation"] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                role="radio"
+                aria-checked={scope === k}
+                data-fix-scope={k}
+                onClick={() => {
+                  setScope(k);
+                  setDone(null);
+                }}
+                className={`rounded-full border px-2 py-0.5 ${
+                  scope === k ? "border-primary bg-primary text-primary-foreground" : "border-border text-gray-700 hover:bg-muted"
+                }`}
+              >
+                {t(k === "original" ? "fix_scope_original" : "fix_scope_translation")}
+              </button>
+            ))}
+          </div>
+        )}
         <label className="block text-xs font-medium text-gray-700">
-          {t(tab === "term" ? "fix_term" : "fix_heard")}
+          {t(tab === "term" ? "fix_term" : scope === "translation" ? "fix_translated" : "fix_heard")}
           <input
             data-fix-a
             value={a}
@@ -99,7 +128,7 @@ export function TermFixPanel({ fixes, recording, countTerm, countFix, onAddTerm,
               setA(e.target.value);
               setDone(null);
             }}
-            placeholder={t(tab === "term" ? "fix_term_ph" : "fix_heard_ph")}
+            placeholder={t(tab === "term" ? "fix_term_ph" : scope === "translation" ? "fix_translated_ph" : "fix_heard_ph")}
             className={`mt-1 ${input}`}
           />
         </label>
@@ -113,7 +142,7 @@ export function TermFixPanel({ fixes, recording, countTerm, countFix, onAddTerm,
               setB(e.target.value);
               setDone(null);
             }}
-            placeholder={t(tab === "term" ? "fix_term_translation_ph" : "fix_correct_ph")}
+            placeholder={t(tab === "term" ? "fix_term_translation_ph" : scope === "translation" ? "fix_correct_translation_ph" : "fix_correct_ph")}
             className={`mt-1 ${input}`}
           />
         </label>
@@ -126,7 +155,7 @@ export function TermFixPanel({ fixes, recording, countTerm, countFix, onAddTerm,
               onChange={(e) => setRevise(e.target.checked)}
               className="mt-0.5"
             />
-            {t(tab === "term" ? "fix_revise_term" : "fix_revise_asr", { n: affected })}
+            {t(tab === "term" ? "fix_revise_term" : scope === "translation" ? "fix_revise_translation" : "fix_revise_asr", { n: affected })}
           </label>
         )}
         {invalid && (
@@ -150,6 +179,9 @@ export function TermFixPanel({ fixes, recording, countTerm, countFix, onAddTerm,
             {fixes.map((f, i) => (
               <li key={`${f.from}→${f.to}`} className="flex items-center gap-1 text-xs">
                 <span className="min-w-0 flex-1 truncate">
+                  {f.scope === "translation" && (
+                    <span className="mr-1 rounded bg-muted px-1 text-[10px] text-gray-700">{t("fix_scope_translation")}</span>
+                  )}
                   <span className="text-gray-600 line-through">{f.from}</span> → <span className="font-medium">{f.to}</span>
                 </span>
                 <button

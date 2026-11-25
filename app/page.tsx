@@ -16,7 +16,7 @@ import { useMeetingTopic } from "@/lib/useMeetingTopic";
 import { useTermPacks } from "@/lib/useTermPacks";
 import type { SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
 import { useCaptureSource } from "@/lib/useCaptureSource";
-import { applyFixes, containsTerm, isTermFixList, MAX_FIXES, type TermFix } from "@/lib/termFixes";
+import { applyFixes, containsTerm, fixTranslations, isTermFixList, MAX_FIXES, type TermFix } from "@/lib/termFixes";
 import TermFixButton, { type TermFixProps } from "@/components/TermFix";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { t } from "@/lib/i18n";
@@ -284,17 +284,20 @@ export default function Home() {
     fixes: termFixes,
     recording: recordingState !== "idle",
     countTerm: (term) => entries.filter((e) => e.isFinal && containsTerm(e.originalText, term)).length,
-    countFix: (fix) => entries.filter((e) => e.isFinal && applyFixes(e.originalText, [fix]) !== e.originalText).length,
+    countFix: (fix) =>
+      fix.scope === "translation"
+        ? entries.filter((e) => JSON.stringify(fixTranslations(e, [fix])) !== JSON.stringify(e)).length
+        : entries.filter((e) => e.isFinal && applyFixes(e.originalText, [fix]) !== e.originalText).length,
     onAddTerm: (term, revise) => {
       addCustomTerm(term);
       return revise ? reviseEntries(null, term) : 0;
     },
     onAddFix: (fix, revise) => {
-      const next = [...termFixes.filter((f) => f.from !== fix.from), fix].slice(-MAX_FIXES);
+      const next = [...termFixes.filter((f) => f.from !== fix.from || f.scope !== fix.scope), fix].slice(-MAX_FIXES);
       setStoredTermFixes(next);
       setTermFixes(next);
-      // The right word also becomes a term (recognition, next start)
-      addCustomTerm(fix.to);
+      // A misheard word: the right one also becomes a term (recognition, next start)
+      if (fix.scope !== "translation") addCustomTerm(fix.to);
       return revise ? reviseEntries(fix, null) : 0;
     },
     onRemoveFix: (index) => setStoredTermFixes(termFixes.filter((_, i) => i !== index)),

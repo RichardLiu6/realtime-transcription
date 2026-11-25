@@ -11,7 +11,7 @@ import { NativeSocket, nativeStt, type SocketLike } from "@/lib/native/stt";
 import { meetingSubject, sonioxContext } from "@/lib/sonioxContext";
 import { getPipPrefs, setPipSupported } from "@/lib/native/pip";
 import { captureMeetingAudio } from "@/lib/tabAudio";
-import { applyFixes, containsTerm, type TermFix } from "@/lib/termFixes";
+import { applyFixes, containsTerm, fixTranslations, originalFixes, translationFixes, type TermFix } from "@/lib/termFixes";
 
 const TARGET_SAMPLE_RATE = 16000;
 
@@ -494,10 +494,15 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         setEntries((prev) => {
           const existing = prev.get(entryId);
           if (!existing) return prev;
+          // 现场修正: wrong renderings fixed in every translation
+          const fixed = fixTranslations(
+            { translations: data.translations, translatedText: data.translatedText },
+            translationFixes(termFixesRef.current)
+          );
           return new Map(prev).set(entryId, {
             ...existing,
-            ...(data.translations ? { translations: data.translations } : {}),
-            ...(data.translatedText ? { translatedText: data.translatedText } : {}),
+            ...(fixed.translations ? { translations: fixed.translations } : {}),
+            ...(fixed.translatedText ? { translatedText: fixed.translatedText } : {}),
             translationProvisional: !isFinal,
           });
         });
@@ -623,7 +628,11 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
       const update: Partial<BilingualEntry> = info.multi
         ? { translations: Object.fromEntries(Array.from(info.parts.keys()).map((l) => [l, joined(l)])) }
         : { translatedText: joined(Array.from(info.parts.keys())[0]) };
-      return new Map(prev).set(entryId, { ...existing, ...update, translationProvisional: false });
+      return new Map(prev).set(entryId, {
+        ...existing,
+        ...fixTranslations(update, translationFixes(termFixesRef.current)),
+        translationProvisional: false,
+      });
     });
   }, []);
 
@@ -857,7 +866,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         .map((t) => t.text)
         .join("")
         .trim(),
-      termFixesRef.current
+      originalFixes(termFixesRef.current)
     );
 
     // Nothing but punctuation (a trailing "。" finalized on its own): not a
@@ -1039,9 +1048,9 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
             .map((t) => t.text)
             .join("")
             .trimStart(),
-          termFixesRef.current
+          originalFixes(termFixesRef.current)
         );
-        const interimOriginal = applyFixes(seg.interimTokens.map((t) => t.text).join(""), termFixesRef.current);
+        const interimOriginal = applyFixes(seg.interimTokens.map((t) => t.text).join(""), originalFixes(termFixesRef.current));
 
         upsertEntry({
           id: seg.entryId,
@@ -1135,7 +1144,7 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
         });
         seg.endMs = nowMs;
 
-        const originalText = applyFixes(seg.tokens.map((t) => t.text).join("").trim(), termFixesRef.current);
+        const originalText = applyFixes(seg.tokens.map((t) => t.text).join("").trim(), originalFixes(termFixesRef.current));
         // R2T2 gives no language ID; guess it from the text so far
         if (!seg.language && configRef.current && originalText.length >= 3) {
           seg.language = detectLanguageFromText(
@@ -1695,6 +1704,20 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
   // the ones holding `term` (with the terms now in use). Returns how many.
   const reviseEntries = useCallback(
     (fix: TermFix | null, term: string | null): number => {
+      // A wrong rendering: fix the translations there are, nothing to retranslate
+      if (fix?.scope === "translation") {
+        let count = 0;
+        const next = new Map(entriesRef.current);
+        for (const e of entriesRef.current.values()) {
+          const fixed = fixTranslations(e, [fix]);
+          if (fixed.translatedText !== e.translatedText || JSON.stringify(fixed.translations) !== JSON.stringify(e.translations)) {
+            next.set(e.id, fixed);
+            count++;
+          }
+        }
+        if (count > 0) setEntries(next);
+        return count;
+      }
       const revised: { id: string; text: string; language: string }[] = [];
       for (const e of entriesRef.current.values()) {
         if (!e.isFinal || !e.originalText) continue;

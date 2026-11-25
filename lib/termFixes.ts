@@ -7,6 +7,10 @@
 export interface TermFix {
   from: string;
   to: string;
+  // "translation": a wrong rendering in the translations ("soft capsule" →
+  // "softgel"), applied to every translation column as it lands; else the
+  // transcript (a misheard word), before it is translated
+  scope?: "translation";
 }
 
 export const MAX_FIX_CHARS = 60;
@@ -14,7 +18,34 @@ export const MAX_FIXES = 50;
 
 export const isTermFixList = (v: unknown): v is TermFix[] =>
   Array.isArray(v) &&
-  v.every((f) => f && typeof f === "object" && typeof f.from === "string" && typeof f.to === "string" && f.from);
+  v.every(
+    (f) =>
+      f &&
+      typeof f === "object" &&
+      typeof f.from === "string" &&
+      typeof f.to === "string" &&
+      f.from &&
+      (f.scope === undefined || f.scope === "translation")
+  );
+
+export const originalFixes = (fixes: TermFix[]) => fixes.filter((f) => f.scope !== "translation");
+export const translationFixes = (fixes: TermFix[]) => fixes.filter((f) => f.scope === "translation");
+
+// A sentence's translations with the translation fixes applied (single
+// target `translatedText`, multilingual `translations`)
+export function fixTranslations<T extends { translatedText?: string; translations?: Record<string, string> }>(
+  value: T,
+  fixes: TermFix[]
+): T {
+  if (fixes.length === 0) return value;
+  return {
+    ...value,
+    ...(value.translatedText ? { translatedText: applyFixes(value.translatedText, fixes) } : {}),
+    ...(value.translations
+      ? { translations: Object.fromEntries(Object.entries(value.translations).map(([l, x]) => [l, applyFixes(x, fixes)])) }
+      : {}),
+  };
+}
 
 // A term or correction side as typed: trimmed, ≤ 60 characters, without the
 // separators terms use ("=" between languages, commas between terms)
