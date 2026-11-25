@@ -6,6 +6,7 @@ import { verifyToken } from "@/lib/auth";
 import { getUserModel, getDefaultModel } from "@/lib/edge-config";
 import { openRouterUsage, trackUsage } from "@/lib/usage";
 import { FALLBACK_CHAIN, isSupportedModel, MAX_PRICE, modelLabel, TRIAL_MODELS } from "@/lib/models";
+import { collapseRepeats, isDegenerate } from "@/lib/degenerate";
 import { jwtVerify } from "jose";
 
 function getLanguageName(code: string): string {
@@ -65,8 +66,22 @@ function logTiming(
 // Room for the answer: a translation rarely needs more than ~2 tokens per
 // source character (Chinese → Spanish is the long direction). A flat 200
 // per language cut long passages off mid-JSON, and nothing showed at all.
-function outputBudget(text: string, languages: number): number {
-  return Math.min(Math.max(300, Math.ceil(text.length * 2) + 100) * languages, 8000);
+// Answer budget per language: enough for the source's translation, not much
+// more — a looping model (lib/degenerate.ts) stops sooner. Models that must
+// reason get room for it on top.
+function outputBudget(text: string, languages: number, model: string): number {
+  const answer = Math.min(Math.max(160, Math.ceil(text.length * 2) + 100) * languages, 8000);
+  return answer + (MANDATORY_REASONING.has(model) ? 600 : 0);
+}
+
+// An answer stuck in a loop: the route tries the next model (status 502, like
+// a provider failure); `salvage` is this answer cut down, returned when there
+// is no other model to try or that one loops too
+class LoopError extends Error {
+  status = 502;
+  constructor(public salvage: NextResponse) {
+    super("Translation looped");
+  }
 }
 
 // Models may wrap JSON in a ```json fence despite response_format. An answer
@@ -268,7 +283,7 @@ ${SPEECH_INPUT_RULES}`;
       json_schema: { name: "multi_translation", schema, strict: true },
     },
     temperature: 0.3,
-    max_tokens: outputBudget(text, targetLangs.length),
+    max_tokens: outputBudget(text, targetLangs.length, model),
   };
   applyProviderParams(params);
 
@@ -283,6 +298,12 @@ ${SPEECH_INPUT_RULES}`;
   logTiming(model, latencyMs, r.usage, provisional);
   recordTranslation(req, model, provisional, r.usage);
 
+  const looping = Object.keys(translations).filter((l) => isDegenerate(translations[l], text.length));
+  if (looping.length > 0) {
+    console.warn(`[translate] looping model=${model} chars=${text.length} langs=${looping.join(",")}`);
+    for (const l of looping) translations[l] = collapseRepeats(translations[l], text.length);
+    throw new LoopError(NextResponse.json({ translations, model, latencyMs }));
+  }
   return NextResponse.json({ translations, model, latencyMs });
 }
 
@@ -329,7 +350,7 @@ ${SPEECH_INPUT_RULES}`;
   ];
 
   const start = Date.now();
-  const params: Record<string, unknown> = { model, messages, temperature: 0.3, max_tokens: Math.max(1000, outputBudget(text, 1)) };
+  const params: Record<string, unknown> = { model, messages, temperature: 0.3, max_tokens: outputBudget(text, 1, model) };
   applyProviderParams(params);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -340,6 +361,12 @@ ${SPEECH_INPUT_RULES}`;
   logTiming(model, latencyMs, r.usage, provisional);
   recordTranslation(req, model, provisional, r.usage);
 
+  if (isDegenerate(translatedText, text.length)) {
+    console.warn(`[translate] looping model=${model} chars=${text.length}`);
+    throw new LoopError(
+      NextResponse.json({ translatedText: collapseRepeats(translatedText, text.length), model: responseModel, latencyMs })
+    );
+  }
   return NextResponse.json({
     translatedText,
     model: responseModel,
@@ -785,6 +812,8 @@ export async function POST(req: NextRequest) {
         : await run(primary, rawRequestedModel || primary);
     } catch (error) {
       // The compare page asks for a specific model — don't substitute there
+      // (a looping answer is shown cut down)
+      if (rawRequestedModel && error instanceof LoopError) return error.salvage;
       if (rawRequestedModel || !isProviderFailure(error)) throw error;
       let lastError = error;
       let lastModel = primary;
@@ -794,11 +823,15 @@ export async function POST(req: NextRequest) {
         try {
           return await run(fallback, fallback);
         } catch (e) {
+          // The backup loops too: its answer, cut down
+          if (e instanceof LoopError) return e.salvage;
           lastError = e;
           lastModel = fallback;
           if (!isProviderFailure(e) || isAccountFailure(e)) break;
         }
       }
+      // Only the first model's answer is left: cut down rather than nothing
+      if (error instanceof LoopError) return error.salvage;
       console.error("Translation error:", lastError);
       const { status, body } = describeFailure(
         locale,

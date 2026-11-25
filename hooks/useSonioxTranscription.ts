@@ -1302,7 +1302,9 @@ export function useSonioxTranscription(options?: TranscriptionOptions) {
           wsUrl = "wss://stt-rt.soniox.com/transcribe-websocket";
           openMessage = JSON.stringify({
             api_key: token,
-            model: "stt-rt-v5", // v4 was retired 2026-06-30 (auto-routed to v5)
+            // v6 (2026-11-03): same protocol and price as v5, which is removed
+            // 2026-12-15 (then auto-routed to v6)
+            model: "stt-rt-v6",
             audio_format: "pcm_s16le",
             sample_rate: TARGET_SAMPLE_RATE,
             num_channels: 1,
