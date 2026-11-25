@@ -21,7 +21,7 @@ npm run lint     # ESLint
 
 ## Tech Stack
 
-Next.js 16.3 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4 + shadcn/ui (Radix). Soniox stt-rt-v5 or Confucius4-R2T2 for real-time STT. Neon Postgres (`pg`) + Vercel Blob for saved meetings, Upstash Redis for live sharing. Translation and summary via OpenRouter (Seed / Gemini / GPT / DeepSeek / Qwen / Hy-MT; per-user, configured in admin). Vercel Edge Config for the user whitelist and assigned models. jose for JWT. Resend for email OTP. Transcript rows are memoized (no virtualization).
+Next.js 16.3 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4 + shadcn/ui (Radix). Soniox stt-rt-v6 (since 2026-11-25; v5 is removed 2026-12-15, same protocol and price: $0.12/h real-time, $0.10/h async) or Confucius4-R2T2 for real-time STT. Neon Postgres (`pg`) + Vercel Blob for saved meetings, Upstash Redis for live sharing. Translation and summary via OpenRouter (Seed / Gemini / GPT / DeepSeek / Qwen / Hy-MT; per-user, configured in admin). Vercel Edge Config for the user whitelist and assigned models. jose for JWT. Resend for email OTP. Transcript rows are memoized (no virtualization).
 
 ## Architecture
 
@@ -29,7 +29,7 @@ Next.js 16.3 (App Router, Turbopack) + React 19 + TypeScript 5 + Tailwind CSS v4
 
 ```
 Browser AudioWorklet (16kHz PCM16, batched 100 ms / 160 ms frames)
-  → WebSocket → Soniox (stt-rt-v5, speaker diarization)      [provider "soniox"]
+  → WebSocket → Soniox (stt-rt-v6, speaker diarization)      [provider "soniox"]
              or R2T2 ws_server.py /asr_stream_api_v1        [provider "r2t2"]
   ← Soniox tokens / R2T2 incremental text + VAD `reset`
   → useSonioxTranscription hook builds BilingualEntry[]
@@ -154,7 +154,7 @@ Central logic for the entire app:
 
 ### Saved meetings (text autosave + optional audio)
 
-- Rules (decided with the owner): the recorder owns a meeting; they can share it by email (read-only); admins see only a content-free list (`/api/admin/saved-meetings`: owner, time, duration, sentences, audio size, share count); meetings are deleted 1 year after they start; audio is opt-in per meeting (off by default, consent `confirm`, red indicator while recording); text is always autosaved. Guests (meeting-code logins, `role: "guest"`) can't save.
+- Rules (decided with the owner): the recorder owns a meeting; they can share it by email (read-only); admins see only a content-free list (`/api/admin/saved-meetings`: owner, time, duration, sentences, audio size, share count); meetings are deleted 1 year after they start; audio is opt-in (off until switched on, consent `confirm`, red indicator while recording); the switch remembers the last choice per device (localStorage `archiveAudio`, owner's call 2026-11-25), so once on every meeting is archived until switched off; text is always autosaved. Guests (meeting-code logins, `role: "guest"`) can't save.
 - `hooks/useMeetingAutosave.ts`: a meeting is created (`POST /api/meetings`) when a recording starts; every 3 s the finalized entries whose object changed go to `PUT /api/meetings/<id>/entries` (`toSavedEntry`, ≤ 200 per call) with speakers, settings and duration; also on tab hide (keepalive) and right after stopping. Stop/start continues the meeting; 新会议 (a transcript that had entries is cleared) ends it and the next recording starts a new one. An empty transcript never overwrites saved speakers.
 - `hooks/useMeetingRecorder.ts`: MediaRecorder on the hook's live `mediaStream` (Opus 32 kbps, webm; mp4 on Safari), 5 s chunks into IndexedDB (`lib/meetings/recordingCache.ts`). Each start/stop is a segment `meetings/<id>/<idx>.<ext>` with `offsetMs` = `getTranscriptTimeMs()` at its start; when it ends it is duration-fixed (`fix-webm-duration`), uploaded straight from the browser (`@vercel/blob/client` `uploadPresigned()`, private, presigned URL from `/api/meetings/<id>/recordings/upload` via `issueSignedToken` + `handleUploadPresigned` — works with OIDC-connected stores, which have no read-write token; or `PUT …/recordings/local` on a dev server), registered (`POST …/recordings`), then removed from IndexedDB. Leftovers (crash, closed tab) upload on the next page load.
 - Timeline: a new recording starts 1 s after both the last sentence and the previous recording's audio (`useSonioxTranscription` start), so segments never overlap and `entry.startMs − segment.offsetMs` is the position in that segment's audio.

@@ -85,6 +85,7 @@ const isString = (v: unknown): v is string => typeof v === "string" && v.length 
 // Terms (possibly none): selected preset keys and custom terms
 const NO_TERMS: string[] = [];
 const NO_FIXES: TermFix[] = [];
+const isBoolean = (v: unknown): v is boolean => typeof v === "boolean";
 // Sharing in transcribe mode: no translated columns
 const NO_LANGS: string[] = [];
 const isTermList = (v: unknown): v is string[] =>
@@ -410,13 +411,10 @@ export default function Home() {
     settings: meetingSettings,
     recording: recordingState === "recording",
   });
-  const [archiveOn, setArchiveOn] = useState(false);
-  const [archivedMeeting, setArchivedMeeting] = useState<string | null>(null);
-  // A new meeting starts with the audio switch off
-  if (archivedMeeting !== autosave.meetingId) {
-    setArchivedMeeting(autosave.meetingId);
-    if (archivedMeeting !== null) setArchiveOn(false);
-  }
+  // The audio switch remembers the last choice on this device (owner's call
+  // 2026-11-25: archive every meeting, so the audio is there afterwards):
+  // switched on once (with the consent prompt), every meeting starts with it on
+  const [archiveOn, setArchiveOn] = useStoredState<boolean>("archiveAudio", false, isBoolean);
   const recorder = useMeetingRecorder({
     meetingId: autosave.meetingId,
     stream: mediaStream,
