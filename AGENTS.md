@@ -260,8 +260,11 @@ Central logic for the entire app:
 │                            #   interface language, user menu (admin panel, log out), 演示模式 button
 ├── <Sidebar>                # Left: language, mode, speaker, terms, record/export; collapsible
 │                            #   (button in its header, ⌘\ / Ctrl+\, localStorage `sidebarCollapsed`):
-│                            #   collapsed = the top bar (in the page's flow, covers nothing; the floating
-│                            #   bar sat over the transcript) + an open button in the status bar
+│                            #   collapsed = a round button at the bottom right (red dot while recording)
+│                            #   that opens into the floating toolbar and closes again (»), + an open button
+│                            #   in the status bar; with the floating toolbar or its button the transcript
+│                            #   keeps 5.5rem free at its bottom (`.fab-inset` in globals.css), so nothing
+│                            #   is covered
 │   ├── <AudioWaveButton>    # Record/stop with waveform
 │   ├── <TranslationModeToggle>
 │   ├── <BetweenLanguages> / <FromToLanguages>

@@ -403,7 +403,8 @@ function TranscriptPanel({
           size="icon-sm"
           onClick={scrollToBottom}
           aria-label={t("scroll_to_latest")}
-          className="absolute bottom-4 right-4 z-20 rounded-full bg-zinc-500/30 text-white shadow-lg backdrop-blur-sm hover:bg-zinc-600/80 hover:text-white"
+          data-scroll-latest
+            className="absolute bottom-4 right-4 z-20 rounded-full bg-zinc-500/30 text-white shadow-lg backdrop-blur-sm hover:bg-zinc-600/80 hover:text-white"
         >
           <ChevronDown className="size-4" />
         </Button>

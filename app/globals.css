@@ -239,3 +239,16 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Desktop with the floating toolbar (or its round button) at the bottom
+   right: the transcript can scroll its last line above it, and the panels'
+   "back to the latest" button sits above it too. Unlayered, so it wins over
+   the panels' own padding utilities. */
+@media (min-width: 1024px) {
+  .fab-inset [role="log"] {
+    padding-bottom: 5.5rem;
+  }
+  .fab-inset [data-scroll-latest] {
+    bottom: 5.5rem;
+  }
+}

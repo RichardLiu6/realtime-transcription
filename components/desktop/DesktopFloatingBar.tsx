@@ -5,7 +5,7 @@
  * Compact icon bar with Popovers, transcript takes full width
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import PauseButton from "@/components/PauseButton";
 import {
   Mic,
@@ -16,6 +16,8 @@ import {
   Download,
   FilePlus,
   Users,
+  SlidersHorizontal,
+  ChevronsRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -68,6 +70,9 @@ interface DesktopFloatingBarProps {
   onExport: () => void;
   onNewMeeting: () => void;
   hasEntries: boolean;
+  // Sidebar layout with the sidebar collapsed: a round button that opens into
+  // the bar (and closes again), so the transcript isn't covered
+  collapsible?: boolean;
 }
 
 export default function DesktopFloatingBar(props: DesktopFloatingBarProps) {
@@ -83,9 +88,43 @@ export default function DesktopFloatingBar(props: DesktopFloatingBarProps) {
     return new Set([...presetTerms, ...props.customTerms]).size;
   }, [props.selectedPresets, props.customTerms]);
 
+  const [open, setOpen] = useState(false);
+  if (props.collapsible && !open) {
+    // Recording shows on the button: a red dot (grey while paused)
+    return (
+      <div className="fixed bottom-6 right-6 z-50">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              data-toolbar-open
+              onClick={() => setOpen(true)}
+              aria-label={t("toolbar_open")}
+              className="relative grid size-12 place-items-center rounded-full bg-background/95 text-foreground shadow-lg ring-1 ring-border/60 backdrop-blur-sm transition-transform hover:scale-105 hover:bg-muted"
+            >
+              <SlidersHorizontal className="size-5" aria-hidden />
+              {(isRecording || isConnecting) && (
+                <span
+                  aria-hidden
+                  className={`absolute right-0.5 top-0.5 size-3 rounded-full ring-2 ring-background ${
+                    props.paused ? "bg-gray-400" : "bg-red-600 animate-pulse"
+                  }`}
+                />
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left">{t("toolbar_open")}</TooltipContent>
+        </Tooltip>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed bottom-6 right-6 z-50">
-      <div className="flex items-center gap-2 rounded-2xl bg-background/95 backdrop-blur-sm px-4 py-3 shadow-lg ring-1 ring-border/50">
+      <div
+        data-floating-toolbar
+        className="flex origin-bottom-right animate-in fade-in zoom-in-95 items-center gap-2 rounded-2xl bg-background/95 backdrop-blur-sm px-4 py-3 shadow-lg ring-1 ring-border/50"
+      >
         {/* Record / Stop (the timer is in the status bar) */}
         {isRecording ? (
           <Tooltip>
@@ -271,6 +310,26 @@ export default function DesktopFloatingBar(props: DesktopFloatingBarProps) {
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top">{t("new_meeting")}</TooltipContent>
+            </Tooltip>
+          </>
+        )}
+        {props.collapsible && (
+          <>
+            <div className="h-6 w-px bg-border" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  data-toolbar-close
+                  onClick={() => setOpen(false)}
+                  aria-label={t("toolbar_close")}
+                  className="size-10"
+                >
+                  <ChevronsRight className="size-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{t("toolbar_close")}</TooltipContent>
             </Tooltip>
           </>
         )}

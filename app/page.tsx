@@ -580,7 +580,11 @@ export default function Home() {
       )}
 
       {/* Main content */}
-      <main className="flex flex-1 flex-col min-w-0">
+      <main
+        className={`flex flex-1 flex-col min-w-0 ${
+          desktopLayout === "floating" || (desktopLayout === "sidebar" && sidebarCollapsed) ? "fab-inset" : ""
+        }`}
+      >
         {/* Desktop status bar; the phone layout has its own (PhoneChrome) */}
         <div className="shrink-0 max-lg:hidden">
         <StatusBar
@@ -636,10 +640,7 @@ export default function Home() {
         </div>
 
         {/* Desktop top bar (only in topbar layout) */}
-        {/* Top bar: its own layout, and the collapsed sidebar's stand-in (in
-            the page's flow, so nothing is covered — the floating bar sat
-            over the transcript's bottom right) */}
-        {(desktopLayout === "topbar" || (desktopLayout === "sidebar" && sidebarCollapsed)) && (
+        {desktopLayout === "topbar" && (
           <div className="hidden lg:block">
             <DesktopTopBar {...sharedProps} />
           </div>
@@ -746,9 +747,11 @@ export default function Home() {
       </main>
 
       {/* Desktop floating bar (only in floating layout) */}
-      {desktopLayout === "floating" && (
+      {/* The floating layout's toolbar; with the sidebar collapsed, a round
+          button that opens into it (the open bar covered the transcript) */}
+      {(desktopLayout === "floating" || (desktopLayout === "sidebar" && sidebarCollapsed)) && (
         <div className="hidden lg:block">
-          <DesktopFloatingBar {...sharedProps} />
+          <DesktopFloatingBar {...sharedProps} collapsible={desktopLayout === "sidebar"} />
         </div>
       )}
 
