@@ -154,7 +154,10 @@ export default function Drawer({
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
-        className="safe-top absolute inset-y-0 left-0 flex w-[84%] max-w-sm flex-col bg-background shadow-2xl outline-none"
+        className={`safe-top absolute inset-y-0 left-0 flex w-[84%] max-w-sm flex-col bg-background outline-none ${
+          // Closed, its shadow would still fall on the page's left edge
+          shown ? "shadow-2xl" : ""
+        }`}
         style={{
           transform: drag !== null ? `translateX(${drag - panelWidth}px)` : open ? "translateX(0)" : "translateX(-100%)",
           transition: drag === null ? "transform 250ms cubic-bezier(0.32, 0.72, 0, 1)" : "none",
