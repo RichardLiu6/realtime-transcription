@@ -37,6 +37,7 @@ import FeedbackForm from "@/components/FeedbackForm";
 import type { DesktopLayout } from "@/app/page";
 import type { CaptureSource, SttProvider, TranslationEngine } from "@/types/bilingual";
 import { CAPTURE_DESC, CAPTURE_LABEL } from "@/lib/captureSource";
+import { FAB_STYLES, FAB_STYLE_LABEL, useFabStyle } from "@/lib/useFabStyle";
 
 interface StatusBarProps {
   // Sidebar layout with the sidebar collapsed: the button that opens it
@@ -183,6 +184,7 @@ export default function StatusBar({
   onExpandSidebar,
 }: StatusBarProps) {
   const t = useT();
+  const [fabStyle, setFabStyle] = useFabStyle();
   const router = useRouter();
   const isRecording = recordingState === "recording";
   const isConnecting = recordingState === "connecting";
@@ -459,6 +461,22 @@ export default function StatusBar({
                           />
                         ))}
                       </RadioRow>
+                      {desktopLayout === "sidebar" && (
+                        <p className="mt-1 text-xs text-muted-foreground">{t("fab_style")}</p>
+                      )}
+                      {desktopLayout === "sidebar" && (
+                        <RadioRow label={t("fab_style")}>
+                          {FAB_STYLES.map((value) => (
+                            <Option
+                              key={value}
+                              label={t(FAB_STYLE_LABEL[value])}
+                              checked={fabStyle === value}
+                              disabled={false}
+                              onSelect={() => setFabStyle(value)}
+                            />
+                          ))}
+                        </RadioRow>
+                      )}
                     </Section>
                   </div>
                 )}

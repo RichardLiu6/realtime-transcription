@@ -38,6 +38,7 @@ import TermsPanel from "@/components/sidebar/TermsPanel";
 import SpeakerPanel from "@/components/sidebar/SpeakerPanel";
 import type { TranslationMode, SpeakerInfo, BilingualEntry } from "@/types/bilingual";
 import { INDUSTRY_PRESETS } from "@/lib/contextTerms";
+import type { FabStyle } from "@/lib/useFabStyle";
 import { useT } from "@/lib/i18n";
 
 interface DesktopFloatingBarProps {
@@ -73,6 +74,8 @@ interface DesktopFloatingBarProps {
   // Sidebar layout with the sidebar collapsed: a round button that opens into
   // the bar (and closes again), so the transcript isn't covered
   collapsible?: boolean;
+  // How the round button shows: faded until hovered, or not at all
+  buttonStyle?: FabStyle;
 }
 
 export default function DesktopFloatingBar(props: DesktopFloatingBarProps) {
@@ -89,6 +92,7 @@ export default function DesktopFloatingBar(props: DesktopFloatingBarProps) {
   }, [props.selectedPresets, props.customTerms]);
 
   const [open, setOpen] = useState(false);
+  if (props.collapsible && !open && props.buttonStyle === "hidden") return null;
   if (props.collapsible && !open) {
     // Recording shows on the button: a red dot (grey while paused)
     return (
@@ -100,7 +104,9 @@ export default function DesktopFloatingBar(props: DesktopFloatingBarProps) {
               data-toolbar-open
               onClick={() => setOpen(true)}
               aria-label={t("toolbar_open")}
-              className="relative grid size-12 place-items-center rounded-full bg-background/95 text-foreground shadow-lg ring-1 ring-border/60 backdrop-blur-sm transition-transform hover:scale-105 hover:bg-muted"
+              className={`relative grid size-12 place-items-center rounded-full bg-background/95 text-foreground shadow-lg ring-1 ring-border/60 backdrop-blur-sm transition hover:scale-105 hover:bg-muted ${
+                props.buttonStyle === "faded" ? "opacity-30 hover:opacity-100 focus-visible:opacity-100" : ""
+              }`}
             >
               <SlidersHorizontal className="size-5" aria-hidden />
               {(isRecording || isConnecting) && (

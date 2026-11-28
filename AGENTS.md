@@ -264,7 +264,9 @@ Central logic for the entire app:
 │                            #   that opens into the floating toolbar and closes again (»), + an open button
 │                            #   in the status bar; with the floating toolbar or its button the transcript
 │                            #   keeps 5.5rem free at its bottom (`.fab-inset` in globals.css), so nothing
-│                            #   is covered
+│                            #   is covered. 收起侧栏时的按钮 (Advanced settings → 布局, `lib/useFabStyle.ts`,
+│                            #   localStorage `fabStyle`): 显示 / 半透明 (30 %, full on hover) / 隐藏 (no button,
+│                            #   no inset; the status bar's open button or ⌘\ brings the controls back)
 │   ├── <AudioWaveButton>    # Record/stop with waveform
 │   ├── <TranslationModeToggle>
 │   ├── <BetweenLanguages> / <FromToLanguages>

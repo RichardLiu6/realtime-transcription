@@ -16,6 +16,7 @@ import { useMeetingTopic } from "@/lib/useMeetingTopic";
 import { useTermPacks } from "@/lib/useTermPacks";
 import type { SttProvider, TranslationEngine, TranslationMode } from "@/types/bilingual";
 import { useCaptureSource } from "@/lib/useCaptureSource";
+import { useFabStyle } from "@/lib/useFabStyle";
 import { applyFixes, containsTerm, fixTranslations, isTermFixList, MAX_FIXES, type TermFix } from "@/lib/termFixes";
 import TermFixButton, { type TermFixProps } from "@/components/TermFix";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -148,6 +149,8 @@ export default function Home() {
     false,
     (v): v is boolean => typeof v === "boolean"
   );
+  // The collapsed sidebar's round button: shown / faded / hidden (Advanced settings)
+  const [fabStyle] = useFabStyle();
   const toggleSidebar = useCallback(() => setSidebarCollapsed(!sidebarCollapsed), [sidebarCollapsed, setSidebarCollapsed]);
   useEffect(() => {
     if (desktopLayout !== "sidebar") return;
@@ -582,7 +585,9 @@ export default function Home() {
       {/* Main content */}
       <main
         className={`flex flex-1 flex-col min-w-0 ${
-          desktopLayout === "floating" || (desktopLayout === "sidebar" && sidebarCollapsed) ? "fab-inset" : ""
+          desktopLayout === "floating" || (desktopLayout === "sidebar" && sidebarCollapsed && fabStyle !== "hidden")
+            ? "fab-inset"
+            : ""
         }`}
       >
         {/* Desktop status bar; the phone layout has its own (PhoneChrome) */}
@@ -751,7 +756,11 @@ export default function Home() {
           button that opens into it (the open bar covered the transcript) */}
       {(desktopLayout === "floating" || (desktopLayout === "sidebar" && sidebarCollapsed)) && (
         <div className="hidden lg:block">
-          <DesktopFloatingBar {...sharedProps} collapsible={desktopLayout === "sidebar"} />
+          <DesktopFloatingBar
+            {...sharedProps}
+            collapsible={desktopLayout === "sidebar"}
+            {...(desktopLayout === "sidebar" ? { buttonStyle: fabStyle } : {})}
+          />
         </div>
       )}
 
