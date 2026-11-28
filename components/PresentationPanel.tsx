@@ -39,6 +39,10 @@ const FILTER_ALL = "all";
 const FILTER_ORIGINAL = "original";
 const isString = (v: unknown): v is string => typeof v === "string" && v.length > 0;
 const isBoolean = (v: unknown): v is boolean => typeof v === "boolean";
+type Layout = "auto" | "table" | "cards";
+const LAYOUTS: Layout[] = ["auto", "table", "cards"];
+const isLayout = (v: unknown): v is Layout => v === "auto" || v === "table" || v === "cards";
+const LAYOUT_LABEL = { auto: "multi_layout_auto", table: "multi_layout_table", cards: "multi_layout_cards" } as const;
 
 const Cursor = () => (
   <span className="blink-cursor ml-0.5 inline-block h-4 w-0.5 bg-gray-400 align-text-bottom" />
@@ -302,6 +306,9 @@ function PresentationPanel({
   // Complete sentences only: no live row, no provisional translations —
   // calmer when many people talk (a viewer chooses for themselves)
   const [finalOnly, setFinalOnly] = useStoredState("multiFinalOnly", false, isBoolean);
+  // 排列: columns side by side (并列) or one card per sentence with the
+  // languages under each other (上下); 自动 picks by the panel's width
+  const [layout, setLayout] = useStoredState<Layout>("multiLayout", "auto", isLayout);
 
   // The panel's own width (the sidebar takes part of the window)
   useEffect(() => {
@@ -313,7 +320,8 @@ function PresentationPanel({
   }, []);
   const columns = targetLangs.length + (showOriginal ? 1 : 0);
   // One language (or the original) is a single column: a list reads better
-  const cards = (width > 0 && width < columns * MIN_COLUMN_WIDTH + INDEX_COLUMN_WIDTH) || filter !== FILTER_ALL;
+  const narrow = width > 0 && width < columns * MIN_COLUMN_WIDTH + INDEX_COLUMN_WIDTH;
+  const cards = filter !== FILTER_ALL || layout === "cards" || (layout === "auto" && narrow);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -397,6 +405,31 @@ function PresentationPanel({
                   className="shrink-0 rounded-full border border-border px-2.5 py-1 text-xs text-gray-700 transition-colors hover:bg-muted aria-checked:border-foreground aria-checked:bg-foreground aria-checked:text-background"
                 >
                   {o.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {/* Side by side or stacked (every language shown, so not with a filter) */}
+          {filter === FILTER_ALL && (
+            <div
+              role="radiogroup"
+              aria-label={t("multi_layout")}
+              data-multi-layout
+              className="ml-2 flex shrink-0 items-center gap-1.5 border-l border-border pl-3"
+            >
+              <span className="mr-1 shrink-0 text-xs text-gray-600">{t("multi_layout")}</span>
+              {LAYOUTS.map((l) => (
+                <button
+                  key={l}
+                  type="button"
+                  role="radio"
+                  aria-checked={layout === l}
+                  data-layout={l}
+                  onClick={() => setLayout(l)}
+                  title={l === "auto" ? t("multi_layout_auto_hint") : undefined}
+                  className="shrink-0 rounded-full border border-border px-2.5 py-1 text-xs text-gray-700 transition-colors hover:bg-muted aria-checked:border-foreground aria-checked:bg-foreground aria-checked:text-background"
+                >
+                  {t(LAYOUT_LABEL[l])}
                 </button>
               ))}
             </div>
@@ -511,6 +544,7 @@ function PresentationPanel({
             size="icon-sm"
             onClick={scrollToBottom}
             aria-label={t("scroll_to_latest")}
+            data-scroll-latest
             className="absolute bottom-4 right-4 z-20 rounded-full bg-zinc-500/30 text-white shadow-lg backdrop-blur-sm hover:bg-zinc-600/80 hover:text-white"
           >
             <ChevronDown className="size-4" />
