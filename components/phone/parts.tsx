@@ -41,7 +41,7 @@ export function BottomSheet({ open, onOpenChange, title, children, tall }: Botto
             {t("done")}
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-[max(1.25rem,var(--safe-bottom))]">
           {children}
         </div>
       </SheetContent>

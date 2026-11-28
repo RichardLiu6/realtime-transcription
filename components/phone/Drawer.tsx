@@ -304,7 +304,7 @@ function DrawerBody({
       <button
         type="button"
         onClick={onSettings}
-        className="flex items-center gap-3 border-t border-border px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 text-left"
+        className="flex items-center gap-3 border-t border-border px-4 pb-[max(0.75rem,var(--safe-bottom))] pt-3 text-left"
       >
         <span className="grid size-8 shrink-0 place-items-center rounded-full bg-foreground text-sm font-semibold text-background">
           {(userName || "?").slice(0, 1).toUpperCase()}

@@ -64,7 +64,7 @@ export default function AutoStopNotice({
     <div
       role={speech ? "alert" : "status"}
       data-auto-stop-notice
-      className="fixed left-1/2 top-[calc(env(safe-area-inset-top,0px)+3.5rem)] z-40 flex w-[min(92vw,28rem)] -translate-x-1/2 items-start gap-3 rounded-lg border border-border bg-background p-3 shadow-lg"
+      className="fixed left-1/2 top-[calc(var(--safe-top)+3.5rem)] z-40 flex w-[min(92vw,28rem)] -translate-x-1/2 items-start gap-3 rounded-lg border border-border bg-background p-3 shadow-lg"
     >
       <span
         className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-full ${

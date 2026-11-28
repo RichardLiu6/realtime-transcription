@@ -633,7 +633,7 @@ export default function PresentationMode({
         onMouseLeave={() => {
           pointerOnStrip.current = false;
         }}
-        className={`absolute top-[env(safe-area-inset-top,0px)] right-[env(safe-area-inset-right,0px)] left-[env(safe-area-inset-left,0px)] z-10 flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 text-sm shadow-lg transition-opacity duration-300 ${
+        className={`absolute top-[var(--safe-top)] right-[var(--safe-right)] left-[var(--safe-left)] z-10 flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 text-sm shadow-lg transition-opacity duration-300 ${
           controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         style={{ backgroundColor: colors.strip, borderBottom: `1px solid ${colors.rule}` }}
@@ -792,7 +792,7 @@ export default function PresentationMode({
       {/* Captions: anchored to the bottom, so the live sentence stays in
           one place and older ones scroll off the top (faded). The column
           is ~70 characters wide (in the caption font), left-aligned. */}
-      <div className="flex min-h-0 flex-1 overflow-hidden" style={{ padding: "4vh max(16px, 4vw) calc(4vh + env(safe-area-inset-bottom, 0px))" }}>
+      <div className="flex min-h-0 flex-1 overflow-hidden" style={{ padding: "4vh max(16px, 4vw) calc(4vh + var(--safe-bottom))" }}>
         <div
           className="mx-auto flex h-full w-full min-w-0 flex-col"
           style={{

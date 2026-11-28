@@ -237,7 +237,7 @@ export default function PhoneChrome(props: PhoneChromeProps) {
 
       {/* Bottom bar */}
       {!empty && (
-        <div className="shrink-0 border-t border-border bg-background px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 lg:hidden">
+        <div className="shrink-0 border-t border-border bg-background px-4 pb-[max(0.75rem,var(--safe-bottom))] pt-3 lg:hidden">
           {busy ? (
             // Recording: stop in the middle, 更多 on the right
             <div className="grid grid-cols-3 items-center">
@@ -586,7 +586,7 @@ function Preferences({
             {t("ph_back")}
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-[max(1.5rem,var(--safe-bottom))]">
           <h2 className="text-2xl font-bold">{t("settings")}</h2>
           {locked && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">{t("settings_locked")}</p>}
 

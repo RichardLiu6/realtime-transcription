@@ -624,7 +624,7 @@ export default function MeetingDetailView({ id, inApp = false, onBack, onDeleted
     return (
       <div className="min-h-full bg-background">
         {phoneHeader}
-        <main className={`pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-4 ${audio ? "pb-28" : "pb-[max(2rem,env(safe-area-inset-bottom))]"}`}>
+        <main className={`pl-[max(1rem,var(--safe-left))] pr-[max(1rem,var(--safe-right))] pt-4 ${audio ? "pb-28" : "pb-[max(2rem,var(--safe-bottom))]"}`}>
           {meeting.isOwner ? (
             <input
               value={title}
@@ -673,7 +673,7 @@ export default function MeetingDetailView({ id, inApp = false, onBack, onDeleted
 
         {audio && (
           <div
-            className="fixed inset-x-0 bottom-0 z-20 flex items-center gap-3 border-t border-border bg-background pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2"
+            className="fixed inset-x-0 bottom-0 z-20 flex items-center gap-3 border-t border-border bg-background pl-[max(0.75rem,var(--safe-left))] pr-[max(1rem,var(--safe-right))] pb-[max(0.5rem,var(--safe-bottom))] pt-2"
             data-phone-player
           >
             {audio}

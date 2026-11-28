@@ -188,7 +188,7 @@ export default function LiveViewerPage() {
 
   if (status === "notfound") {
     return (
-      <main className="safe-top flex h-dvh flex-col items-center justify-center gap-4 pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] text-center">
+      <main className="safe-top flex h-dvh flex-col items-center justify-center gap-4 pl-[max(1.5rem,var(--safe-left))] pr-[max(1.5rem,var(--safe-right))] text-center">
         <p className="text-base text-gray-700" data-live-status="notfound">
           {t("live_not_found")}
         </p>
